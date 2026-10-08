@@ -10,12 +10,12 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Ingredient, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -27,8 +27,19 @@ CASHIERS = ("owner", "admin", "kassir")
 
 
 
+def migrate() -> None:
+    """Add columns introduced after a table was first created (no Alembic yet)."""
+    have = {c["name"] for c in inspect(engine).get_columns("stock_moves")}
+    with engine.begin() as conn:
+        if "note" not in have:
+            conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
+        if "inventory_id" not in have:
+            conn.execute(text("ALTER TABLE stock_moves ADD COLUMN inventory_id INTEGER"))
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    migrate()
     if os.environ.get("SEED_DEMO", "1") != "1":
         return
     with SessionLocal() as db:
@@ -382,10 +393,14 @@ def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*
     return ingredient_out(i)
 
 
+WRITEOFF_NOTES = ("spill", "expired", "staff", "broken", "other")
+
+
 class StockIn(BaseModel):
     ing: str
     qty: float
     reason: Literal["intake", "writeoff", "count"]
+    note: Literal[WRITEOFF_NOTES] | None = None
 
 
 @app.post("/api/stock")
@@ -399,10 +414,107 @@ def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(400, "Miqdor musbat bo'lsin")
     else:
         delta = body.qty if body.reason == "intake" else -body.qty
+    note = (body.note or "other") if body.reason == "writeoff" else None
     i.stock += delta
-    ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, staff_name=ctx.staff.name))
+    ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, note=note, staff_name=ctx.staff.name))
     ctx.db.commit()
     return ingredient_out(i)
+
+
+class CountLine(BaseModel):
+    ing: str
+    counted: float = Field(ge=0)
+
+
+class InventoryIn(BaseModel):
+    lines: list[CountLine] = Field(min_length=1)
+    note: str = Field("", max_length=200)
+
+
+def inventory_out(inv: Inventory) -> dict:
+    return {
+        "id": inv.id, "staff": inv.staff_name, "note": inv.note, "lines": inv.lines,
+        "shortage": inv.shortage, "surplus": inv.surplus, "createdAt": inv.created_at,
+    }
+
+
+@app.post("/api/inventories")
+def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    keys = [line.ing for line in body.lines]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(400, "Xomashyo takrorlangan")
+    ings = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
+    inv = Inventory(company_id=ctx.cid, staff_name=ctx.staff.name, note=body.note.strip(), lines=[])
+    ctx.db.add(inv)
+    ctx.db.flush()
+    lines, shortage, surplus = [], 0, 0
+    for line in body.lines:
+        i = ings.get(line.ing)
+        if not i:
+            raise HTTPException(404, f"Xomashyo topilmadi: {line.ing}")
+        diff = line.counted - i.stock
+        value = round(diff * i.cost)
+        if value < 0:
+            shortage += -value
+        else:
+            surplus += value
+        lines.append({"ing": i.key, "name": i.name, "unit": i.unit, "expected": i.stock, "counted": line.counted, "diff": diff, "value": value})
+        if diff:
+            ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=diff, reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
+        i.stock = line.counted
+    inv.lines, inv.shortage, inv.surplus = lines, shortage, surplus
+    ctx.db.commit()
+    return inventory_out(inv)
+
+
+@app.get("/api/inventories")
+def list_inventories(days: int = 90, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = (
+        select(Inventory)
+        .where(Inventory.company_id == ctx.cid, Inventory.created_at >= start_of_day_ms(days))
+        .order_by(Inventory.id.desc())
+        .limit(100)
+    )
+    return [inventory_out(inv) for inv in ctx.db.scalars(q)]
+
+
+@app.get("/api/reports/losses")
+def losses_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Write-offs by cause and ingredient, plus stocktake shortage/surplus, valued at current cost."""
+    since = start_of_day_ms(days)
+    ings = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
+    moves = ctx.db.scalars(
+        select(StockMove).where(
+            StockMove.company_id == ctx.cid, StockMove.reason.in_(("writeoff", "count")), StockMove.created_at >= since
+        )
+    )
+    by_note: dict[str, int] = {}
+    by_ing: dict[str, dict] = {}
+    for m in moves:
+        i = ings.get(m.ingredient)
+        value = round(m.qty * (i.cost if i else 0))
+        row = by_ing.setdefault(m.ingredient, {
+            "ing": m.ingredient, "name": i.name if i else m.ingredient, "unit": i.unit if i else "",
+            "writeoffQty": 0.0, "writeoffValue": 0, "countQty": 0.0, "countValue": 0,
+        })
+        if m.reason == "writeoff":
+            by_note[m.note or "other"] = by_note.get(m.note or "other", 0) - value
+            row["writeoffQty"] -= m.qty
+            row["writeoffValue"] -= value
+        else:
+            row["countQty"] += m.qty
+            row["countValue"] += value
+    invs = ctx.db.scalars(select(Inventory).where(Inventory.company_id == ctx.cid, Inventory.created_at >= since)).all()
+    items = sorted(by_ing.values(), key=lambda r: r["writeoffValue"] - r["countValue"], reverse=True)
+    return {
+        "days": days,
+        "writeoffTotal": sum(by_note.values()),
+        "byNote": by_note,
+        "inventories": len(invs),
+        "shortage": sum(x.shortage for x in invs),
+        "surplus": sum(x.surplus for x in invs),
+        "items": items,
+    }
 
 
 @app.get("/api/stock/moves")
@@ -414,7 +526,10 @@ def stock_moves(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[d
         .limit(200)
     )
     return [
-        {"id": m.id, "ing": m.ingredient, "qty": m.qty, "reason": m.reason, "staff": m.staff_name, "createdAt": m.created_at}
+        {
+            "id": m.id, "ing": m.ingredient, "qty": m.qty, "reason": m.reason, "note": m.note,
+            "inventoryId": m.inventory_id, "staff": m.staff_name, "createdAt": m.created_at,
+        }
         for m in ctx.db.scalars(q)
     ]
 

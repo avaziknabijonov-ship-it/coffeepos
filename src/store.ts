@@ -123,8 +123,8 @@ export async function setStatus(id: string, status: Status) {
   }
 }
 
-export async function stockMove(ing: string, qty: number, reason: 'intake' | 'writeoff' | 'count') {
-  await api('/api/stock', { body: { ing, qty, reason } })
+export async function stockMove(ing: string, qty: number, reason: 'intake' | 'writeoff' | 'count', note?: string) {
+  await api('/api/stock', { body: { ing, qty, reason, note } })
   await Promise.all([sync(), refreshMenu()])
 }
 

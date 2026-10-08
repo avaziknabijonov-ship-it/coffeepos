@@ -69,3 +69,29 @@ def test_register_is_isolated():
         assert r.json()["staff"]["role"] == "owner"
         assert c.get("/api/sync", headers=h).json()["orders"] == []
         assert c.post("/api/auth/register", json={"companyName": "Boshqa", "slug": "bek-kofe", "ownerName": "Vali", "ownerPin": "2222"}).status_code == 409
+
+
+def test_inventory_and_losses():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/register", json={"companyName": "Inv Kofe", "slug": "inv-kofe", "ownerName": "Ali", "ownerPin": "1111"})
+        h = {"Authorization": f"Bearer {r.json()['token']}"}
+        ings = {i["id"]: i for i in c.get("/api/menu", headers=h).json()["ingredients"]}
+        beans, milk = ings["beans"], ings["milk"]
+
+        assert c.post("/api/stock", json={"ing": "beans", "qty": 100, "reason": "writeoff", "note": "bad"}, headers=h).status_code == 422
+        r = c.post("/api/stock", json={"ing": "beans", "qty": 100, "reason": "writeoff", "note": "spill"}, headers=h)
+        assert r.json()["stock"] == beans["stock"] - 100
+
+        lines = [{"ing": "beans", "counted": beans["stock"] - 150}, {"ing": "milk", "counted": milk["stock"] + 200}]
+        assert c.post("/api/inventories", json={"lines": lines + lines[:1]}, headers=h).status_code == 400
+        inv = c.post("/api/inventories", json={"lines": lines, "note": "Oy oxiri"}, headers=h).json()
+        assert inv["lines"][0]["expected"] == beans["stock"] - 100 and inv["lines"][0]["diff"] == -50
+        assert inv["shortage"] == round(50 * beans["cost"]) and inv["surplus"] == round(200 * milk["cost"])
+        stock = c.get("/api/sync", headers=h).json()["stock"]
+        assert stock["beans"] == beans["stock"] - 150 and stock["milk"] == milk["stock"] + 200
+        assert [x["id"] for x in c.get("/api/inventories", headers=h).json()] == [inv["id"]]
+
+        rep = c.get("/api/reports/losses?days=30", headers=h).json()
+        assert rep["byNote"] == {"spill": round(100 * beans["cost"])}
+        assert rep["inventories"] == 1 and rep["shortage"] == inv["shortage"]
+        assert rep["items"][0]["ing"] == "beans" and rep["items"][0]["writeoffQty"] == 100

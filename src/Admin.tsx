@@ -5,11 +5,13 @@ import type { Payment } from './data'
 import { api } from './api'
 import { startOfToday, stockMove, useAppState } from './store'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
+import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'stock' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
+  { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
   { id: 'orders', label: 'Buyurtmalar' },
@@ -41,6 +43,7 @@ export default function Admin() {
         </div>
         {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
         {view === 'stock' && <Stock stock={stock} today={today} />}
+        {view === 'inventory' && <InventoryView />}
         {view === 'menu' && <MenuEditor />}
         {view === 'recipes' && <Recipes />}
         {view === 'orders' && <Orders today={today} />}

@@ -144,3 +144,19 @@ class StockMove(Base):
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    note: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    inventory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Inventory(Base):
+    """A stocktake: counted vs. expected quantities for a set of ingredients."""
+
+    __tablename__ = "inventories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    staff_name: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    lines: Mapped[list] = mapped_column(JSON)
+    shortage: Mapped[int] = mapped_column(BigInteger, default=0)
+    surplus: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

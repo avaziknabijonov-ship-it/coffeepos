@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState } from './store'
+import { OpenShift } from './Shift'
 
 const CAT_ICON: Record<string, LucideIcon> = { espresso: Coffee, milk: Milk, cold: Snowflake, tea: Leaf, dessert: CakeSlice }
 const CAT_TINT: Record<string, string> = {
@@ -15,9 +16,9 @@ const CAT_TINT: Record<string, string> = {
 }
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
-export default function Kassa() {
-  useAppState()
-  const [cat, setCat] = useState('milk')
+export default function Kassa({ onShift }: { onShift: () => void }) {
+  const { shift, menuVersion } = useAppState()
+  const [cat, setCat] = useState(() => CATEGORIES.find((c) => c.id === 'milk')?.id ?? CATEGORIES[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<OrderItem[]>([])
   const [customer, setCustomer] = useState('')
@@ -30,7 +31,8 @@ export default function Kassa() {
   const products = useMemo(() => {
     const q = query.trim().toLowerCase()
     return q ? PRODUCTS.filter((p) => p.name.toLowerCase().includes(q)) : PRODUCTS.filter((p) => p.cat === cat)
-  }, [cat, query])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat, query, menuVersion])
 
   const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.qty, 0)
   const discount = Math.round((subtotal * discountPct) / 100 / 100) * 100
@@ -51,8 +53,8 @@ export default function Kassa() {
   }
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
-  const confirmPayment = (payment: Payment, cashGiven?: number) => {
-    const order = placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven })
+  const confirmPayment = async (payment: Payment, cashGiven?: number) => {
+    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven })
     setPaying(false)
     setCartOpen(false)
     clear()
@@ -67,11 +69,13 @@ export default function Kassa() {
     />
   )
 
+  if (!shift) return <OpenShift canOpen />
+
   return (
     <div className="flex h-full min-h-0">
       <aside className="hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
         {CATEGORIES.map((c) => {
-          const Icon = CAT_ICON[c.id]
+          const Icon = CAT_ICON[c.id] ?? Coffee
           const active = !query && cat === c.id
           return (
             <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
@@ -84,11 +88,14 @@ export default function Kassa() {
 
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
-          <label className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
+          <div className="flex gap-2">
+          <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
             <Search className="size-4 text-stone-400" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Mahsulot qidirish" className="w-full bg-transparent outline-none" />
             {query && <button onClick={() => setQuery('')} aria-label="Tozalash"><X className="size-4 text-stone-400" /></button>}
           </label>
+          <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">Smena</button>
+          </div>
           <div className="-mx-3 flex gap-2 overflow-x-auto px-3 md:hidden">
             {CATEGORIES.map((c) => (
               <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
@@ -100,12 +107,13 @@ export default function Kassa() {
         </div>
         <div className="grid flex-1 grid-cols-2 content-start gap-3 overflow-y-auto p-3 pb-24 sm:grid-cols-3 md:pb-3 xl:grid-cols-4">
           {products.map((p) => {
-            const Icon = CAT_ICON[p.cat]
+            const Icon = CAT_ICON[p.cat] ?? Coffee
             const minPrice = Math.min(...p.sizes.map((s) => s.price))
             return (
-              <button key={p.id} onClick={() => onTile(p)}
-                className="flex min-h-32 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
-                <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat]}`}><Icon className="size-5" /></span>
+              <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
+                className="relative flex min-h-32 disabled:opacity-40 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
+                <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>
+                {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Stop</span>}
                 <span>
                   <span className="block font-semibold leading-tight">{p.name}</span>
                   <span className="mt-1 block text-sm text-stone-500">
@@ -313,8 +321,20 @@ const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
   { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone },
 ]
 
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => void }) {
+function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => Promise<void> }) {
   const [method, setMethod] = useState<Payment>('karta')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const confirm = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await onConfirm(method, method === 'naqd' ? given : undefined)
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
   const [cash, setCash] = useState('')
   const given = Number(cash.replace(/\D/g, '')) || 0
   const quick = [...new Set([total, ...[50000, 100000, 200000].map((step) => Math.ceil(total / step) * step)])].sort((a, b) => a - b)
@@ -355,9 +375,10 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
             </div>
           )}
           {(method === 'payme' || method === 'click') && (
-            <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">Demo: to'lov qo'lda tasdiqlanadi. QR va avtomatik tasdiqlash keyingi versiyada.</p>
+            <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">To'lovni ilovada tekshirib, qo'lda tasdiqlang. QR va avtomatik tasdiqlash keyingi versiyada.</p>
           )}
-          <button disabled={!ok} onClick={() => onConfirm(method, method === 'naqd' ? given : undefined)}
+          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+          <button disabled={!ok || busy} onClick={confirm}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-lg font-bold text-white hover:bg-emerald-700 disabled:bg-stone-300">
             <Check className="size-5" />Tasdiqlash
           </button>
@@ -391,7 +412,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           {order.discount > 0 && <div className="flex justify-between"><span>Chegirma</span><span>−{fmt(order.discount)}</span></div>}
           <div className="flex justify-between text-sm font-bold"><span>JAMI</span><span>{som(order.total)}</span></div>
           <div className="flex justify-between"><span>To'lov</span><span>{PAYMENT_LABEL[order.payment]}</span></div>
-          {order.cashGiven !== undefined && (
+          {order.cashGiven != null && (
             <>
               <div className="flex justify-between"><span>Berildi</span><span>{fmt(order.cashGiven)}</span></div>
               <div className="flex justify-between"><span>Qaytim</span><span>{fmt(order.cashGiven - order.total)}</span></div>

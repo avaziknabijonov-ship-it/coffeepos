@@ -1,12 +1,26 @@
 import { useSyncExternalStore } from 'react'
-import { INGREDIENTS, PRODUCTS, MODIFIERS, buildItem } from './data'
-import type { Order, OrderItem, Payment, Status } from './data'
+import { setMenu } from './data'
+import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
+import { ApiError, api, getToken, setToken } from './api'
 
-export interface State { day: number; orders: Order[]; stock: Record<string, number> }
-
-const KEY = 'coffeepos-demo-v1'
-export const BARISTA = 'Dilnoza'
-const NAMES = ['Aziz', 'Malika', 'Bekzod', 'Nilufar', 'Sardor', 'Madina', 'Javohir', 'Zarina', 'Otabek', 'Kamola', 'Timur', 'Sevara', 'Rustam', 'Lola', 'Islom', 'Dilshod', '']
+export interface Session { staff: { id: number; name: string; role: Role }; company: { slug: string; name: string } }
+export interface ShiftInfo {
+  shift: { id: number; staff: string; openedAt: number; openingCash: number; closedAt?: number | null; closingCash?: number | null; expectedCash?: number | null }
+  orders: number
+  revenue: number
+  byPayment: Partial<Record<Payment, number>>
+  expectedCash: number
+  difference?: number
+}
+export interface State {
+  phase: 'loading' | 'login' | 'ready'
+  session: Session | null
+  menuVersion: number
+  orders: Order[]
+  stock: Record<string, number>
+  shift: ShiftInfo | null
+  online: boolean
+}
 
 export const startOfToday = () => {
   const d = new Date()
@@ -14,108 +28,12 @@ export const startOfToday = () => {
   return d.getTime()
 }
 
-function rng(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function makeOrder(number: number, items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number; status: Status; createdAt: number }): Order {
-  const subtotal = items.reduce((s, i) => s + i.unitPrice * i.qty, 0)
-  const discount = Math.round((subtotal * o.discountPct) / 100 / 100) * 100
-  return {
-    id: `${o.createdAt}-${number}`,
-    number,
-    customer: o.customer,
-    items,
-    subtotal,
-    discount,
-    total: subtotal - discount,
-    cost: items.reduce((s, i) => s + i.unitCost * i.qty, 0),
-    payment: o.payment,
-    cashGiven: o.cashGiven,
-    status: o.status,
-    createdAt: o.createdAt,
-    readyAt: o.status === 'ready' || o.status === 'done' ? o.createdAt + 4 * 60_000 : undefined,
-    barista: BARISTA,
-  }
-}
-
-function seed(): State {
-  const r = rng(42)
-  const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)]
-  const randomItem = () => {
-    const p = pick(PRODUCTS)
-    const mods: string[] = []
-    if (p.mods.includes('milk') && r() < 0.2) mods.push(pick(MODIFIERS.filter((m) => m.group === 'milk' && m.price > 0)).id)
-    if (p.mods.includes('syrup') && r() < 0.25) mods.push(pick(MODIFIERS.filter((m) => m.group === 'syrup')).id)
-    return buildItem(p, pick(p.sizes), mods, 1)
-  }
-  const randomItems = () => {
-    const n = r() < 0.7 ? 1 : r() < 0.85 ? 2 : 3
-    const list: OrderItem[] = []
-    for (let i = 0; i < n; i++) {
-      const it = randomItem()
-      const same = list.find((x) => x.key === it.key)
-      if (same) same.qty++
-      else list.push(it)
-    }
-    return list
-  }
-  const payment = (): Payment => {
-    const x = r()
-    return x < 0.45 ? 'karta' : x < 0.7 ? 'naqd' : x < 0.85 ? 'payme' : 'click'
-  }
-
-  const now = Date.now()
-  const today8 = startOfToday() + 8 * 3600_000
-  const start = now - today8 > 3600_000 ? today8 : now - 3 * 3600_000
-  const orders: Order[] = []
-  let n = 0
-  for (let t = start; t < now - 8 * 60_000; t += (3 + r() * 8) * 60_000) {
-    orders.push(makeOrder(++n, randomItems(), { customer: pick(NAMES), discountPct: r() < 0.08 ? 10 : 0, payment: payment(), status: 'done', createdAt: t }))
-  }
-  const active: [Status, number][] = [['ready', 5], ['preparing', 3], ['new', 1.5], ['new', 0.5]]
-  for (const [status, minAgo] of active) {
-    orders.push(makeOrder(++n, randomItems(), { customer: pick(NAMES.filter(Boolean)), discountPct: 0, payment: payment(), status, createdAt: now - minAgo * 60_000 }))
-  }
-  return { day: startOfToday(), orders, stock: Object.fromEntries(INGREDIENTS.map((i) => [i.id, i.stock])) }
-}
-
-function load(): State {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const s = JSON.parse(raw) as State
-      if (s.day === startOfToday() && Array.isArray(s.orders)) return s
-    }
-  } catch {
-    /* fall through to a fresh seed */
-  }
-  const s = seed()
-  localStorage.setItem(KEY, JSON.stringify(s))
-  return s
-}
-
-let state: State = load()
+let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true }
 const listeners = new Set<() => void>()
-const emit = () => listeners.forEach((l) => l())
-
-function save(next: State) {
-  state = next
-  localStorage.setItem(KEY, JSON.stringify(next))
-  emit()
+const set = (patch: Partial<State>) => {
+  state = { ...state, ...patch }
+  listeners.forEach((l) => l())
 }
-
-window.addEventListener('storage', (e) => {
-  if (e.key === KEY && e.newValue) {
-    state = JSON.parse(e.newValue) as State
-    emit()
-  }
-})
 
 export function useAppState() {
   return useSyncExternalStore(
@@ -129,27 +47,94 @@ export function useAppState() {
   )
 }
 
-export const nextNumber = () => state.orders.reduce((m, o) => Math.max(m, o.number), 0) + 1
+let timer: ReturnType<typeof setInterval> | undefined
 
-export function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number }): Order {
-  const order = makeOrder(nextNumber(), items, { ...o, status: 'new', createdAt: Date.now() })
-  const stock = { ...state.stock }
-  for (const it of items) for (const l of it.consumption) stock[l.ing] = (stock[l.ing] ?? 0) - l.qty * it.qty
-  save({ ...state, orders: [...state.orders, order], stock })
+export async function sync() {
+  try {
+    const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }>(`/api/sync?since=${startOfToday()}`)
+    set({ orders: d.orders, stock: d.stock, shift: d.shift, online: true })
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) logout()
+    else set({ online: false })
+  }
+}
+
+export async function refreshMenu() {
+  setMenu(await api<Menu>('/api/menu'))
+  set({ menuVersion: state.menuVersion + 1 })
+}
+
+async function start(session: Session) {
+  await refreshMenu()
+  await sync()
+  set({ session, phase: 'ready' })
+  clearInterval(timer)
+  timer = setInterval(sync, 2500)
+}
+
+export async function bootstrap() {
+  if (!getToken()) return set({ phase: 'login' })
+  try {
+    await start(await api<Session>('/api/me'))
+  } catch {
+    setToken(null)
+    set({ phase: 'login' })
+  }
+}
+
+export async function login(company: string, pin: string) {
+  const r = await api<Session & { token: string }>('/api/auth/login', { body: { company, pin } })
+  setToken(r.token)
+  localStorage.setItem('coffeepos-company', r.company.slug)
+  await start(r)
+}
+
+export async function register(body: { companyName: string; slug: string; ownerName: string; ownerPin: string }) {
+  const r = await api<Session & { token: string }>('/api/auth/register', { body })
+  setToken(r.token)
+  localStorage.setItem('coffeepos-company', r.company.slug)
+  await start(r)
+}
+
+export function logout() {
+  clearInterval(timer)
+  setToken(null)
+  set({ phase: 'login', session: null, orders: [], stock: {}, shift: null })
+}
+
+export const nextNumber = () =>
+  state.orders.filter((o) => o.createdAt >= startOfToday()).reduce((m, o) => Math.max(m, o.number), 0) + 1
+
+export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number }) {
+  const order = await api<Order>('/api/orders', {
+    body: { ...o, items: items.map((i) => ({ productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty })) },
+  })
+  set({ orders: [...state.orders, order] })
+  void sync()
   return order
 }
 
-export function setStatus(id: string, status: Status) {
-  save({
-    ...state,
-    orders: state.orders.map((o) => (o.id === id ? { ...o, status, readyAt: status === 'ready' ? Date.now() : o.readyAt } : o)),
-  })
+export async function setStatus(id: string, status: Status) {
+  set({ orders: state.orders.map((o) => (o.id === id ? { ...o, status, readyAt: status === 'ready' ? Date.now() : o.readyAt } : o)) })
+  try {
+    await api(`/api/orders/${id}`, { method: 'PATCH', body: { status } })
+  } finally {
+    void sync()
+  }
 }
 
-export function addStock(ing: string, qty: number) {
-  save({ ...state, stock: { ...state.stock, [ing]: (state.stock[ing] ?? 0) + qty } })
+export async function stockMove(ing: string, qty: number, reason: 'intake' | 'writeoff' | 'count') {
+  await api('/api/stock', { body: { ing, qty, reason } })
+  await Promise.all([sync(), refreshMenu()])
 }
 
-export function resetDemo() {
-  save(seed())
+export async function openShift(openingCash: number) {
+  await api('/api/shifts/open', { body: { openingCash } })
+  await sync()
+}
+
+export async function closeShift(closingCash: number) {
+  const r = await api<ShiftInfo>('/api/shifts/close', { body: { closingCash } })
+  await sync()
+  return r
 }

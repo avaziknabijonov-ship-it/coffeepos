@@ -30,3 +30,17 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## 1-bosqich: backend
+
+```
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/uvicorn app.main:app --port 8000   # API
+.venv/bin/python -m pytest                   # testlar
+npm run dev                                  # frontend, /api -> :8000 proxy
+```
+
+- Baza: `DATABASE_URL` (standart: SQLite `./coffeepos.db`, `/data` papkasi bo'lsa `/data/coffeepos.db`). PostgreSQL URL ham ishlaydi.
+- `SECRET_KEY` berilmasa, bazada avtomatik yaratiladi. `SEED_DEMO=0` demo kofe barni o'chiradi.
+- Frontend production build: `VITE_API_URL=https://api-manzil npm run build`.
+- Demo: login `demo`, PIN 1111 rahbar, 2222 kassir, 3333 barista.

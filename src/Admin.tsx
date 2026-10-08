@@ -1,22 +1,28 @@
-import { useMemo, useState } from 'react'
-import { RotateCcw, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { TriangleAlert } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
-import { addStock, resetDemo, startOfToday, useAppState } from './store'
+import { api } from './api'
+import { startOfToday, stockMove, useAppState } from './store'
+import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 
-type View = 'dashboard' | 'stock' | 'recipes' | 'orders'
+type View = 'dashboard' | 'stock' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
+  { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
   { id: 'orders', label: 'Buyurtmalar' },
+  { id: 'staff', label: 'Xodimlar' },
+  { id: 'shifts', label: 'Smenalar' },
 ]
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
 export default function Admin() {
   const [view, setView] = useState<View>('dashboard')
-  const { orders, stock } = useAppState()
+  const { orders, stock, menuVersion } = useAppState()
+  void menuVersion
   const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
   const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
 
@@ -32,15 +38,14 @@ export default function Admin() {
               </button>
             ))}
           </div>
-          <button onClick={() => { if (confirm("Demo ma'lumotlar qaytadan yaratilsinmi?")) resetDemo() }}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-200">
-            <RotateCcw className="size-4" />Demo ma'lumotlarni tiklash
-          </button>
         </div>
         {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
         {view === 'stock' && <Stock stock={stock} today={today} />}
+        {view === 'menu' && <MenuEditor />}
         {view === 'recipes' && <Recipes />}
         {view === 'orders' && <Orders today={today} />}
+        {view === 'staff' && <StaffView />}
+        {view === 'shifts' && <ShiftsView />}
       </div>
     </div>
   )
@@ -70,12 +75,11 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   const byHour = hours.map((h) => today.filter((o) => new Date(o.createdAt).getHours() === h).reduce((s, o) => s + o.total, 0))
   const maxHour = Math.max(1, ...byHour)
 
-  const week = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(startOfToday() - (6 - i) * 86400_000)
-    const x = Math.sin(Math.floor(d.getTime() / 86400_000) * 12.9898) * 43758.5453
-    const demo = 2_200_000 + (x - Math.floor(x)) * 1_500_000
-    return { label: i === 6 ? 'Bugun' : WEEKDAY[d.getDay()], value: i === 6 ? revenue : Math.round(demo / 1000) * 1000 }
-  })
+  const [daily, setDaily] = useState<{ day: number; revenue: number }[]>([])
+  useEffect(() => {
+    api<{ day: number; revenue: number }[]>('/api/reports/daily?days=7').then(setDaily).catch(() => setDaily([]))
+  }, [revenue])
+  const week = daily.map((d, i) => ({ label: i === daily.length - 1 ? 'Bugun' : WEEKDAY[new Date(d.day).getDay()], value: d.revenue }))
   const maxWeek = Math.max(1, ...week.map((w) => w.value))
 
   const top = Object.values(
@@ -201,7 +205,7 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
                     <div className="flex gap-1">
                       <input inputMode="numeric" value={amounts[i.id] ?? ''} onChange={(e) => setAmounts((a) => ({ ...a, [i.id]: e.target.value.replace(/\D/g, '') }))}
                         placeholder={UNIT_LABEL[i.unit]} className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 outline-none focus:border-amber-500" />
-                      <button disabled={!amount} onClick={() => { addStock(i.id, amount); setAmounts((a) => ({ ...a, [i.id]: '' })) }}
+                      <button disabled={!amount} onClick={() => { stockMove(i.id, amount, 'intake').then(() => setAmounts((a) => ({ ...a, [i.id]: '' }))).catch((e: Error) => alert(e.message)) }}
                         className="rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">Qo'shish</button>
                     </div>
                   </td>
@@ -218,6 +222,7 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 function Recipes() {
   const [pid, setPid] = useState('cappuccino')
   const p = PRODUCTS.find((x) => x.id === pid) ?? PRODUCTS[0]
+  if (!p) return <Card><p className="text-stone-500">Menyu bo'sh.</p></Card>
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -232,11 +237,11 @@ function Recipes() {
             <Card key={s.code} title={`${p.name}${s.label ? ` ${s.label}` : ''}${s.volume ? ` · ${s.volume}` : ''}`}>
               <table className="w-full text-sm">
                 <tbody>
-                  {s.recipe.map((l) => (
-                    <tr key={l.ing} className="border-t border-stone-100">
-                      <td className="py-1.5">{ING[l.ing].name}</td>
-                      <td className="py-1.5 text-right text-stone-500">{l.qty} {UNIT_LABEL[ING[l.ing].unit]}</td>
-                      <td className="py-1.5 text-right tabular-nums">{fmt(ING[l.ing].cost * l.qty)}</td>
+                  {s.recipe.map((l, li) => (
+                    <tr key={li} className="border-t border-stone-100">
+                      <td className="py-1.5">{ING[l.ing]?.name ?? l.ing}</td>
+                      <td className="py-1.5 text-right text-stone-500">{l.qty} {ING[l.ing] ? UNIT_LABEL[ING[l.ing].unit] : ''}</td>
+                      <td className="py-1.5 text-right tabular-nums">{fmt((ING[l.ing]?.cost ?? 0) * l.qty)}</td>
                     </tr>
                   ))}
                 </tbody>

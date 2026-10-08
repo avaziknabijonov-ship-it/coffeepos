@@ -1,34 +1,51 @@
 import { useEffect, useState } from 'react'
-import { ChefHat, Coffee, LayoutDashboard, Monitor, Store } from 'lucide-react'
+import { ChefHat, Coffee, LayoutDashboard, LogOut, Monitor, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
 import Barista from './Barista'
 import Display from './Display'
 import Admin from './Admin'
-import { BARISTA, useAppState } from './store'
+import Login from './Login'
+import { CloseShiftModal } from './Shift'
+import { ROLE_LABEL } from './data'
+import type { Role } from './data'
+import { bootstrap, logout, useAppState } from './store'
 
 type Tab = 'kassa' | 'barista' | 'display' | 'admin'
-const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: 'kassa', label: 'Kassa', icon: Store },
-  { id: 'barista', label: 'Barista', icon: ChefHat },
-  { id: 'display', label: 'Mijoz ekrani', icon: Monitor },
-  { id: 'admin', label: 'Admin', icon: LayoutDashboard },
+const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
+  { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir'] },
+  { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'kassir', 'barista'] },
+  { id: 'display', label: 'Mijoz ekrani', icon: Monitor, roles: ['owner', 'admin', 'kassir', 'barista'] },
+  { id: 'admin', label: 'Admin', icon: LayoutDashboard, roles: ['owner', 'admin'] },
 ]
-const fromHash = (): Tab => {
+const fromHash = (): Tab | null => {
   const h = window.location.hash.slice(1)
-  return TABS.some((t) => t.id === h) ? (h as Tab) : 'kassa'
+  return TABS.some((t) => t.id === h) ? (h as Tab) : null
 }
 
+void bootstrap()
+
 export default function App() {
-  const [tab, setTab] = useState<Tab>(fromHash)
-  const { orders } = useAppState()
+  const { phase, session } = useAppState()
+  if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">Yuklanmoqda…</div>
+  if (phase === 'login' || !session) return <Login />
+  return <Main role={session.staff.role} />
+}
+
+function Main({ role }: { role: Role }) {
+  const tabs = TABS.filter((t) => t.roles.includes(role))
+  const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : tabs[0].id)
+  const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
+  const [shiftOpen, setShiftOpen] = useState(false)
+  const { orders, shift, session, online } = useAppState()
   const waiting = orders.filter((o) => o.status === 'new').length
 
   useEffect(() => {
-    const onHash = () => setTab(fromHash())
+    const onHash = () => setTab(pick(fromHash()))
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role])
 
   return (
     <div className="flex h-dvh flex-col">
@@ -36,10 +53,10 @@ export default function App() {
         <div className="flex items-center gap-2 font-semibold">
           <span className="grid size-8 place-items-center rounded-lg bg-amber-600"><Coffee className="size-5" /></span>
           <span className="hidden sm:inline">CoffeePOS</span>
-          <span className="hidden rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300 lg:inline">demo</span>
+          <span className="hidden max-w-40 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 lg:inline">{session?.company.name}</span>
         </div>
         <nav className="flex flex-1 justify-center gap-1 sm:justify-start">
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => { window.location.hash = id }}
@@ -53,17 +70,20 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="hidden text-right text-xs leading-tight text-stone-300 md:block">
-          <div className="flex items-center justify-end gap-1.5"><span className="size-2 rounded-full bg-emerald-400" />Smena ochiq</div>
-          <div>Barista: <span className="text-white">{BARISTA}</span></div>
-        </div>
+        {!online && <span title="Server bilan aloqa yo'q" className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">Aloqa yo'q</span></span>}
+        <button onClick={() => role !== 'barista' && setShiftOpen(true)} className="hidden rounded-lg px-2 py-1 text-right text-xs leading-tight text-stone-300 hover:bg-white/10 md:block">
+          <div className="flex items-center justify-end gap-1.5"><span className={`size-2 rounded-full ${shift ? 'bg-emerald-400' : 'bg-red-400'}`} />{shift ? 'Smena ochiq' : 'Smena yopiq'}</div>
+          <div><span className="text-white">{session?.staff.name}</span> · {ROLE_LABEL[role]}</div>
+        </button>
+        <button onClick={() => { if (confirm('Tizimdan chiqilsinmi?')) logout() }} aria-label="Chiqish" title="Chiqish" className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
       <div className="min-h-0 flex-1">
-        {tab === 'kassa' && <Kassa />}
+        {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'barista' && <Barista />}
         {tab === 'display' && <Display />}
         {tab === 'admin' && <Admin />}
       </div>
+      {shiftOpen && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
     </div>
   )
 }

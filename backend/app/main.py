@@ -1,0 +1,640 @@
+import os
+import re
+import secrets
+from collections.abc import Iterator
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Literal
+from zoneinfo import ZoneInfo
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from . import seed
+from .db import (
+    Base, Category, Company, Ingredient, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+)
+from .logic import build_item
+from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
+
+TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
+Role = Literal["owner", "admin", "kassir", "barista"]
+MANAGERS = ("owner", "admin")
+CASHIERS = ("owner", "admin", "kassir")
+
+
+
+def init_db() -> None:
+    Base.metadata.create_all(engine)
+    if os.environ.get("SEED_DEMO", "1") != "1":
+        return
+    with SessionLocal() as db:
+        if db.scalar(select(Company).where(Company.slug == "demo")):
+            return
+        company = create_company(db, "demo", "Demo Coffee", "Rahbar", "1111")
+        db.add(Staff(company_id=company.id, name="Dilnoza", role="kassir", pin_hash=hash_pin("2222")))
+        db.add(Staff(company_id=company.id, name="Aziz", role="barista", pin_hash=hash_pin("3333")))
+        db.commit()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+limiter = LoginLimiter()
+
+
+def get_db() -> Iterator[Session]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+class Ctx:
+    def __init__(self, db: Session, staff: Staff, company: Company):
+        self.db, self.staff, self.company = db, staff, company
+
+    @property
+    def cid(self) -> int:
+        return self.company.id
+
+
+def auth(db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
+    claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
+    if not claims:
+        raise HTTPException(401, "Qaytadan kiring")
+    staff = db.get(Staff, int(claims["sub"]))
+    if not staff or not staff.active or staff.company_id != claims["cid"]:
+        raise HTTPException(401, "Qaytadan kiring")
+    return Ctx(db, staff, db.get(Company, staff.company_id))
+
+
+def require(*roles: str):
+    def dep(ctx: Ctx = Depends(auth)) -> Ctx:
+        if ctx.staff.role not in roles:
+            raise HTTPException(403, "Bu amal uchun ruxsat yo'q")
+        return ctx
+
+    return dep
+
+
+# ---------- serializers ----------
+
+def staff_out(s: Staff) -> dict:
+    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active}
+
+
+def order_out(o: Order) -> dict:
+    return {
+        "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
+        "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
+        "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
+        "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name,
+    }
+
+
+def ingredient_out(i: Ingredient) -> dict:
+    return {"id": i.key, "name": i.name, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
+
+
+def product_out(p: Product) -> dict:
+    return {"id": p.key, "cat": p.cat, "name": p.name, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+
+
+def shift_out(s: Shift | None) -> dict | None:
+    if not s:
+        return None
+    return {
+        "id": s.id, "staff": s.staff_name, "openedAt": s.opened_at, "openingCash": s.opening_cash,
+        "closedAt": s.closed_at, "closingCash": s.closing_cash, "expectedCash": s.expected_cash,
+    }
+
+
+# ---------- helpers ----------
+
+def slugify(text: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40]
+    return f"{base or 'item'}-{secrets.token_hex(2)}"
+
+
+def rows(db: Session, model, cid: int):
+    return db.scalars(select(model).where(model.company_id == cid).order_by(model.id)).all()
+
+
+def get_row(db: Session, model, cid: int, key: str):
+    row = db.scalar(select(model).where(model.company_id == cid, model.key == key))
+    if not row:
+        raise HTTPException(404, "Topilmadi")
+    return row
+
+
+def open_shift(db: Session, cid: int) -> Shift | None:
+    return db.scalar(select(Shift).where(Shift.company_id == cid, Shift.closed_at.is_(None)))
+
+
+def start_of_day_ms(days_ago: int = 0) -> int:
+    d = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_ago)
+    return int(d.timestamp() * 1000)
+
+
+def pin_taken(db: Session, cid: int, pin: str, exclude: int | None = None) -> bool:
+    for s in rows(db, Staff, cid):
+        if s.id != exclude and s.active and check_pin(pin, s.pin_hash):
+            return True
+    return False
+
+
+def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin: str) -> Company:
+    company = Company(slug=slug, name=name)
+    db.add(company)
+    db.flush()
+    cid = company.id
+    db.add(Staff(company_id=cid, name=owner_name, role="owner", pin_hash=hash_pin(owner_pin)))
+    for i, (key, cname) in enumerate(seed.CATEGORIES):
+        db.add(Category(company_id=cid, key=key, name=cname, sort=i))
+    for key, iname, unit, cost, stock, mn in seed.INGREDIENTS:
+        db.add(Ingredient(company_id=cid, key=key, name=iname, unit=unit, cost=cost, stock=stock, min=mn))
+    for i, (key, cat, pname, mods, sizes) in enumerate(seed.PRODUCTS):
+        db.add(Product(company_id=cid, key=key, cat=cat, name=pname, mods=mods, sizes=sizes, sort=i))
+    for i, (key, group, mname, price, effect) in enumerate(seed.MODIFIERS):
+        db.add(Modifier(company_id=cid, key=key, group=group, name=mname, price=price, effect=effect, sort=i))
+    return company
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    return {"ok": True}
+
+
+# ---------- auth ----------
+
+PIN_RE = r"^\d{4,6}$"
+
+
+class LoginIn(BaseModel):
+    company: str = Field(min_length=1, max_length=64)
+    pin: str = Field(pattern=PIN_RE)
+
+
+@app.post("/api/auth/login")
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    slug = body.company.strip().lower()
+    key = f"{slug}|{request.client.host if request.client else '-'}"
+    if limiter.blocked(key):
+        raise HTTPException(429, "Ko'p urinish. 5 daqiqadan keyin qayta urining")
+    company = db.scalar(select(Company).where(Company.slug == slug))
+    staff = None
+    if company:
+        staff = next((s for s in rows(db, Staff, company.id) if s.active and check_pin(body.pin, s.pin_hash)), None)
+    if not staff:
+        limiter.fail(key)
+        raise HTTPException(401, "Kofe bar yoki PIN noto'g'ri")
+    limiter.reset(key)
+    return {
+        "token": make_token(db, staff.id, company.id),
+        "staff": staff_out(staff),
+        "company": {"slug": company.slug, "name": company.name},
+    }
+
+
+class RegisterIn(BaseModel):
+    companyName: str = Field(min_length=2, max_length=128)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,40}$")
+    ownerName: str = Field(min_length=2, max_length=64)
+    ownerPin: str = Field(pattern=PIN_RE)
+
+
+@app.post("/api/auth/register")
+def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    if db.scalar(select(Company).where(Company.slug == body.slug)):
+        raise HTTPException(409, "Bu login band, boshqasini tanlang")
+    create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)
+    db.commit()
+    return login(LoginIn(company=body.slug, pin=body.ownerPin), request, db)
+
+
+@app.get("/api/me")
+def me(ctx: Ctx = Depends(auth)) -> dict:
+    return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name}}
+
+
+# ---------- menu ----------
+
+@app.get("/api/menu")
+def menu(ctx: Ctx = Depends(auth)) -> dict:
+    db, cid = ctx.db, ctx.cid
+    cats = sorted(rows(db, Category, cid), key=lambda c: (c.sort, c.id))
+    prods = sorted(rows(db, Product, cid), key=lambda p: (p.sort, p.id))
+    mods = sorted(rows(db, Modifier, cid), key=lambda m: (m.sort, m.id))
+    return {
+        "categories": [{"id": c.key, "name": c.name} for c in cats],
+        "products": [product_out(p) for p in prods],
+        "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
+        "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
+    }
+
+
+class CategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/categories")
+def add_category(body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    sort = len(rows(ctx.db, Category, ctx.cid))
+    cat = Category(company_id=ctx.cid, key=slugify(body.name), name=body.name.strip(), sort=sort)
+    ctx.db.add(cat)
+    ctx.db.commit()
+    return {"id": cat.key, "name": cat.name}
+
+
+@app.delete("/api/categories/{key}")
+def delete_category(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cat = get_row(ctx.db, Category, ctx.cid, key)
+    if any(p.cat == key for p in rows(ctx.db, Product, ctx.cid)):
+        raise HTTPException(400, "Kategoriyada mahsulotlar bor")
+    ctx.db.delete(cat)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class RecipeLineIn(BaseModel):
+    ing: str
+    qty: float = Field(gt=0)
+
+
+class SizeIn(BaseModel):
+    code: str = Field(min_length=1, max_length=8)
+    label: str = Field(default="", max_length=8)
+    volume: str | None = Field(default=None, max_length=16)
+    price: int = Field(ge=0)
+    recipe: list[RecipeLineIn] = []
+
+
+class ProductIn(BaseModel):
+    cat: str
+    name: str = Field(min_length=1, max_length=128)
+    mods: list[Literal["milk", "syrup", "shot"]] = []
+    sizes: list[SizeIn] = Field(min_length=1)
+    active: bool = True
+
+
+def validate_product(ctx: Ctx, body: ProductIn) -> None:
+    get_row(ctx.db, Category, ctx.cid, body.cat)
+    ing_keys = {i.key for i in rows(ctx.db, Ingredient, ctx.cid)}
+    codes = [s.code for s in body.sizes]
+    if len(set(codes)) != len(codes):
+        raise HTTPException(400, "O'lchamlar takrorlanmasin")
+    for s in body.sizes:
+        for line in s.recipe:
+            if line.ing not in ing_keys:
+                raise HTTPException(400, "Texkartada noma'lum xomashyo")
+
+
+@app.post("/api/products")
+def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    validate_product(ctx, body)
+    p = Product(
+        company_id=ctx.cid, key=slugify(body.name), cat=body.cat, name=body.name.strip(), mods=body.mods,
+        sizes=[s.model_dump() for s in body.sizes], active=body.active, sort=len(rows(ctx.db, Product, ctx.cid)),
+    )
+    ctx.db.add(p)
+    ctx.db.commit()
+    return product_out(p)
+
+
+@app.put("/api/products/{key}")
+def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    p = get_row(ctx.db, Product, ctx.cid, key)
+    validate_product(ctx, body)
+    p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
+    p.sizes, p.active = [s.model_dump() for s in body.sizes], body.active
+    ctx.db.commit()
+    return product_out(p)
+
+
+class ActiveIn(BaseModel):
+    active: bool
+
+
+@app.patch("/api/products/{key}/active")
+def set_product_active(key: str, body: ActiveIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    p = get_row(ctx.db, Product, ctx.cid, key)
+    p.active = body.active
+    ctx.db.commit()
+    return product_out(p)
+
+
+@app.delete("/api/products/{key}")
+def delete_product(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_row(ctx.db, Product, ctx.cid, key))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class ModifierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    price: int = Field(ge=0)
+
+
+@app.put("/api/modifiers/{key}")
+def update_modifier(key: str, body: ModifierIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    m = get_row(ctx.db, Modifier, ctx.cid, key)
+    m.name, m.price = body.name.strip(), body.price
+    ctx.db.commit()
+    return {"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect}
+
+
+class IngredientIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    unit: Literal["g", "ml", "dona"]
+    cost: float = Field(ge=0)
+    min: float = Field(ge=0)
+
+
+@app.post("/api/ingredients")
+def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    i = Ingredient(company_id=ctx.cid, key=slugify(body.name), stock=0, **body.model_dump())
+    ctx.db.add(i)
+    ctx.db.commit()
+    return ingredient_out(i)
+
+
+@app.put("/api/ingredients/{key}")
+def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    i = get_row(ctx.db, Ingredient, ctx.cid, key)
+    for k, v in body.model_dump().items():
+        setattr(i, k, v)
+    ctx.db.commit()
+    return ingredient_out(i)
+
+
+class StockIn(BaseModel):
+    ing: str
+    qty: float
+    reason: Literal["intake", "writeoff", "count"]
+
+
+@app.post("/api/stock")
+def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    i = get_row(ctx.db, Ingredient, ctx.cid, body.ing)
+    if body.reason == "count":
+        if body.qty < 0:
+            raise HTTPException(400, "Qoldiq manfiy bo'lmaydi")
+        delta = body.qty - i.stock
+    elif body.qty <= 0:
+        raise HTTPException(400, "Miqdor musbat bo'lsin")
+    else:
+        delta = body.qty if body.reason == "intake" else -body.qty
+    i.stock += delta
+    ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, staff_name=ctx.staff.name))
+    ctx.db.commit()
+    return ingredient_out(i)
+
+
+@app.get("/api/stock/moves")
+def stock_moves(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = (
+        select(StockMove)
+        .where(StockMove.company_id == ctx.cid, StockMove.reason != "sale", StockMove.created_at >= start_of_day_ms(days))
+        .order_by(StockMove.id.desc())
+        .limit(200)
+    )
+    return [
+        {"id": m.id, "ing": m.ingredient, "qty": m.qty, "reason": m.reason, "staff": m.staff_name, "createdAt": m.created_at}
+        for m in ctx.db.scalars(q)
+    ]
+
+
+# ---------- staff ----------
+
+class StaffIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    role: Role
+    pin: str | None = Field(default=None, pattern=PIN_RE)
+    active: bool = True
+
+
+def guard_owner(ctx: Ctx, role: str) -> None:
+    if role == "owner" and ctx.staff.role != "owner":
+        raise HTTPException(403, "Faqat rahbar rahbar qo'sha oladi")
+
+
+@app.get("/api/staff")
+def list_staff(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [staff_out(s) for s in rows(ctx.db, Staff, ctx.cid)]
+
+
+@app.post("/api/staff")
+def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    guard_owner(ctx, body.role)
+    if not body.pin:
+        raise HTTPException(400, "PIN kerak")
+    if pin_taken(ctx.db, ctx.cid, body.pin):
+        raise HTTPException(409, "Bu PIN band")
+    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active)
+    ctx.db.add(s)
+    ctx.db.commit()
+    return staff_out(s)
+
+
+@app.put("/api/staff/{sid}")
+def update_staff(sid: int, body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    s = ctx.db.get(Staff, sid)
+    if not s or s.company_id != ctx.cid:
+        raise HTTPException(404, "Topilmadi")
+    guard_owner(ctx, s.role)
+    guard_owner(ctx, body.role)
+    if s.id == ctx.staff.id and (body.role != s.role or not body.active):
+        raise HTTPException(400, "O'zingizning rolingizni o'zgartira olmaysiz")
+    if body.pin:
+        if pin_taken(ctx.db, ctx.cid, body.pin, exclude=s.id):
+            raise HTTPException(409, "Bu PIN band")
+        s.pin_hash = hash_pin(body.pin)
+    s.name, s.role, s.active = body.name.strip(), body.role, body.active
+    ctx.db.commit()
+    return staff_out(s)
+
+
+# ---------- shifts ----------
+
+class OpenShiftIn(BaseModel):
+    openingCash: int = Field(ge=0)
+
+
+class CloseShiftIn(BaseModel):
+    closingCash: int = Field(ge=0)
+
+
+def shift_summary(db: Session, shift: Shift) -> dict:
+    orders = db.scalars(select(Order).where(Order.shift_id == shift.id)).all()
+    by_payment: dict[str, int] = {}
+    for o in orders:
+        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    return {
+        "shift": shift_out(shift),
+        "orders": len(orders),
+        "revenue": sum(o.total for o in orders),
+        "byPayment": by_payment,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0),
+    }
+
+
+@app.post("/api/shifts/open")
+def shift_open(body: OpenShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    if open_shift(ctx.db, ctx.cid):
+        raise HTTPException(409, "Smena allaqachon ochiq")
+    s = Shift(company_id=ctx.cid, staff_name=ctx.staff.name, opening_cash=body.openingCash)
+    ctx.db.add(s)
+    ctx.db.commit()
+    return shift_out(s)
+
+
+@app.get("/api/shifts/current")
+def shift_current(ctx: Ctx = Depends(auth)) -> dict | None:
+    s = open_shift(ctx.db, ctx.cid)
+    return shift_summary(ctx.db, s) if s else None
+
+
+@app.post("/api/shifts/close")
+def shift_close(body: CloseShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    s = open_shift(ctx.db, ctx.cid)
+    if not s:
+        raise HTTPException(409, "Ochiq smena yo'q")
+    summary = shift_summary(ctx.db, s)
+    s.closed_at, s.closed_by = now_ms(), ctx.staff.name
+    s.closing_cash, s.expected_cash = body.closingCash, summary["expectedCash"]
+    ctx.db.commit()
+    return {**summary, "shift": shift_out(s), "difference": body.closingCash - summary["expectedCash"]}
+
+
+@app.get("/api/shifts")
+def shift_history(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(Shift).where(Shift.company_id == ctx.cid).order_by(Shift.id.desc()).limit(30)
+    return [shift_summary(ctx.db, s) for s in ctx.db.scalars(q)]
+
+
+# ---------- orders ----------
+
+class OrderItemIn(BaseModel):
+    productId: str
+    size: str
+    modIds: list[str] = []
+    qty: int = 1
+
+
+class OrderIn(BaseModel):
+    items: list[OrderItemIn] = Field(min_length=1, max_length=50)
+    customer: str = Field(default="", max_length=64)
+    discountPct: int = Field(default=0, ge=0, le=100)
+    payment: Literal["naqd", "karta", "payme", "click"]
+    cashGiven: int | None = Field(default=None, ge=0)
+
+
+@app.post("/api/orders")
+def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    db, cid = ctx.db, ctx.cid
+    shift = open_shift(db, cid)
+    if not shift:
+        raise HTTPException(409, "Avval smenani oching")
+    if body.discountPct > 0 and body.discountPct not in (5, 10) and ctx.staff.role not in MANAGERS:
+        raise HTTPException(403, "Bunday chegirma uchun ruxsat yo'q")
+    prods = {p.key: p for p in rows(db, Product, cid)}
+    mods = {m.key: m for m in rows(db, Modifier, cid)}
+    ings = {i.key: i for i in rows(db, Ingredient, cid)}
+
+    items: list[dict] = []
+    for it in body.items:
+        product = prods.get(it.productId)
+        if not product:
+            raise HTTPException(400, "Mahsulot topilmadi")
+        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        same = next((x for x in items if x["key"] == built["key"]), None)
+        if same:
+            same["qty"] += built["qty"]
+        else:
+            items.append(built)
+
+    subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
+    discount = round(subtotal * body.discountPct / 100 / 100) * 100
+    total = subtotal - discount
+    if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
+        raise HTTPException(400, "Berilgan pul yetarli emas")
+
+    day_orders = db.scalars(
+        select(Order.number).where(Order.company_id == cid, Order.created_at >= start_of_day_ms())
+    ).all()
+    order = Order(
+        company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
+        items=items, subtotal=subtotal, discount=discount, total=total,
+        cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
+        cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
+    )
+    db.add(order)
+    db.flush()
+    used: dict[str, float] = {}
+    for it in items:
+        for line in it["consumption"]:
+            used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
+    for key, qty in used.items():
+        if key in ings:
+            ings[key].stock -= qty
+            db.add(StockMove(company_id=cid, ingredient=key, qty=-qty, reason="sale", order_id=order.id, staff_name=ctx.staff.name))
+    db.commit()
+    return order_out(order)
+
+
+class StatusIn(BaseModel):
+    status: Literal["new", "preparing", "ready", "done"]
+
+
+@app.patch("/api/orders/{oid}")
+def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(auth)) -> dict:
+    o = ctx.db.get(Order, oid)
+    if not o or o.company_id != ctx.cid:
+        raise HTTPException(404, "Topilmadi")
+    o.status = body.status
+    if body.status == "ready":
+        o.ready_at = now_ms()
+    ctx.db.commit()
+    return order_out(o)
+
+
+@app.get("/api/sync")
+def sync(since: int | None = None, ctx: Ctx = Depends(auth)) -> dict:
+    """Polled by every screen: today's orders, stock levels and the open shift."""
+    db, cid = ctx.db, ctx.cid
+    since = since if since is not None else start_of_day_ms()
+    q = select(Order).where(Order.company_id == cid, Order.created_at >= since).order_by(Order.id)
+    shift = open_shift(db, cid)
+    return {
+        "orders": [order_out(o) for o in db.scalars(q)],
+        "stock": {i.key: i.stock for i in rows(db, Ingredient, cid)},
+        "shift": shift_summary(db, shift) if shift else None,
+    }
+
+
+@app.get("/api/reports/daily")
+def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    days = max(1, min(days, 92))
+    start = start_of_day_ms(days - 1)
+    orders = ctx.db.scalars(select(Order).where(Order.company_id == ctx.cid, Order.created_at >= start)).all()
+    out = []
+    for d in range(days - 1, -1, -1):
+        lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
+        day = [o for o in orders if lo <= o.created_at < hi]
+        out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
+    return out

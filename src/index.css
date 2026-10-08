@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+html, body, #root { height: 100%; }
+body { @apply bg-stone-50 text-stone-900 antialiased; -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; width: 80mm; }
+}

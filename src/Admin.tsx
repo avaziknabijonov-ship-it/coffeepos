@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { t } from './i18n'
 import { TriangleAlert } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
@@ -36,7 +37,7 @@ export default function Admin() {
             {VIEWS.map((v) => (
               <button key={v.id} onClick={() => setView(v.id)}
                 className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium sm:px-4 ${view === v.id ? 'bg-white shadow-sm' : 'text-stone-600'}`}>
-                {v.label}{v.id === 'stock' && low.length > 0 && <span className="ml-1.5 rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
+                {t(v.label)}{v.id === 'stock' && low.length > 0 && <span className="ml-1.5 rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
               </button>
             ))}
           </div>
@@ -82,7 +83,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   useEffect(() => {
     api<{ day: number; revenue: number }[]>('/api/reports/daily?days=7').then(setDaily).catch(() => setDaily([]))
   }, [revenue])
-  const week = daily.map((d, i) => ({ label: i === daily.length - 1 ? 'Bugun' : WEEKDAY[new Date(d.day).getDay()], value: d.revenue }))
+  const week = daily.map((d, i) => ({ label: i === daily.length - 1 ? t('Bugun') : t(WEEKDAY[new Date(d.day).getDay()]), value: d.revenue }))
   const maxWeek = Math.max(1, ...week.map((w) => w.value))
 
   const top = Object.values(
@@ -102,15 +103,15 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
-          <span><b>{low.length} ta mahsulot tugayapti:</b> {low.join(', ')}. <span className="underline">Omborga o'tish</span></span>
+          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
         </button>
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: 'Bugungi tushum', value: som(revenue) },
-          { label: 'Buyurtmalar', value: String(today.length) },
-          { label: "O'rtacha chek", value: som(avg) },
-          { label: 'Yalpi foyda', value: som(profit), sub: `marja ${pct(profit, revenue)}%` },
+          { label: t('Bugungi tushum'), value: som(revenue) },
+          { label: t('Buyurtmalar'), value: String(today.length) },
+          { label: t("O'rtacha chek"), value: som(avg) },
+          { label: t('Yalpi foyda'), value: som(profit), sub: `${t('marja')} ${pct(profit, revenue)}%` },
         ].map((m) => (
           <div key={m.label} className="rounded-2xl border border-stone-200 bg-white p-4">
             <div className="text-sm text-stone-500">{m.label}</div>
@@ -120,7 +121,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
         ))}
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Soatlar bo'yicha tushum (bugun)">
+        <Card title={t("Soatlar bo'yicha tushum (bugun)")}>
           <div className="flex h-44 items-end gap-1">
             {byHour.map((v, i) => (
               <div key={hours[i]} className="group relative flex h-full flex-1 flex-col justify-end">
@@ -132,22 +133,22 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
             {hours.map((h) => <span key={h} className="flex-1 text-center">{h % 2 === 0 ? h : ''}</span>)}
           </div>
         </Card>
-        <Card title="Haftalik tushum">
+        <Card title={t('Haftalik tushum')}>
           <div className="flex h-44 items-end gap-2">
             {week.map((w) => (
               <div key={w.label} className="flex h-full flex-1 flex-col justify-end text-center">
                 <span className="mb-1 text-[10px] text-stone-500">{fmt(w.value / 1000)}k</span>
-                <div className={`rounded-t ${w.label === 'Bugun' ? 'bg-amber-500' : 'bg-stone-300'}`} style={{ height: `${(w.value / maxWeek) * 100}%` }} />
+                <div className={`rounded-t ${w.label === t('Bugun') ? 'bg-amber-500' : 'bg-stone-300'}`} style={{ height: `${(w.value / maxWeek) * 100}%` }} />
               </div>
             ))}
           </div>
           <div className="mt-1 flex gap-2 text-xs text-stone-500">{week.map((w) => <span key={w.label} className="flex-1 text-center">{w.label}</span>)}</div>
-          <p className="mt-2 text-xs text-stone-400">O'tgan kunlar — namuna ma'lumot.</p>
+          <p className="mt-2 text-xs text-stone-400">{t("O'tgan kunlar — namuna ma'lumot.")}</p>
         </Card>
-        <Card title="Top mahsulotlar (bugun)">
+        <Card title={t('Top mahsulotlar (bugun)')}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-stone-500"><tr><th className="pb-2 font-medium">Mahsulot</th><th className="pb-2 text-right font-medium">Soni</th><th className="pb-2 text-right font-medium">Tushum</th><th className="pb-2 text-right font-medium">Foyda</th></tr></thead>
+              <thead className="text-left text-stone-500"><tr><th className="pb-2 font-medium">{t('Mahsulot')}</th><th className="pb-2 text-right font-medium">{t('Soni')}</th><th className="pb-2 text-right font-medium">{t('Tushum')}</th><th className="pb-2 text-right font-medium">{t('Foyda')}</th></tr></thead>
               <tbody>
                 {top.map((t) => (
                   <tr key={t.name} className="border-t border-stone-100">
@@ -158,11 +159,11 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
             </table>
           </div>
         </Card>
-        <Card title="To'lov turlari (bugun)">
+        <Card title={t("To'lov turlari (bugun)")}>
           <div className="space-y-3">
             {payments.map(({ p, sum }) => (
               <div key={p}>
-                <div className="mb-1 flex justify-between text-sm"><span>{PAYMENT_LABEL[p]}</span><span className="text-stone-500">{som(sum)} · {pct(sum, revenue)}%</span></div>
+                <div className="mb-1 flex justify-between text-sm"><span>{t(PAYMENT_LABEL[p])}</span><span className="text-stone-500">{som(sum)} · {pct(sum, revenue)}%</span></div>
                 <div className="h-2.5 rounded-full bg-stone-100"><div className="h-full rounded-full bg-stone-800" style={{ width: `${pct(sum, revenue)}%` }} /></div>
               </div>
             ))}
@@ -174,7 +175,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
 }
 
 function perBulk(cost: number, unit: string) {
-  return unit === 'g' ? `${fmt(cost * 1000)} / kg` : unit === 'ml' ? `${fmt(cost * 1000)} / l` : `${fmt(cost)} / dona`
+  return unit === 'g' ? `${fmt(cost * 1000)} / kg` : unit === 'ml' ? `${fmt(cost * 1000)} / l` : `${fmt(cost)} / ${t('dona')}`
 }
 
 function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
@@ -183,12 +184,12 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
   for (const o of today) for (const it of o.items) for (const l of it.consumption) used[l.ing] = (used[l.ing] ?? 0) + l.qty * it.qty
 
   return (
-    <Card title="Ombor qoldiqlari">
-      <p className="-mt-2 mb-4 text-sm text-stone-500">Har bir sotuvda texkarta bo'yicha avtomatik ayiriladi. Kirim qilish uchun miqdorni yozing.</p>
+    <Card title={t('Ombor qoldiqlari')}>
+      <p className="-mt-2 mb-4 text-sm text-stone-500">{t("Har bir sotuvda texkarta bo'yicha avtomatik ayiriladi. Kirim qilish uchun miqdorni yozing.")}</p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-sm">
           <thead className="text-left text-stone-500">
-            <tr><th className="pb-2 font-medium">Xomashyo</th><th className="pb-2 text-right font-medium">Qoldiq</th><th className="pb-2 text-right font-medium">Bugun sarf</th><th className="pb-2 text-right font-medium">Tannarx</th><th className="pb-2 font-medium pl-4">Holat</th><th className="pb-2 font-medium">Kirim</th></tr>
+            <tr><th className="pb-2 font-medium">{t('Xomashyo')}</th><th className="pb-2 text-right font-medium">{t('Qoldiq')}</th><th className="pb-2 text-right font-medium">{t('Bugun sarf')}</th><th className="pb-2 text-right font-medium">{t('Tannarx')}</th><th className="pb-2 font-medium pl-4">{t('Holat')}</th><th className="pb-2 font-medium">{t('Kirim')}</th></tr>
           </thead>
           <tbody>
             {INGREDIENTS.map((i) => {
@@ -198,18 +199,18 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
               return (
                 <tr key={i.id} className="border-t border-stone-100">
                   <td className="py-2">{i.name}</td>
-                  <td className={`py-2 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>{fmt(q)} {UNIT_LABEL[i.unit]}</td>
+                  <td className={`py-2 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>{fmt(q)} {t(UNIT_LABEL[i.unit])}</td>
                   <td className="py-2 text-right tabular-nums text-stone-500">{fmt(used[i.id] ?? 0)}</td>
                   <td className="py-2 text-right text-stone-500">{perBulk(i.cost, i.unit)}</td>
                   <td className="py-2 pl-4">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isLow ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{isLow ? `Kam (min ${fmt(i.min)})` : 'Yetarli'}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isLow ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{isLow ? t('Kam (min {n})', { n: fmt(i.min) }) : t('Yetarli')}</span>
                   </td>
                   <td className="py-2">
                     <div className="flex gap-1">
                       <input inputMode="numeric" value={amounts[i.id] ?? ''} onChange={(e) => setAmounts((a) => ({ ...a, [i.id]: e.target.value.replace(/\D/g, '') }))}
-                        placeholder={UNIT_LABEL[i.unit]} className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 outline-none focus:border-amber-500" />
+                        placeholder={t(UNIT_LABEL[i.unit])} className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 outline-none focus:border-amber-500" />
                       <button disabled={!amount} onClick={() => { stockMove(i.id, amount, 'intake').then(() => setAmounts((a) => ({ ...a, [i.id]: '' }))).catch((e: Error) => alert(e.message)) }}
-                        className="rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">Qo'shish</button>
+                        className="rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">{t("Qo'shish")}</button>
                     </div>
                   </td>
                 </tr>
@@ -225,7 +226,7 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 function Recipes() {
   const [pid, setPid] = useState('cappuccino')
   const p = PRODUCTS.find((x) => x.id === pid) ?? PRODUCTS[0]
-  if (!p) return <Card><p className="text-stone-500">Menyu bo'sh.</p></Card>
+  if (!p) return <Card><p className="text-stone-500">{t("Menyu bo'sh.")}</p></Card>
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -243,16 +244,16 @@ function Recipes() {
                   {s.recipe.map((l, li) => (
                     <tr key={li} className="border-t border-stone-100">
                       <td className="py-1.5">{ING[l.ing]?.name ?? l.ing}</td>
-                      <td className="py-1.5 text-right text-stone-500">{l.qty} {ING[l.ing] ? UNIT_LABEL[ING[l.ing].unit] : ''}</td>
+                      <td className="py-1.5 text-right text-stone-500">{l.qty} {ING[l.ing] ? t(UNIT_LABEL[ING[l.ing].unit]) : ''}</td>
                       <td className="py-1.5 text-right tabular-nums">{fmt((ING[l.ing]?.cost ?? 0) * l.qty)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <dl className="mt-3 space-y-1 border-t border-stone-200 pt-3 text-sm">
-                <div className="flex justify-between"><dt className="text-stone-500">Tannarx</dt><dd className="font-semibold">{som(cost)}</dd></div>
-                <div className="flex justify-between"><dt className="text-stone-500">Sotuv narxi</dt><dd className="font-semibold">{som(s.price)}</dd></div>
-                <div className="flex justify-between"><dt className="text-stone-500">Marja</dt><dd className="font-semibold text-emerald-700">{pct(s.price - cost, s.price)}%</dd></div>
+                <div className="flex justify-between"><dt className="text-stone-500">{t('Tannarx')}</dt><dd className="font-semibold">{som(cost)}</dd></div>
+                <div className="flex justify-between"><dt className="text-stone-500">{t('Sotuv narxi')}</dt><dd className="font-semibold">{som(s.price)}</dd></div>
+                <div className="flex justify-between"><dt className="text-stone-500">{t('Marja')}</dt><dd className="font-semibold text-emerald-700">{pct(s.price - cost, s.price)}%</dd></div>
               </dl>
             </Card>
           )
@@ -260,8 +261,8 @@ function Recipes() {
       </div>
       {p.mods.length > 0 && (
         <p className="text-sm text-stone-500">
-          Qo'shimchalar texkartani avtomatik o'zgartiradi: {Object.values(MOD).filter((m) => p.mods.includes(m.group) && m.price > 0).map((m) => m.name).join(', ')}.
-          Masalan, bodom suti oddiy sut o'rniga ayiriladi, sirop +15 ml, +1 shot +9 g kofe.
+          {t("Qo'shimchalar texkartani avtomatik o'zgartiradi:")} {Object.values(MOD).filter((m) => p.mods.includes(m.group) && m.price > 0).map((m) => m.name).join(', ')}.
+          {t("Masalan, bodom suti oddiy sut o'rniga ayiriladi, sirop +15 ml, +1 shot +9 g kofe.")}
         </p>
       )}
     </div>
@@ -271,11 +272,11 @@ function Recipes() {
 function Orders({ today }: { today: Orders }) {
   const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
   return (
-    <Card title={`Bugungi buyurtmalar (${list.length})`}>
+    <Card title={t('Bugungi buyurtmalar ({n})', { n: list.length })}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-stone-500">
-            <tr><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">Vaqt</th><th className="pb-2 font-medium">Mijoz</th><th className="pb-2 font-medium">Tarkib</th><th className="pb-2 font-medium">To'lov</th><th className="pb-2 text-right font-medium">Summa</th><th className="pb-2 pl-4 font-medium">Holat</th></tr>
+            <tr><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">{t('Vaqt')}</th><th className="pb-2 font-medium">{t('Mijoz')}</th><th className="pb-2 font-medium">{t('Tarkib')}</th><th className="pb-2 font-medium">{t("To'lov")}</th><th className="pb-2 text-right font-medium">{t('Summa')}</th><th className="pb-2 pl-4 font-medium">{t('Holat')}</th></tr>
           </thead>
           <tbody>
             {list.map((o) => (
@@ -284,9 +285,9 @@ function Orders({ today }: { today: Orders }) {
                 <td className="py-2 text-stone-500">{time(o.createdAt)}</td>
                 <td className="py-2">{o.customer || '—'}</td>
                 <td className="py-2 text-stone-600">{o.items.map((it) => `${it.qty}× ${it.name}${it.size ? ' ' + it.size : ''}`).join(', ')}</td>
-                <td className="py-2">{PAYMENT_LABEL[o.payment]}</td>
+                <td className="py-2">{t(PAYMENT_LABEL[o.payment])}</td>
                 <td className="py-2 text-right font-semibold tabular-nums">{fmt(o.total)}</td>
-                <td className="py-2 pl-4"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{STATUS_LABEL[o.status]}</span></td>
+                <td className="py-2 pl-4"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{t(STATUS_LABEL[o.status])}</span></td>
               </tr>
             ))}
           </tbody>

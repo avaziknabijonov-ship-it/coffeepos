@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { t } from './i18n'
+import LangSwitch from './LangSwitch'
 import { ChefHat, Coffee, LayoutDashboard, LogOut, Monitor, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
@@ -27,7 +29,7 @@ void bootstrap()
 
 export default function App() {
   const { phase, session } = useAppState()
-  if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">Yuklanmoqda…</div>
+  if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">{t('Yuklanmoqda…')}</div>
   if (phase === 'login' || !session) return <Login />
   return <Main role={session.staff.role} />
 }
@@ -63,19 +65,20 @@ function Main({ role }: { role: Role }) {
               className={`relative flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[11px] font-medium sm:flex-row sm:gap-2 sm:text-sm ${tab === id ? 'bg-white text-stone-900' : 'text-stone-300 hover:bg-white/10'}`}
             >
               <Icon className="size-5 sm:size-4" />
-              {label}
+              {t(label)}
               {id === 'barista' && waiting > 0 && (
                 <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-amber-500 text-[11px] font-bold text-white">{waiting}</span>
               )}
             </button>
           ))}
         </nav>
-        {!online && <span title="Server bilan aloqa yo'q" className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">Aloqa yo'q</span></span>}
+        {!online && <span title={t("Server bilan aloqa yo'q")} className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">{t("Aloqa yo'q")}</span></span>}
         <button onClick={() => role !== 'barista' && setShiftOpen(true)} className="hidden rounded-lg px-2 py-1 text-right text-xs leading-tight text-stone-300 hover:bg-white/10 md:block">
-          <div className="flex items-center justify-end gap-1.5"><span className={`size-2 rounded-full ${shift ? 'bg-emerald-400' : 'bg-red-400'}`} />{shift ? 'Smena ochiq' : 'Smena yopiq'}</div>
-          <div><span className="text-white">{session?.staff.name}</span> · {ROLE_LABEL[role]}</div>
+          <div className="flex items-center justify-end gap-1.5"><span className={`size-2 rounded-full ${shift ? 'bg-emerald-400' : 'bg-red-400'}`} />{shift ? t('Smena ochiq') : t('Smena yopiq')}</div>
+          <div><span className="text-white">{session?.staff.name}</span> · {t(ROLE_LABEL[role])}</div>
         </button>
-        <button onClick={() => { if (confirm('Tizimdan chiqilsinmi?')) logout() }} aria-label="Chiqish" title="Chiqish" className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
+        <LangSwitch />
+        <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
       <div className="min-h-0 flex-1">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}

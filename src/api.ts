@@ -1,3 +1,5 @@
+import { t, tServer } from './i18n'
+
 const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const TOKEN_KEY = 'coffeepos-token'
 
@@ -25,14 +27,14 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     })
   } catch {
-    throw new ApiError(0, "Server bilan aloqa yo'q. Internetni tekshiring")
+    throw new ApiError(0, t("Server bilan aloqa yo'q. Internetni tekshiring"))
   }
   if (!res.ok) {
-    let msg = `Xato (${res.status})`
+    let msg = t('Xato ({n})', { n: res.status })
     try {
       const data = await res.json()
-      if (typeof data.detail === 'string') msg = data.detail
-      else if (Array.isArray(data.detail)) msg = "Ma'lumotlar noto'g'ri to'ldirilgan"
+      if (typeof data.detail === 'string') msg = tServer(data.detail)
+      else if (Array.isArray(data.detail)) msg = t("Ma'lumotlar noto'g'ri to'ldirilgan")
     } catch {
       /* keep default message */
     }

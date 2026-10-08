@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { t } from './i18n'
 import { Clock } from 'lucide-react'
 import { STATUS_LABEL } from './data'
 import type { Order, Status } from './data'
@@ -28,7 +29,7 @@ export default function Barista() {
         {COLUMNS.map((c) => (
           <button key={c.status} onClick={() => setMobileCol(c.status)}
             className={`flex-1 rounded-lg py-2 text-sm font-medium ${mobileCol === c.status ? 'bg-stone-900 text-white' : 'text-stone-600'}`}>
-            {STATUS_LABEL[c.status]} ({byStatus(c.status).length})
+            {t(STATUS_LABEL[c.status])} ({byStatus(c.status).length})
           </button>
         ))}
       </div>
@@ -38,10 +39,10 @@ export default function Barista() {
           return (
             <section key={c.status} className={`min-h-0 flex-col rounded-2xl bg-stone-100 ${mobileCol === c.status ? 'flex' : 'hidden md:flex'}`}>
               <h2 className="hidden items-center justify-between px-4 py-3 font-semibold md:flex">
-                {STATUS_LABEL[c.status]}<span className="rounded-full bg-white px-2.5 py-0.5 text-sm">{list.length}</span>
+                {t(STATUS_LABEL[c.status])}<span className="rounded-full bg-white px-2.5 py-0.5 text-sm">{list.length}</span>
               </h2>
               <div className="space-y-3 overflow-y-auto p-3 md:pt-0">
-                {list.length === 0 && <p className="py-10 text-center text-sm text-stone-400">Buyurtma yo'q</p>}
+                {list.length === 0 && <p className="py-10 text-center text-sm text-stone-400">{t("Buyurtma yo'q")}</p>}
                 {list.map((o) => <Ticket key={o.id} order={o} now={now} action={c.action} tone={c.tone} onAction={() => setStatus(o.id, c.next)} />)}
               </div>
             </section>
@@ -73,7 +74,7 @@ function Ticket({ order, now, action, tone, onAction }: { order: Order; now: num
           </li>
         ))}
       </ul>
-      <button onClick={onAction} className={`w-full rounded-xl py-3 font-bold text-white ${tone}`}>{action}</button>
+      <button onClick={onAction} className={`w-full rounded-xl py-3 font-bold text-white ${tone}`}>{t(action)}</button>
     </article>
   )
 }

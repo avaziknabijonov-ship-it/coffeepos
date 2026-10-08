@@ -1,3 +1,5 @@
+import { t } from './i18n'
+
 export type Unit = 'g' | 'ml' | 'dona'
 export interface Ingredient { id: string; name: string; unit: Unit; cost: number; stock: number; min: number }
 export interface RecipeLine { ing: string; qty: number }
@@ -22,7 +24,7 @@ export interface Order {
 }
 
 export const fmt = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-export const som = (n: number) => `${fmt(n)} so'm`
+export const som = (n: number) => `${fmt(n)} ${t("so'm")}`
 export const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
 export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click' }

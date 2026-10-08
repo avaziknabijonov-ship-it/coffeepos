@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react'
 import { setMenu } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
+import { getLang, setLangValue } from './i18n'
+import type { Lang } from './i18n'
 
 export interface Session { staff: { id: number; name: string; role: Role }; company: { slug: string; name: string } }
 export interface ShiftInfo {
@@ -20,6 +22,7 @@ export interface State {
   stock: Record<string, number>
   shift: ShiftInfo | null
   online: boolean
+  lang: Lang
 }
 
 export const startOfToday = () => {
@@ -28,7 +31,7 @@ export const startOfToday = () => {
   return d.getTime()
 }
 
-let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true }
+let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true, lang: getLang() }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch }
@@ -45,6 +48,11 @@ export function useAppState() {
     },
     () => state,
   )
+}
+
+export function setLang(lang: Lang) {
+  setLangValue(lang)
+  set({ lang })
 }
 
 let timer: ReturnType<typeof setInterval> | undefined

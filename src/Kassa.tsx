@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { t } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
@@ -91,10 +92,10 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
           <div className="flex gap-2">
           <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
             <Search className="size-4 text-stone-400" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Mahsulot qidirish" className="w-full bg-transparent outline-none" />
-            {query && <button onClick={() => setQuery('')} aria-label="Tozalash"><X className="size-4 text-stone-400" /></button>}
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />
+            {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
-          <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">Smena</button>
+          <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
           </div>
           <div className="-mx-3 flex gap-2 overflow-x-auto px-3 md:hidden">
             {CATEGORIES.map((c) => (
@@ -113,18 +114,18 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
                 className="relative flex min-h-32 disabled:opacity-40 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
                 <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>
-                {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Stop</span>}
+                {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
                   <span className="block font-semibold leading-tight">{p.name}</span>
                   <span className="mt-1 block text-sm text-stone-500">
-                    {p.sizes.length > 1 ? `${fmt(minPrice)} dan` : som(minPrice)}
+                    {p.sizes.length > 1 ? t('{p} dan', { p: fmt(minPrice) }) : som(minPrice)}
                     {p.sizes.length > 1 && <span className="ml-1 text-xs text-stone-400">· {p.sizes.map((s) => s.label).join('/')}</span>}
                   </span>
                 </span>
               </button>
             )
           })}
-          {products.length === 0 && <p className="col-span-full py-12 text-center text-stone-500">Hech narsa topilmadi.</p>}
+          {products.length === 0 && <p className="col-span-full py-12 text-center text-stone-500">{t('Hech narsa topilmadi.')}</p>}
         </div>
       </main>
 
@@ -133,7 +134,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {count > 0 && !cartOpen && (
         <div className="fixed inset-x-0 bottom-0 z-30 p-3 md:hidden">
           <button onClick={() => setCartOpen(true)} className="flex w-full items-center justify-between rounded-2xl bg-stone-900 px-4 py-4 font-semibold text-white shadow-lg">
-            <span className="flex items-center gap-2"><ShoppingBag className="size-5" />Savat · {count} ta</span>
+            <span className="flex items-center gap-2"><ShoppingBag className="size-5" />{t('Savat')} · {t('{n} ta', { n: count })}</span>
             <span>{som(total)}</span>
           </button>
         </div>
@@ -157,26 +158,26 @@ function Cart(props: {
     <div className="flex min-h-0 w-full flex-col">
       <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
         <div>
-          <div className="text-xs text-stone-500">Yangi buyurtma</div>
+          <div className="text-xs text-stone-500">{t('Yangi buyurtma')}</div>
           <div className="text-lg font-bold">#{props.number}</div>
         </div>
         <div className="flex items-center gap-1">
           {cart.length > 0 && (
             <button onClick={props.clear} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-stone-500 hover:bg-stone-100">
-              <Trash2 className="size-4" />Tozalash
+              <Trash2 className="size-4" />{t('Tozalash')}
             </button>
           )}
-          {props.onClose && <button onClick={props.onClose} aria-label="Yopish" className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>}
+          {props.onClose && <button onClick={props.onClose} aria-label={t('Yopish')} className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>}
         </div>
       </div>
       <div className="px-4 pt-3">
-        <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder="Mijoz ismi (stakan uchun)"
+        <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder={t('Mijoz ismi (stakan uchun)')}
           className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 outline-none focus:border-amber-500" />
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {cart.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-10 text-center text-stone-400">
-            <ShoppingBag className="size-10" />Savat bo'sh. Mahsulotni tanlang.
+            <ShoppingBag className="size-10" />{t("Savat bo'sh. Mahsulotni tanlang.")}
           </div>
         )}
         {cart.map((it) => (
@@ -189,9 +190,9 @@ function Cart(props: {
               <div className="shrink-0 font-semibold">{fmt(it.unitPrice * it.qty)}</div>
             </div>
             <div className="mt-2 flex items-center gap-3">
-              <button onClick={() => props.changeQty(it.key, -1)} aria-label="Kamaytirish" className="grid size-9 place-items-center rounded-lg bg-stone-100 hover:bg-stone-200"><Minus className="size-4" /></button>
+              <button onClick={() => props.changeQty(it.key, -1)} aria-label={t('Kamaytirish')} className="grid size-9 place-items-center rounded-lg bg-stone-100 hover:bg-stone-200"><Minus className="size-4" /></button>
               <span className="w-6 text-center font-semibold">{it.qty}</span>
-              <button onClick={() => props.changeQty(it.key, 1)} aria-label="Ko'paytirish" className="grid size-9 place-items-center rounded-lg bg-stone-100 hover:bg-stone-200"><Plus className="size-4" /></button>
+              <button onClick={() => props.changeQty(it.key, 1)} aria-label={t("Ko'paytirish")} className="grid size-9 place-items-center rounded-lg bg-stone-100 hover:bg-stone-200"><Plus className="size-4" /></button>
               <span className="ml-auto text-xs text-stone-400">{fmt(it.unitPrice)} × {it.qty}</span>
             </div>
           </div>
@@ -199,23 +200,23 @@ function Cart(props: {
       </div>
       <div className="space-y-3 border-t border-stone-200 p-4">
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-stone-500">Chegirma</span>
+          <span className="text-stone-500">{t('Chegirma')}</span>
           {[0, 5, 10].map((p) => (
             <button key={p} onClick={() => props.setDiscountPct(p)}
               className={`rounded-lg px-3 py-1.5 font-medium ${props.discountPct === p ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>
-              {p === 0 ? "Yo'q" : `${p}%`}
+              {p === 0 ? t("Yo'q") : `${p}%`}
             </button>
           ))}
         </div>
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">
-            <div className="flex justify-between"><span>Oraliq summa</span><span>{som(props.subtotal)}</span></div>
-            <div className="flex justify-between"><span>Chegirma {props.discountPct}%</span><span>−{som(props.discount)}</span></div>
+            <div className="flex justify-between"><span>{t('Oraliq summa')}</span><span>{som(props.subtotal)}</span></div>
+            <div className="flex justify-between"><span>{t('Chegirma')} {props.discountPct}%</span><span>−{som(props.discount)}</span></div>
           </div>
         )}
         <button disabled={cart.length === 0} onClick={props.onPay}
           className="flex w-full items-center justify-between rounded-2xl bg-amber-600 px-5 py-4 text-lg font-bold text-white shadow hover:bg-amber-700 disabled:bg-stone-300">
-          <span>To'lov</span><span>{som(props.total)}</span>
+          <span>{t("To'lov")}</span><span>{som(props.total)}</span>
         </button>
       </div>
     </div>
@@ -247,12 +248,12 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
       <div className="flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-white sm:max-w-lg sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
           <h2 className="text-xl font-bold">{product.name}</h2>
-          <button onClick={onClose} aria-label="Yopish" className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>
+          <button onClick={onClose} aria-label={t('Yopish')} className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>
         </div>
         <div className="space-y-5 overflow-y-auto px-5 py-4">
           {product.sizes.length > 1 && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-stone-500">Hajm</h3>
+              <h3 className="mb-2 text-sm font-semibold text-stone-500">{t('Hajm')}</h3>
               <div className="grid grid-cols-3 gap-2">
                 {product.sizes.map((s, i) => (
                   <Chip key={s.code} active={i === sizeIdx} onClick={() => setSizeIdx(i)}>
@@ -266,7 +267,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
           )}
           {has('milk') && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-stone-500">Sut turi</h3>
+              <h3 className="mb-2 text-sm font-semibold text-stone-500">{t('Sut turi')}</h3>
               <div className="grid grid-cols-2 gap-2">
                 {group('milk').map((m) => (
                   <Chip key={m.id} active={milk === m.id} onClick={() => setMilk(m.id)}>
@@ -278,7 +279,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
           )}
           {has('syrup') && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-stone-500">Sirop <span className="font-normal">(bir nechtasini tanlash mumkin)</span></h3>
+              <h3 className="mb-2 text-sm font-semibold text-stone-500">{t('Sirop')} <span className="font-normal">({t('bir nechtasini tanlash mumkin')})</span></h3>
               <div className="grid grid-cols-3 gap-2">
                 {group('syrup').map((m) => (
                   <Chip key={m.id} active={syrups.includes(m.id)} onClick={() => setSyrups((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))}>
@@ -290,9 +291,9 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
           )}
           {has('shot') && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-stone-500">Qo'shimcha espresso</h3>
+              <h3 className="mb-2 text-sm font-semibold text-stone-500">{t("Qo'shimcha espresso")}</h3>
               <div className="grid grid-cols-3 gap-2">
-                <Chip active={shot === ''} onClick={() => setShot('')}>Yo'q</Chip>
+                <Chip active={shot === ''} onClick={() => setShot('')}>{t("Yo'q")}</Chip>
                 {group('shot').map((m) => (
                   <Chip key={m.id} active={shot === m.id} onClick={() => setShot(m.id)}>
                     {m.name}<span className="block text-stone-500">+{fmt(m.price)}</span>
@@ -304,12 +305,12 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
         </div>
         <div className="flex items-center gap-3 border-t border-stone-200 p-4">
           <div className="flex items-center gap-2">
-            <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Kamaytirish" className="grid size-12 place-items-center rounded-xl bg-stone-100"><Minus className="size-5" /></button>
+            <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t('Kamaytirish')} className="grid size-12 place-items-center rounded-xl bg-stone-100"><Minus className="size-5" /></button>
             <span className="w-6 text-center text-lg font-bold">{qty}</span>
-            <button onClick={() => setQty((q) => q + 1)} aria-label="Ko'paytirish" className="grid size-12 place-items-center rounded-xl bg-stone-100"><Plus className="size-5" /></button>
+            <button onClick={() => setQty((q) => q + 1)} aria-label={t("Ko'paytirish")} className="grid size-12 place-items-center rounded-xl bg-stone-100"><Plus className="size-5" /></button>
           </div>
           <button onClick={() => onAdd(item)} className="flex flex-1 items-center justify-between gap-2 rounded-xl bg-amber-600 px-4 py-3.5 font-bold text-white hover:bg-amber-700">
-            <span>Qo'shish</span><span>{som(item.unitPrice * qty)}</span>
+            <span>{t("Qo'shish")}</span><span>{som(item.unitPrice * qty)}</span>
           </button>
         </div>
       </div>
@@ -345,22 +346,22 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
       <div className="w-full rounded-t-3xl bg-white sm:max-w-md sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
           <div>
-            <div className="text-sm text-stone-500">To'lanadigan summa</div>
+            <div className="text-sm text-stone-500">{t("To'lanadigan summa")}</div>
             <div className="text-2xl font-bold">{som(total)}</div>
           </div>
-          <button onClick={onClose} aria-label="Yopish" className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>
+          <button onClick={onClose} aria-label={t('Yopish')} className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>
         </div>
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-2">
             {PAY_OPTIONS.map(({ id, icon: Icon }) => (
               <Chip key={id} active={method === id} onClick={() => setMethod(id)}>
-                <span className="flex items-center gap-2 py-1 text-base"><Icon className="size-5" />{PAYMENT_LABEL[id]}</span>
+                <span className="flex items-center gap-2 py-1 text-base"><Icon className="size-5" />{t(PAYMENT_LABEL[id])}</span>
               </Chip>
             ))}
           </div>
           {method === 'naqd' && (
             <div className="space-y-2">
-              <input inputMode="numeric" autoFocus value={cash ? fmt(given) : ''} onChange={(e) => setCash(e.target.value)} placeholder="Mijoz bergan summa"
+              <input inputMode="numeric" autoFocus value={cash ? fmt(given) : ''} onChange={(e) => setCash(e.target.value)} placeholder={t('Mijoz bergan summa')}
                 className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-3 text-lg outline-none focus:border-amber-500" />
               <div className="flex flex-wrap gap-2">
                 {quick.map((q) => (
@@ -369,18 +370,18 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
               </div>
               {given > 0 && (
                 <div className={`flex justify-between rounded-xl px-4 py-3 font-semibold ${given >= total ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
-                  <span>{given >= total ? 'Qaytim' : 'Yetmaydi'}</span><span>{som(Math.abs(given - total))}</span>
+                  <span>{given >= total ? t('Qaytim') : t('Yetmaydi')}</span><span>{som(Math.abs(given - total))}</span>
                 </div>
               )}
             </div>
           )}
           {(method === 'payme' || method === 'click') && (
-            <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">To'lovni ilovada tekshirib, qo'lda tasdiqlang. QR va avtomatik tasdiqlash keyingi versiyada.</p>
+            <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">{t("To'lovni ilovada tekshirib, qo'lda tasdiqlang. QR va avtomatik tasdiqlash keyingi versiyada.")}</p>
           )}
           {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
           <button disabled={!ok || busy} onClick={confirm}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-lg font-bold text-white hover:bg-emerald-700 disabled:bg-stone-300">
-            <Check className="size-5" />Tasdiqlash
+            <Check className="size-5" />{t('Tasdiqlash')}
           </button>
         </div>
       </div>
@@ -389,18 +390,19 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
 }
 
 function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const company = useAppState().session?.company.name ?? 'CoffeePOS'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="flex max-h-[92dvh] w-full max-w-sm flex-col rounded-3xl bg-white" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col items-center gap-1 px-5 pt-5 text-center">
           <span className="grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check className="size-7" /></span>
-          <div className="text-lg font-bold">Buyurtma #{order.number} qabul qilindi</div>
-          <div className="text-sm text-stone-500">Barista ekraniga yuborildi</div>
+          <div className="text-lg font-bold">{t('Buyurtma #{n} qabul qilindi', { n: order.number })}</div>
+          <div className="text-sm text-stone-500">{t('Barista ekraniga yuborildi')}</div>
         </div>
         <div className="print-area mx-5 my-4 overflow-y-auto rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 font-mono text-xs">
-          <div className="text-center font-bold">COFFEEPOS DEMO</div>
+          <div className="text-center font-bold">{company}</div>
           <div className="text-center text-stone-500">{new Date(order.createdAt).toLocaleDateString('ru-RU')} {time(order.createdAt)} · #{order.number}</div>
-          {order.customer && <div className="mt-1 text-center">Mijoz: {order.customer}</div>}
+          {order.customer && <div className="mt-1 text-center">{t('Mijoz')}: {order.customer}</div>}
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.items.map((it) => (
             <div key={it.key} className="mb-1">
@@ -409,20 +411,20 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
             </div>
           ))}
           <div className="my-2 border-t border-dashed border-stone-300" />
-          {order.discount > 0 && <div className="flex justify-between"><span>Chegirma</span><span>−{fmt(order.discount)}</span></div>}
-          <div className="flex justify-between text-sm font-bold"><span>JAMI</span><span>{som(order.total)}</span></div>
-          <div className="flex justify-between"><span>To'lov</span><span>{PAYMENT_LABEL[order.payment]}</span></div>
+          {order.discount > 0 && <div className="flex justify-between"><span>{t('Chegirma')}</span><span>−{fmt(order.discount)}</span></div>}
+          <div className="flex justify-between text-sm font-bold"><span>{t('JAMI')}</span><span>{som(order.total)}</span></div>
+          <div className="flex justify-between"><span>{t("To'lov")}</span><span>{t(PAYMENT_LABEL[order.payment])}</span></div>
           {order.cashGiven != null && (
             <>
-              <div className="flex justify-between"><span>Berildi</span><span>{fmt(order.cashGiven)}</span></div>
-              <div className="flex justify-between"><span>Qaytim</span><span>{fmt(order.cashGiven - order.total)}</span></div>
+              <div className="flex justify-between"><span>{t('cash:Berildi')}</span><span>{fmt(order.cashGiven)}</span></div>
+              <div className="flex justify-between"><span>{t('Qaytim')}</span><span>{fmt(order.cashGiven - order.total)}</span></div>
             </>
           )}
-          <div className="mt-2 text-center text-stone-500">Rahmat! Yana keling.</div>
+          <div className="mt-2 text-center text-stone-500">{t('Rahmat! Yana keling.')}</div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
-          <button onClick={() => window.print()} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 font-semibold hover:bg-stone-200"><Printer className="size-4" />Chek</button>
-          <button onClick={onClose} className="flex-[2] rounded-xl bg-stone-900 py-3 font-semibold text-white">Yangi buyurtma</button>
+          <button onClick={() => window.print()} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 font-semibold hover:bg-stone-200"><Printer className="size-4" />{t('Chek')}</button>
+          <button onClick={onClose} className="flex-[2] rounded-xl bg-stone-900 py-3 font-semibold text-white">{t('Yangi buyurtma')}</button>
         </div>
       </div>
     </div>

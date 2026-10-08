@@ -44,3 +44,18 @@ npm run dev                                  # frontend, /api -> :8000 proxy
 - `SECRET_KEY` berilmasa, bazada avtomatik yaratiladi. `SEED_DEMO=0` demo kofe barni o'chiradi.
 - Frontend production build: `VITE_API_URL=https://api-manzil npm run build`.
 - Demo: login `demo`, PIN 1111 rahbar, 2222 kassir, 3333 barista.
+
+## Serverga joylash (VPS, Docker)
+
+Talab: Docker va Docker Compose o'rnatilgan Linux server.
+
+```
+git clone https://github.com/avaziknabijonov-ship-it/coffeepos.git && cd coffeepos
+cp .env.example .env    # POSTGRES_PASSWORD va SECRET_KEY ni almashtiring (openssl rand -hex 32)
+docker compose up -d --build
+curl localhost/healthz  # {"ok":true}
+```
+
+- Konteynerlar: `db` (PostgreSQL 16, ma'lumot `pgdata` volume'da), `api` (FastAPI), `web` (nginx: frontend + `/api` proxy).
+- HTTPS uchun domenni server IP'ga yo'naltiring va oldiga Caddy yoki certbot+nginx qo'ying.
+- Zaxira nusxa: `docker compose exec db pg_dump -U coffeepos coffeepos > backup.sql`.

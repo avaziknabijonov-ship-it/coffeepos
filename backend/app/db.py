@@ -1,7 +1,7 @@
 import os
 import time
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, UniqueConstraint, create_engine
+from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -38,7 +38,7 @@ class Company(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[int] = mapped_column(Integer, default=now_ms)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
 class Staff(Base):
@@ -96,7 +96,7 @@ class Modifier(Base):
     key: Mapped[str] = mapped_column(String(64))
     group: Mapped[str] = mapped_column(String(16))
     name: Mapped[str] = mapped_column(String(64))
-    price: Mapped[int] = mapped_column(Integer, default=0)
+    price: Mapped[int] = mapped_column(BigInteger, default=0)
     effect: Mapped[dict] = mapped_column(JSON, default=dict)
     sort: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -106,12 +106,12 @@ class Shift(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     staff_name: Mapped[str] = mapped_column(String(64))
-    opened_at: Mapped[int] = mapped_column(Integer, default=now_ms)
-    opening_cash: Mapped[int] = mapped_column(Integer, default=0)
-    closed_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    opened_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    opening_cash: Mapped[int] = mapped_column(BigInteger, default=0)
+    closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     closed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    closing_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    expected_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    closing_cash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expected_cash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class Order(Base):
@@ -122,15 +122,15 @@ class Order(Base):
     number: Mapped[int] = mapped_column(Integer)
     customer: Mapped[str] = mapped_column(String(64), default="")
     items: Mapped[list] = mapped_column(JSON)
-    subtotal: Mapped[int] = mapped_column(Integer)
-    discount: Mapped[int] = mapped_column(Integer, default=0)
-    total: Mapped[int] = mapped_column(Integer)
-    cost: Mapped[int] = mapped_column(Integer)
+    subtotal: Mapped[int] = mapped_column(BigInteger)
+    discount: Mapped[int] = mapped_column(BigInteger, default=0)
+    total: Mapped[int] = mapped_column(BigInteger)
+    cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
-    created_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
-    ready_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
 
 
@@ -143,4 +143,4 @@ class StockMove(Base):
     reason: Mapped[str] = mapped_column(String(16))
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[int] = mapped_column(Integer, default=now_ms, index=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
-import { ChefHat, Coffee, LayoutDashboard, LogOut, Settings, Store, WifiOff } from 'lucide-react'
+import { Coffee, LayoutDashboard, LogOut, Settings, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
-import Barista from './Barista'
 import Admin from './Admin'
 import Login from './Login'
 import { CloseShiftModal } from './Shift'
@@ -12,10 +11,9 @@ import { ROLE_LABEL } from './data'
 import type { Role } from './data'
 import { bootstrap, logout, useAppState } from './store'
 
-type Tab = 'kassa' | 'barista' | 'dashboard' | 'admin'
+type Tab = 'kassa' | 'dashboard' | 'admin'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
-  { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir'] },
-  { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'kassir', 'barista'] },
+  { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'admin'] },
   { id: 'admin', label: 'Admin', icon: Settings, roles: ['owner', 'admin'] },
 ]
@@ -38,8 +36,7 @@ function Main({ role }: { role: Role }) {
   const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : tabs[0].id)
   const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
   const [shiftOpen, setShiftOpen] = useState(false)
-  const { orders, shift, session, online } = useAppState()
-  const waiting = orders.filter((o) => o.status === 'new').length
+  const { shift, session, online } = useAppState()
 
   useEffect(() => {
     const onHash = () => setTab(pick(fromHash()))
@@ -65,9 +62,6 @@ function Main({ role }: { role: Role }) {
             >
               <Icon className="size-5 sm:size-4" />
               {t(label)}
-              {id === 'barista' && waiting > 0 && (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-amber-500 text-[11px] font-bold text-white">{waiting}</span>
-              )}
             </button>
           ))}
         </nav>
@@ -81,7 +75,6 @@ function Main({ role }: { role: Role }) {
       </header>
       <div className="min-h-0 flex-1">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
-        {tab === 'barista' && <Barista />}
         {tab === 'dashboard' && <Admin key="dashboard" initialView="dashboard" />}
         {tab === 'admin' && <Admin key="admin" initialView="stock" />}
       </div>

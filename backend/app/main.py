@@ -14,6 +14,7 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
+from .platform import router as platform_router
 from .db import (
     Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
@@ -65,6 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 limiter = LoginLimiter()
+app.include_router(platform_router)
 
 
 def get_db() -> Iterator[Session]:

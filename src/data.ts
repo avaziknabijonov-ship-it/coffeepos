@@ -5,13 +5,13 @@ export interface Ingredient { id: string; name: string; unit: Unit; cost: number
 export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
-export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean }
+export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string | null }
 export interface Category { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
 export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
 
-export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
+export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'qarz'
 export type Status = 'new' | 'preparing' | 'ready' | 'done'
 export interface OrderItem {
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
@@ -27,7 +27,7 @@ export const fmt = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})
 export const som = (n: number) => `${fmt(n)} ${t("so'm")}`
 export const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
-export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click' }
+export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click', qarz: 'Qarz' }
 export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi' }
 export const UNIT_LABEL: Record<Unit, string> = { g: 'g', ml: 'ml', dona: 'dona' }
 

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from . import seed
 from .platform import router as platform_router, page_router as platform_page_router
 from .db import (
-    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
+    Base, Category, Company, Debt, DebtPayment, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -36,6 +36,14 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
         if "inventory_id" not in have:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN inventory_id INTEGER"))
+        staff_cols = {c["name"] for c in inspect(engine).get_columns("staff")}
+        product_cols = {c["name"] for c in inspect(engine).get_columns("products")}
+        if "salary_type" not in staff_cols:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN salary_type VARCHAR(16) DEFAULT 'monthly'"))
+        if "salary_rate" not in staff_cols:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN salary_rate BIGINT DEFAULT 0"))
+        if "image_url" not in product_cols:
+            conn.execute(text("ALTER TABLE products ADD COLUMN image_url TEXT"))
 
 
 def init_db() -> None:
@@ -109,7 +117,7 @@ def require(*roles: str):
 # ---------- serializers ----------
 
 def staff_out(s: Staff) -> dict:
-    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active}
+    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "salaryType": s.salary_type or "monthly", "salaryRate": s.salary_rate or 0}
 
 
 def order_out(o: Order) -> dict:
@@ -126,7 +134,7 @@ def ingredient_out(i: Ingredient) -> dict:
 
 
 def product_out(p: Product) -> dict:
-    return {"id": p.key, "cat": p.cat, "name": p.name, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+    return {"id": p.key, "cat": p.cat, "name": p.name, "mods": p.mods, "sizes": p.sizes, "active": p.active, "imageUrl": p.image_url}
 
 
 def shift_out(s: Shift | None) -> dict | None:
@@ -334,6 +342,7 @@ class ProductIn(BaseModel):
     mods: list[Literal["milk", "syrup", "shot"]] = []
     sizes: list[SizeIn] = Field(min_length=1)
     active: bool = True
+    imageUrl: str | None = Field(default=None, max_length=500000)
 
 
 def validate_product(ctx: Ctx, body: ProductIn) -> None:
@@ -353,7 +362,7 @@ def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
     validate_product(ctx, body)
     p = Product(
         company_id=ctx.cid, key=slugify(body.name), cat=body.cat, name=body.name.strip(), mods=body.mods,
-        sizes=[s.model_dump() for s in body.sizes], active=body.active, sort=len(rows(ctx.db, Product, ctx.cid)),
+        sizes=[s.model_dump() for s in body.sizes], active=body.active, image_url=body.imageUrl, sort=len(rows(ctx.db, Product, ctx.cid)),
     )
     ctx.db.add(p)
     ctx.db.commit()
@@ -365,7 +374,7 @@ def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGE
     p = get_row(ctx.db, Product, ctx.cid, key)
     validate_product(ctx, body)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
-    p.sizes, p.active = [s.model_dump() for s in body.sizes], body.active
+    p.sizes, p.active, p.image_url = [s.model_dump() for s in body.sizes], body.active, body.imageUrl
     ctx.db.commit()
     return product_out(p)
 
@@ -574,6 +583,8 @@ class StaffIn(BaseModel):
     role: Role
     pin: str | None = Field(default=None, pattern=PIN_RE)
     active: bool = True
+    salaryType: Literal["monthly", "daily"] = "monthly"
+    salaryRate: int = Field(default=0, ge=0)
 
 
 def guard_owner(ctx: Ctx, role: str) -> None:
@@ -593,7 +604,7 @@ def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(400, "PIN kerak")
     if pin_taken(ctx.db, ctx.cid, body.pin):
         raise HTTPException(409, "Bu PIN band")
-    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active)
+    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active, salary_type=body.salaryType, salary_rate=body.salaryRate)
     ctx.db.add(s)
     ctx.db.commit()
     return staff_out(s)
@@ -613,6 +624,7 @@ def update_staff(sid: int, body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))
             raise HTTPException(409, "Bu PIN band")
         s.pin_hash = hash_pin(body.pin)
     s.name, s.role, s.active = body.name.strip(), body.role, body.active
+    s.salary_type, s.salary_rate = body.salaryType, body.salaryRate
     ctx.db.commit()
     return staff_out(s)
 
@@ -631,7 +643,8 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     orders = db.scalars(select(Order).where(Order.shift_id == shift.id)).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        if o.payment != "qarz":
+            by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
     return {
         "shift": shift_out(shift),
         "orders": len(orders),
@@ -688,7 +701,9 @@ class OrderIn(BaseModel):
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
     discountPct: int = Field(default=0, ge=0, le=100)
-    payment: Literal["naqd", "karta", "payme", "click"]
+    payment: Literal["naqd", "karta", "payme", "click", "qarz"]
+    debtPhone: str = Field(default="", max_length=32)
+    debtNote: str = Field(default="", max_length=256)
     cashGiven: int | None = Field(default=None, ge=0)
 
 
@@ -719,6 +734,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
     discount = round(subtotal * body.discountPct / 100 / 100) * 100
     total = subtotal - discount
+    if body.payment == "qarz" and not body.customer.strip():
+        raise HTTPException(400, "Qarz uchun mijoz ismi kerak")
     if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
         raise HTTPException(400, "Berilgan pul yetarli emas")
 
@@ -733,6 +750,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     )
     db.add(order)
     db.flush()
+    if body.payment == "qarz":
+        db.add(Debt(company_id=cid, order_id=order.id, customer=body.customer.strip(), phone=body.debtPhone.strip(), note=body.debtNote.strip(), total=total))
     used: dict[str, float] = {}
     for it in items:
         for line in it["consumption"]:
@@ -786,3 +805,92 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
         day = [o for o in orders if lo <= o.created_at < hi]
         out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
     return out
+
+
+# ---------- salary and debts ----------
+
+class SalaryConfigIn(BaseModel):
+    salaryType: Literal["monthly", "daily"]
+    salaryRate: int = Field(ge=0)
+
+
+@app.patch("/api/staff/{sid}/salary")
+def salary_config(sid: int, body: SalaryConfigIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    staff = ctx.db.get(Staff, sid)
+    if not staff or staff.company_id != ctx.cid:
+        raise HTTPException(404, "Xodim topilmadi")
+    staff.salary_type, staff.salary_rate = body.salaryType, body.salaryRate
+    ctx.db.commit()
+    return staff_out(staff)
+
+
+class SalaryEntryIn(BaseModel):
+    staffId: int
+    kind: Literal["day", "bonus", "deduction", "advance", "payment"]
+    amount: int = Field(gt=0)
+    note: str = Field(default="", max_length=256)
+
+
+@app.post("/api/salary/entries")
+def add_salary_entry(body: SalaryEntryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    staff = ctx.db.get(Staff, body.staffId)
+    if not staff or staff.company_id != ctx.cid:
+        raise HTTPException(404, "Xodim topilmadi")
+    row = SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind=body.kind, amount=body.amount, note=body.note)
+    ctx.db.add(row)
+    ctx.db.commit()
+    return {"id": row.id}
+
+
+@app.get("/api/salary")
+def salary_report(month: str, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    try:
+        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=TZ)
+        end = (start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1))
+    except ValueError:
+        raise HTTPException(400, "Oy YYYY-MM formatida bo'lsin")
+    entries = ctx.db.scalars(select(SalaryEntry).where(SalaryEntry.company_id == ctx.cid, SalaryEntry.created_at >= int(start.timestamp() * 1000), SalaryEntry.created_at < int(end.timestamp() * 1000))).all()
+    result = []
+    for staff in rows(ctx.db, Staff, ctx.cid):
+        own = [e for e in entries if e.staff_id == staff.id]
+        days = sum(e.amount for e in own if e.kind == "day")
+        bonus = sum(e.amount for e in own if e.kind == "bonus")
+        deduction = sum(e.amount for e in own if e.kind == "deduction")
+        paid = sum(e.amount for e in own if e.kind in ("advance", "payment"))
+        earned = (staff.salary_rate * days if staff.salary_type == "daily" else staff.salary_rate) + bonus - deduction
+        result.append({"staffId": staff.id, "name": staff.name, "salaryType": staff.salary_type, "salaryRate": staff.salary_rate, "days": days, "earned": earned, "paid": paid, "remaining": earned - paid})
+    return result
+
+
+@app.get("/api/debts")
+def list_debts(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    debts = ctx.db.scalars(select(Debt).where(Debt.company_id == ctx.cid).order_by(Debt.id.desc())).all()
+    return [{"id": d.id, "orderId": d.order_id, "customer": d.customer, "phone": d.phone, "note": d.note, "total": d.total, "paid": d.paid, "remaining": d.total - d.paid, "createdAt": d.created_at} for d in debts]
+
+
+class DebtPaymentIn(BaseModel):
+    amount: int = Field(gt=0)
+    method: Literal["naqd", "karta", "payme", "click"]
+    note: str = Field(default="", max_length=256)
+
+
+@app.post("/api/debts/{debt_id}/payments")
+def pay_debt(debt_id: int, body: DebtPaymentIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    debt = ctx.db.get(Debt, debt_id)
+    if not debt or debt.company_id != ctx.cid:
+        raise HTTPException(404, "Qarz topilmadi")
+    if body.amount > debt.total - debt.paid:
+        raise HTTPException(400, "To'lov qarz qoldig'idan oshmasin")
+    debt.paid += body.amount
+    ctx.db.add(DebtPayment(company_id=ctx.cid, debt_id=debt.id, amount=body.amount, method=body.method, note=body.note))
+    ctx.db.commit()
+    return {"remaining": debt.total - debt.paid}
+
+
+@app.get("/api/debts/{debt_id}/payments")
+def debt_payment_history(debt_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    debt = ctx.db.get(Debt, debt_id)
+    if not debt or debt.company_id != ctx.cid:
+        raise HTTPException(404, "Qarz topilmadi")
+    payments = ctx.db.scalars(select(DebtPayment).where(DebtPayment.company_id == ctx.cid, DebtPayment.debt_id == debt_id).order_by(DebtPayment.id.desc())).all()
+    return [{"id": p.id, "amount": p.amount, "method": p.method, "note": p.note, "createdAt": p.created_at} for p in payments]

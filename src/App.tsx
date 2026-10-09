@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
-import { ChefHat, Coffee, LayoutDashboard, LogOut, Monitor, Store, WifiOff } from 'lucide-react'
+import { ChefHat, Coffee, LayoutDashboard, LogOut, Settings, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
 import Barista from './Barista'
-import Display from './Display'
 import Admin from './Admin'
 import Login from './Login'
 import { CloseShiftModal } from './Shift'
@@ -13,12 +12,12 @@ import { ROLE_LABEL } from './data'
 import type { Role } from './data'
 import { bootstrap, logout, useAppState } from './store'
 
-type Tab = 'kassa' | 'barista' | 'display' | 'admin'
+type Tab = 'kassa' | 'barista' | 'dashboard' | 'admin'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir'] },
   { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'kassir', 'barista'] },
-  { id: 'display', label: 'Mijoz ekrani', icon: Monitor, roles: ['owner', 'admin', 'kassir', 'barista'] },
-  { id: 'admin', label: 'Admin', icon: LayoutDashboard, roles: ['owner', 'admin'] },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'admin'] },
+  { id: 'admin', label: 'Admin', icon: Settings, roles: ['owner', 'admin'] },
 ]
 const fromHash = (): Tab | null => {
   const h = window.location.hash.slice(1)
@@ -83,8 +82,8 @@ function Main({ role }: { role: Role }) {
       <div className="min-h-0 flex-1">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'barista' && <Barista />}
-        {tab === 'display' && <Display />}
-        {tab === 'admin' && <Admin />}
+        {tab === 'dashboard' && <Admin key="dashboard" initialView="dashboard" />}
+        {tab === 'admin' && <Admin key="admin" initialView="stock" />}
       </div>
       {shiftOpen && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
     </div>

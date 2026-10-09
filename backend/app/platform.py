@@ -6,9 +6,11 @@ and MFA before production.
 """
 import os
 import secrets
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +18,14 @@ from sqlalchemy.orm import Session
 from .db import Company, LicenseAudit, Subscription, now_ms
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
+page_router = APIRouter()
+
+
+@page_router.get("/platform-admin", response_class=HTMLResponse, include_in_schema=False)
+def platform_admin_page() -> HTMLResponse:
+    page = Path(__file__).with_name("platform_admin.html")
+    return HTMLResponse(page.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff"})
+
 
 
 def platform_auth(x_platform_key: str = Header(default="")) -> None:

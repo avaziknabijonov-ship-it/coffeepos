@@ -46,19 +46,19 @@ function Main({ role }: { role: Role }) {
   }, [role])
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="flex shrink-0 items-center gap-2 bg-stone-900 px-3 py-2 text-white sm:gap-4 sm:px-4">
+    <div className="flex min-h-dvh flex-col overflow-hidden">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 bg-stone-900 px-3 py-2 text-white sm:flex-nowrap sm:gap-4 sm:px-4">
         <div className="flex items-center gap-2 font-semibold">
           <span className="grid size-8 place-items-center rounded-lg bg-amber-600"><Coffee className="size-5" /></span>
           <span className="hidden sm:inline">CoffeePOS</span>
           <span className="hidden max-w-40 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 lg:inline">{session?.company.name}</span>
         </div>
-        <nav className="flex flex-1 justify-center gap-1 sm:justify-start">
+        <nav className="order-3 flex w-full justify-around gap-1 border-t border-white/10 pt-2 sm:order-none sm:w-auto sm:flex-1 sm:justify-start sm:border-0 sm:pt-0">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => { window.location.hash = id }}
-              className={`relative flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[11px] font-medium sm:flex-row sm:gap-2 sm:text-sm ${tab === id ? 'bg-white text-stone-900' : 'text-stone-300 hover:bg-white/10'}`}
+              className={`relative flex flex-col items-center gap-0.5 min-h-11 min-w-18 touch-manipulation rounded-lg px-3 py-1.5 text-[11px] font-medium sm:flex-row sm:gap-2 sm:text-sm ${tab === id ? 'bg-white text-stone-900' : 'text-stone-300 hover:bg-white/10'}`}
             >
               <Icon className="size-5 sm:size-4" />
               {t(label)}
@@ -73,7 +73,7 @@ function Main({ role }: { role: Role }) {
         <LangSwitch />
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'dashboard' && <Admin key="dashboard" initialView="dashboard" />}
         {tab === 'admin' && <Admin key="admin" initialView="stock" />}

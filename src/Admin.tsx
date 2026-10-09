@@ -255,7 +255,7 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 function Recipes() {
   const [pid, setPid] = useState('cappuccino')
   const [editing, setEditing] = useState(false)
-  const { menuVersion, session } = useAppState()
+  const { menuVersion } = useAppState()
   void menuVersion
   const p = PRODUCTS.find((x) => x.id === pid) ?? PRODUCTS[0]
   if (!p) return <Card><p className="text-stone-500">{t("Menyu bo'sh.")}</p></Card>

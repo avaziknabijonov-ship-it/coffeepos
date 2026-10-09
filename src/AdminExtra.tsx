@@ -111,7 +111,7 @@ export function MenuEditor() {
 
 const emptySize = (): Size => ({ code: '-', label: '', price: 0, recipe: [] })
 
-function ProductForm({ product, canDelete, onClose }: { product: Product | null; canDelete: boolean; onClose: () => void }) {
+export function ProductForm({ product, canDelete, onClose }: { product: Product | null; canDelete: boolean; onClose: () => void }) {
   const [name, setName] = useState(product?.name ?? '')
   const [cat, setCat] = useState(product?.cat ?? CATEGORIES[0]?.id ?? '')
   const [mods, setMods] = useState<ModGroupId[]>(product?.mods ?? [])

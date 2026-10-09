@@ -175,3 +175,15 @@ class Subscription(Base):
     grace_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
+class LicenseAudit(Base):
+    """Append-only record of platform subscription administration."""
+
+    __tablename__ = "license_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)

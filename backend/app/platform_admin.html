@@ -77,4 +77,19 @@ $('form').onsubmit=async(e)=>{
  try{await api('/companies/'+encodeURIComponent($('company').value)+'/subscription',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});show('saveMsg','Saqlandi');await refresh()}
  catch(err){show('saveMsg',err.message,true)}
 };
+$('newCompany').onsubmit=async e=>{
+ e.preventDefault();
+ if(!key){show('newMsg','Avval administrator sifatida kiring',true);return}
+ const body={name:$('newName').value.trim(),slug:$('newSlug').value.trim(),ownerName:$('newOwner').value.trim(),ownerPin:$('newPin').value};
+ try{
+  const result=await api('/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  $('newPin').value='';
+  show('newMsg',result.name+' yaratildi. Sinov muddati: 14 kun.');
+  $('newCompany').reset();
+  await refresh();
+ }catch(error){
+  $('newPin').value='';
+  show('newMsg',error.message,true);
+ }
+};
 </script></body></html>

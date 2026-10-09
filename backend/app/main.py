@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -175,6 +175,7 @@ def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin
     db.flush()
     cid = company.id
     db.add(Staff(company_id=cid, name=owner_name, role="owner", pin_hash=hash_pin(owner_pin)))
+    db.add(Subscription(company_id=cid, status="trial", trial_ends_at=now_ms() + 14 * 24 * 60 * 60 * 1000))
     for i, (key, cname) in enumerate(seed.CATEGORIES):
         db.add(Category(company_id=cid, key=key, name=cname, sort=i))
     for key, iname, unit, cost, stock, mn in seed.INGREDIENTS:
@@ -236,6 +237,35 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
     create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)
     db.commit()
     return login(LoginIn(company=body.slug, pin=body.ownerPin), request, db)
+
+
+@app.get("/api/license/status")
+def license_status(ctx: Ctx = Depends(auth)) -> dict:
+    """Read-only subscription status. Does not block sales or verify payments."""
+    sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
+    if sub is None:
+        return {
+            "status": "unconfigured",
+            "trialEndsAt": None,
+            "currentPeriodEndsAt": None,
+            "graceEndsAt": None,
+            "serverTime": now_ms(),
+        }
+    now = now_ms()
+    status = sub.status
+    if status == "trial" and sub.trial_ends_at is not None and now >= sub.trial_ends_at:
+        status = "expired"
+    elif status == "active" and sub.current_period_ends_at is not None and now >= sub.current_period_ends_at:
+        status = "grace" if sub.grace_ends_at is not None and now < sub.grace_ends_at else "expired"
+    elif status == "grace" and sub.grace_ends_at is not None and now >= sub.grace_ends_at:
+        status = "expired"
+    return {
+        "status": status,
+        "trialEndsAt": sub.trial_ends_at,
+        "currentPeriodEndsAt": sub.current_period_ends_at,
+        "graceEndsAt": sub.grace_ends_at,
+        "serverTime": now,
+    }
 
 
 @app.get("/api/me")

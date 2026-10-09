@@ -10,3 +10,15 @@ button:disabled { cursor: not-allowed; }
   .print-area, .print-area * { visibility: visible; }
   .print-area { position: absolute; left: 0; top: 0; width: 80mm; }
 }
+
+/* Tablet touch ergonomics. Applies only to touch-first screens. */
+@media (pointer: coarse) {
+  button, select, input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
+  button { min-height: 40px; }
+  input, select, textarea { font-size: 16px; }
+  :focus-visible { outline: 3px solid #d97706; outline-offset: 2px; }
+}
+@media (max-width: 900px) {
+  #root { min-height: 100dvh; }
+  body { overscroll-behavior-y: contain; }
+}

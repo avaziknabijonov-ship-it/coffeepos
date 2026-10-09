@@ -25,10 +25,10 @@ export default function OrdersScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex gap-1 border-b border-stone-200 bg-white p-2 md:hidden">
+      <div className="flex gap-1 overflow-x-auto border-b border-stone-200 bg-white p-2 md:hidden">
         {COLUMNS.map((c) => (
           <button key={c.status} onClick={() => setMobileCol(c.status)}
-            className={`flex-1 rounded-lg py-2 text-sm font-medium ${mobileCol === c.status ? 'bg-stone-900 text-white' : 'text-stone-600'}`}>
+            className={`min-h-11 flex-1 rounded-lg px-2 py-2 text-sm font-medium ${mobileCol === c.status ? 'bg-stone-900 text-white' : 'text-stone-600'}`}>
             {t(STATUS_LABEL[c.status])} ({byStatus(c.status).length})
           </button>
         ))}
@@ -74,7 +74,7 @@ function Ticket({ order, now, action, tone, onAction }: { order: Order; now: num
           </li>
         ))}
       </ul>
-      <button onClick={onAction} className={`w-full rounded-xl py-3 font-bold text-white ${tone}`}>{t(action)}</button>
+      <button onClick={onAction} className={`min-h-12 w-full touch-manipulation rounded-xl py-3 font-bold text-white ${tone}`}>{t(action)}</button>
     </article>
   )
 }

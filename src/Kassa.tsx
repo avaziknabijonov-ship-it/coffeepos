@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { t } from './i18n'
-import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
+import { Banknote, CakeSlice, Check, Coffee, CreditCard, BookOpen, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
@@ -54,8 +54,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
-  const confirmPayment = async (payment: Payment, cashGiven?: number) => {
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven })
+  const confirmPayment = async (payment: Payment, cashGiven?: number, debtPhone?: string, debtNote?: string) => {
+    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven, debtPhone, debtNote })
     setPaying(false)
     setCartOpen(false)
     clear()
@@ -113,7 +113,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
                 className="relative flex min-h-32 disabled:opacity-40 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
-                <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>
+                {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="mb-2 h-28 w-full rounded-xl object-cover" /> : <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
                   <span className="block font-semibold leading-tight">{p.name}</span>
@@ -319,18 +319,20 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
 }
 
 const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
-  { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone },
+  { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone }, { id: 'qarz', icon: BookOpen },
 ]
 
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => Promise<void> }) {
+function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number, debtPhone?: string, debtNote?: string) => Promise<void> }) {
   const [method, setMethod] = useState<Payment>('karta')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [debtPhone, setDebtPhone] = useState('')
+  const [debtNote, setDebtNote] = useState('')
   const confirm = async () => {
     setBusy(true)
     setError('')
     try {
-      await onConfirm(method, method === 'naqd' ? given : undefined)
+      await onConfirm(method, method === 'naqd' ? given : undefined, method === 'qarz' ? debtPhone : undefined, method === 'qarz' ? debtNote : undefined)
     } catch (e) {
       setError((e as Error).message)
       setBusy(false)
@@ -359,6 +361,7 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
               </Chip>
             ))}
           </div>
+          {method === 'qarz' && <div className="space-y-2"><p className="text-sm text-amber-800">Qarz uchun savatdagi mijoz ismini kiriting.</p><input value={debtPhone} onChange={(e) => setDebtPhone(e.target.value)} placeholder="Telefon (ixtiyoriy)" className="w-full rounded-xl border p-3" /><textarea value={debtNote} onChange={(e) => setDebtNote(e.target.value)} placeholder="Qarz izohi" maxLength={256} className="w-full rounded-xl border p-3" /></div>}
           {method === 'naqd' && (
             <div className="space-y-2">
               <input inputMode="numeric" autoFocus value={cash ? fmt(given) : ''} onChange={(e) => setCash(e.target.value)} placeholder={t('Mijoz bergan summa')}

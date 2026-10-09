@@ -179,6 +179,22 @@ function perBulk(cost: number, unit: string) {
 
 function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
   const [amounts, setAmounts] = useState<Record<string, string>>({})
+  const [editingCost, setEditingCost] = useState<string | null>(null)
+  const [newCost, setNewCost] = useState('')
+  const [savingCost, setSavingCost] = useState(false)
+  const role = useAppState().session?.staff.role
+  const canEditCost = role === 'owner' || role === 'admin'
+  const saveCost = async (i: typeof INGREDIENTS[number]) => {
+    const cost = Number(newCost.replace(',', '.'))
+    if (!newCost.trim() || !Number.isFinite(cost) || cost < 0) { alert('Narx 0 yoki undan katta son bo‘lishi kerak'); return }
+    setSavingCost(true)
+    try {
+      await api(`/api/ingredients/${encodeURIComponent(i.id)}`, { method: 'PUT', body: { name: i.name, unit: i.unit, cost, min: i.min } })
+      await refreshMenu()
+      setEditingCost(null)
+    } catch (e) { alert((e as Error).message) }
+    finally { setSavingCost(false) }
+  }
   const used: Record<string, number> = {}
   for (const o of today) for (const it of o.items) for (const l of it.consumption) used[l.ing] = (used[l.ing] ?? 0) + l.qty * it.qty
 
@@ -200,7 +216,21 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
                   <td className="py-2">{i.name}</td>
                   <td className={`py-2 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>{fmt(q)} {t(UNIT_LABEL[i.unit])}</td>
                   <td className="py-2 text-right tabular-nums text-stone-500">{fmt(used[i.id] ?? 0)}</td>
-                  <td className="py-2 text-right text-stone-500">{perBulk(i.cost, i.unit)}</td>
+                  <td className="py-2 text-right text-stone-500">
+                    {editingCost === i.id ? (
+                      <div className="flex flex-wrap items-center justify-end gap-1">
+                        <input aria-label="Bir birlik tannarxi" type="number" min="0" step="any" value={newCost} onChange={(e) => setNewCost(e.target.value)}
+                          className="w-24 rounded-lg border border-stone-300 px-2 py-1.5 text-right" />
+                        <button disabled={savingCost} onClick={() => void saveCost(i)} className="rounded-lg bg-stone-900 px-2 py-1.5 text-white disabled:opacity-50">Saqlash</button>
+                        <button disabled={savingCost} onClick={() => setEditingCost(null)} className="rounded-lg border px-2 py-1.5">Bekor</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-2">
+                        <span>{perBulk(i.cost, i.unit)}</span>
+                        {canEditCost && <button onClick={() => { setEditingCost(i.id); setNewCost(String(i.cost)) }} className="rounded-lg border border-stone-200 px-2 py-1 text-xs">Tahrirlash</button>}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 pl-4">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isLow ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{isLow ? t('Kam (min {n})', { n: fmt(i.min) }) : t('Yetarli')}</span>
                   </td>

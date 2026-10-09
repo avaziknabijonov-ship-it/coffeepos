@@ -10,7 +10,6 @@ import { InventoryView } from './Inventory'
 
 type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
 const VIEWS: { id: View; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
   { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
@@ -22,8 +21,8 @@ const VIEWS: { id: View; label: string }[] = [
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
-export default function Admin() {
-  const [view, setView] = useState<View>('dashboard')
+export default function Admin({ initialView = 'stock' }: { initialView?: View }) {
+  const [view, setView] = useState<View>(initialView)
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
   const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
@@ -34,7 +33,7 @@ export default function Admin() {
       <div className="mx-auto max-w-6xl space-y-5 p-3 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 overflow-x-auto rounded-xl bg-stone-200/70 p-1">
-            {VIEWS.map((v) => (
+            {initialView !== 'dashboard' && VIEWS.map((v) => (
               <button key={v.id} onClick={() => setView(v.id)}
                 className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium sm:px-4 ${view === v.id ? 'bg-white shadow-sm' : 'text-stone-600'}`}>
                 {t(v.label)}{v.id === 'stock' && low.length > 0 && <span className="ml-1.5 rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
@@ -42,7 +41,7 @@ export default function Admin() {
             ))}
           </div>
         </div>
-        {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
+        {initialView === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => { window.location.hash = 'admin' }} />}
         {view === 'stock' && <Stock stock={stock} today={today} />}
         {view === 'inventory' && <InventoryView />}
         {view === 'menu' && <MenuEditor />}

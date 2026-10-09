@@ -1,0 +1,52 @@
+name: Android debug APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "HTTPS API URL (for example https://api.example.com)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate API URL
+        env:
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          node -e "const u = new URL(process.env.API_URL); if (u.protocol !== 'https:' || u.username || u.password) process.exit(1);"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build web application
+        env:
+          VITE_API_URL: ${{ inputs.api_url }}
+        run: npm run build
+      - name: Create Android project
+        run: npx cap add android
+      - name: Sync web assets
+        run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoffeePOS-Android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

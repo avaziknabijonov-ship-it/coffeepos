@@ -23,6 +23,14 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <p id="msg" role="status"></p></section>
 <section class="card"><div class="row"><h2 style="flex:1">Coffee barlar</h2><button id="reload">Yangilash</button></div>
 <div style="overflow-x:auto"><table><thead><tr><th>№</th><th>Coffee bar</th><th>Login</th><th>Holat</th><th>Amal</th></tr></thead><tbody id="rows"><tr><td colspan="5">Avval administrator sifatida kiring.</td></tr></tbody></table></div></section>
+<section class="card"><h2>Yangi coffee bar qo‘shish</h2>
+<form id="newCompany" class="row" autocomplete="off">
+<label>Nomi <input id="newName" required minlength="2" maxlength="128"></label>
+<label>Login <input id="newSlug" required pattern="[a-z][a-z0-9-]*" minlength="3" maxlength="40"></label>
+<label>Rahbar <input id="newOwner" required minlength="2" maxlength="64"></label>
+<label>PIN <input id="newPin" type="password" required minlength="6" maxlength="12" pattern="[0-9]+" autocomplete="new-password"></label>
+<button type="submit">Coffee bar yaratish</button>
+</form><p id="newMsg" role="status"></p></section>
 <section class="card"><h2>Obunani boshqarish</h2><p><small>To‘lov integratsiyasi hali yo‘q. Obuna holati qo‘lda o‘zgartiriladi.</small></p>
 <form id="form" class="row">
 <label>Coffee bar <select id="company" required></select></label>

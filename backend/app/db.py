@@ -12,6 +12,11 @@ def _default_url() -> str:
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or _default_url()
+# Render supplies postgresql:// URLs; use the installed psycopg v3 driver.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},

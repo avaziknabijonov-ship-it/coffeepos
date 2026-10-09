@@ -160,3 +160,18 @@ class Inventory(Base):
     shortage: Mapped[int] = mapped_column(BigInteger, default=0)
     surplus: Mapped[int] = mapped_column(BigInteger, default=0)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class Subscription(Base):
+    """Tenant subscription state; billing and enforcement are not implemented yet."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (UniqueConstraint("company_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="trial", nullable=False)
+    trial_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    current_period_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    grace_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)

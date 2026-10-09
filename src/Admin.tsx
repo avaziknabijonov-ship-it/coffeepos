@@ -4,8 +4,8 @@ import { TriangleAlert } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
-import { startOfToday, stockMove, useAppState } from './store'
-import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
+import { refreshMenu, startOfToday, stockMove, useAppState } from './store'
+import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
 type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
@@ -224,10 +224,17 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 
 function Recipes() {
   const [pid, setPid] = useState('cappuccino')
+  const [editing, setEditing] = useState(false)
+  const { menuVersion, session } = useAppState()
+  void menuVersion
   const p = PRODUCTS.find((x) => x.id === pid) ?? PRODUCTS[0]
   if (!p) return <Card><p className="text-stone-500">{t("Menyu bo'sh.")}</p></Card>
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-semibold">{t("Texkarta")}</h2>
+        <button onClick={() => setEditing(true)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white">{t("Tahrirlash")}</button>
+      </div>
       <div className="flex flex-wrap gap-2">
         {PRODUCTS.map((x) => (
           <button key={x.id} onClick={() => setPid(x.id)} className={`rounded-full px-3 py-1.5 text-sm font-medium ${x.id === pid ? 'bg-stone-900 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{x.name}</button>
@@ -258,6 +265,7 @@ function Recipes() {
           )
         })}
       </div>
+      {editing && <ProductForm key={p.id} product={p} canDelete={false} onClose={() => { setEditing(false); void refreshMenu() }} />}
       {p.mods.length > 0 && (
         <p className="text-sm text-stone-500">
           {t("Qo'shimchalar texkartani avtomatik o'zgartiradi:")} {Object.values(MOD).filter((m) => p.mods.includes(m.group) && m.price > 0).map((m) => m.name).join(', ')}.

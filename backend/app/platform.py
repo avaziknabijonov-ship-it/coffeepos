@@ -6,16 +6,18 @@ and MFA before production.
 """
 import os
 import secrets
+import re
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import Company, LicenseAudit, Subscription, now_ms
+from .security import hash_pin
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 page_router = APIRouter()
@@ -90,3 +92,28 @@ def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session =
     db.add(LicenseAudit(company_id=company_id, action="manual_update", old_status=previous, new_status=body.status))
     db.commit()
     return {"companyId": company_id, "subscription": subscription_out(sub)}
+
+
+class CompanyCreate(BaseModel):
+    slug: str = Field(min_length=3, max_length=40, pattern=r"^[a-z][a-z0-9-]*$")
+    name: str = Field(min_length=2, max_length=128)
+    ownerName: str = Field(min_length=2, max_length=64)
+    ownerPin: str = Field(min_length=6, max_length=12, pattern=r"^[0-9]+$")
+
+
+@router.post("/companies", status_code=201, dependencies=[Depends(platform_auth)])
+def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) -> dict:
+    """Create a new isolated tenant with the standard starter menu and 14-day trial."""
+    if db.scalar(select(Company).where(Company.slug == body.slug)):
+        raise HTTPException(409, "Coffee bar login already exists")
+    # Import here to avoid a circular import: main mounts the platform router.
+    from .main import create_company
+    try:
+        company = create_company(db, body.slug, body.name.strip(), body.ownerName.strip(), body.ownerPin)
+        db.flush()
+        db.add(LicenseAudit(company_id=company.id, action="company_created", old_status=None, new_status="trial"))
+        db.commit()
+        return {"id": company.id, "slug": company.slug, "name": company.name, "status": "trial"}
+    except Exception:
+        db.rollback()
+        raise

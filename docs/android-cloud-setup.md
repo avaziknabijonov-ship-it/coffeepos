@@ -19,12 +19,11 @@ example.com faqat namuna: haqiqiy HTTPS domen bilan almashtiriladi. Android WebV
 Node.js, Android Studio va Android SDK o'rnatilgan kompyuterda:
 ```powershell
 npm install
-npm install @capacitor/core @capacitor/android
-npm install -D @capacitor/cli
+npm install
 npm run build
 npx cap add android
-npx cap sync android
-npx cap open android
+npm run android:sync
+npm run android:open
 ```
 Android Studio'da debug APK build qiling va planshetda sinang.
 Capacitor uchun `server.url` ishlatmang: production resurslari APK ichida bo'ladi, API esa HTTPS orqali ishlaydi.
@@ -39,3 +38,13 @@ Capacitor uchun `server.url` ishlatmang: production resurslari APK ichida bo'lad
 
 ## Muhim
 APK ishlab chiqarishga tayyor emas. Markaziy server, autentifikatsiya, CORS va sinovlar tugamaguncha haqiqiy mijoz ma'lumotlari bilan ishlatmang.
+
+## 5. Joriy kod holati
+Capacitor kutubxonalari package.json'ga qo'shildi, lekin package-lock.json hali yangilanmagan. Lokal kompyuterda `npm install` bajarib lockfile yangilang. Android platforma papkasi `npx cap add android` orqali lokal yaratiladi. GitHub'da APK yoki tayyor Android Studio loyihasi hozircha yo'q.
+
+## 6. Cloud API xavfsizligi
+- `VITE_API_URL` faqat HTTPS URL bo'lsin; uni APK ichiga build vaqtida joylashadi.
+- CORS_ORIGINS'ni real Android WebView originlari va web domenlari bo'yicha cheklang; wildcard production uchun tavsiya etilmaydi.
+- Administratorning platform kaliti mobil ilovada saqlanmasin.
+- Internet yo'q bo'lsa, hozirgi versiyada yangi buyurtma serverga yuborilmaydi.
+- Android release APK imzolash kalitini xavfsiz saqlang va GitHub'ga yuklamang.

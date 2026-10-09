@@ -117,11 +117,22 @@ export function ProductForm({ product, canDelete, onClose }: { product: Product 
   const [mods, setMods] = useState<ModGroupId[]>(product?.mods ?? [])
   const [sizes, setSizes] = useState<Size[]>(product?.sizes.map((s) => ({ ...s, recipe: s.recipe.map((l) => ({ ...l })) })) ?? [emptySize()])
   const [busy, setBusy] = useState(false)
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? '')
+  const pickImage = (file?: File) => {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 250000) {
+      alert('Rasm JPG, PNG yoki WebP va 250 KB dan kichik bo‘lsin')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setImageUrl(String(reader.result))
+    reader.readAsDataURL(file)
+  }
 
   const updSize = (i: number, patch: Partial<Size>) => setSizes((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)))
   const save = async () => {
     setBusy(true)
-    const body = { name, cat, mods, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
+    const body = { name, cat, mods, imageUrl: imageUrl || null, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
     const ok = await run(() => (product ? api(`/api/products/${product.id}`, { method: 'PUT', body }) : api('/api/products', { body })))
     setBusy(false)
     if (ok) onClose()
@@ -143,6 +154,11 @@ export function ProductForm({ product, canDelete, onClose }: { product: Product 
             <select value={cat} onChange={(e) => setCat(e.target.value)} className={input}>
               {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-stone-200 p-3">
+            {imageUrl && <img src={imageUrl} alt={name} className="size-20 rounded-lg object-cover" />}
+            <label className="cursor-pointer rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">Rasm yuklash<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pickImage(e.target.files?.[0])} /></label>
+            {imageUrl && <button onClick={() => setImageUrl('')} className="text-sm text-red-600">Rasmni olib tashlash</button>}
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
             {(Object.keys(GROUP_LABEL) as ModGroupId[]).map((g) => (

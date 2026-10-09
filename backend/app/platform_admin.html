@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="uz">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoffeePOS — Super Admin</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#292524;background:#fafaf9}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:24px}
+header{background:#292524;color:white;padding:20px}header h1{margin:0;font-size:23px}
+.card{background:white;border:1px solid #e7e5e4;border-radius:14px;padding:20px;margin:18px 0}
+input,select,button{font:inherit;border-radius:8px;padding:10px;border:1px solid #d6d3d1}
+button{background:#78350f;color:white;cursor:pointer;border:0}button:disabled{opacity:.5}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+table{border-collapse:collapse;width:100%}th,td{padding:12px;border-bottom:1px solid #e7e5e4;text-align:left}
+th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
+@media(max-width:650px){table{display:block;overflow-x:auto}}
+</style></head>
+<body><header><div class="wrap"><h1>☕ CoffeePOS Super Admin</h1><small>Platforma boshqaruvi — dastlabki versiya</small></div></header>
+<main class="wrap">
+<section class="card"><h2>Administrator kirishi</h2>
+<p><small>PLATFORM_ADMIN_KEY serverda sozlangan bo‘lishi kerak. Kalit faqat shu sahifa xotirasida saqlanadi.</small></p>
+<div class="row"><input id="key" type="password" autocomplete="off" placeholder="Platform administrator kaliti" style="min-width:280px;flex:1">
+<button id="login">Kirish</button><button id="logout" type="button">Chiqish</button></div>
+<p id="msg" role="status"></p></section>
+<section class="card"><div class="row"><h2 style="flex:1">Coffee barlar</h2><button id="reload">Yangilash</button></div>
+<div style="overflow-x:auto"><table><thead><tr><th>№</th><th>Coffee bar</th><th>Login</th><th>Holat</th><th>Amal</th></tr></thead><tbody id="rows"><tr><td colspan="5">Avval administrator sifatida kiring.</td></tr></tbody></table></div></section>
+<section class="card"><h2>Obunani boshqarish</h2><p><small>To‘lov integratsiyasi hali yo‘q. Obuna holati qo‘lda o‘zgartiriladi.</small></p>
+<form id="form" class="row">
+<label>Coffee bar <select id="company" required></select></label>
+<label>Holat <select id="status"><option value="trial">Sinov</option><option value="active">Faol</option><option value="grace">Imtiyozli muddat</option><option value="expired">Tugagan</option><option value="suspended">To‘xtatilgan</option></select></label>
+<label>Muddat tugashi <input id="until" type="date"></label>
+<button type="submit">Saqlash</button>
+</form><p id="saveMsg" role="status"></p></section>
+</main>
+<script>
+let key = '';
+const $ = id => document.getElementById(id);
+const show = (id, message, error=false) => { $(id).textContent=message; $(id).className=error?'error':''; };
+const dateText = ms => ms ? new Date(ms).toLocaleDateString('uz-UZ') : '—';
+async function api(path, options={}) {
+ const response = await fetch('/api/platform'+path, {...options, headers:{'X-Platform-Key':key,...(options.headers||{})}, cache:'no-store'});
+ if(!response.ok) throw new Error('Server javobi: '+response.status);
+ return response.json();
+}
+async function refresh(){
+ const companies = await api('/companies');
+ $('rows').replaceChildren(); $('company').replaceChildren();
+ for(const c of companies){
+   const tr=document.createElement('tr');
+   for(const value of [c.id,c.name,c.slug,(c.subscription?.status||'unconfigured')+' · '+dateText(c.subscription?.currentPeriodEndsAt||c.subscription?.trialEndsAt)]){
+     const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);
+   }
+   const td=document.createElement('td'),btn=document.createElement('button');btn.textContent='Tanlash';
+   btn.onclick=()=>{$('company').value=String(c.id);$('status').value=c.subscription?.status==='unconfigured'?'trial':c.subscription?.status||'trial'};
+   td.appendChild(btn);tr.appendChild(td);$('rows').appendChild(tr);
+   const option=document.createElement('option');option.value=String(c.id);option.textContent=c.name;$('company').appendChild(option);
+ }
+ show('msg',companies.length+' ta coffee bar topildi');
+}
+$('login').onclick=async()=>{key=$('key').value;$('key').value='';try{await refresh()}catch(e){key='';show('msg',e.message,true)}};
+$('logout').onclick=()=>{key='';$('rows').replaceChildren();$('company').replaceChildren();show('msg','Chiqildi')};
+$('reload').onclick=async()=>{try{await refresh()}catch(e){show('msg',e.message,true)}};
+$('form').onsubmit=async(e)=>{
+ e.preventDefault();
+ if(!key){show('saveMsg','Avval kiring',true);return}
+ const status=$('status').value,raw=$('until').value;
+ const ends=raw?new Date(raw+'T23:59:59').getTime():null;
+ if((status==='trial'||status==='active')&&(!ends||ends<=Date.now())){show('saveMsg','Kelajakdagi tugash sanasini tanlang',true);return}
+ const body={status,trialEndsAt:status==='trial'?ends:null,currentPeriodEndsAt:status==='active'?ends:null,graceEndsAt:status==='grace'?ends:null};
+ try{await api('/companies/'+encodeURIComponent($('company').value)+'/subscription',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});show('saveMsg','Saqlandi');await refresh()}
+ catch(err){show('saveMsg',err.message,true)}
+};
+</script></body></html>

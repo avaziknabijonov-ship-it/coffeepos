@@ -54,6 +54,8 @@ class Staff(Base):
     role: Mapped[str] = mapped_column(String(16))
     pin_hash: Mapped[str] = mapped_column(String(128))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    salary_type: Mapped[str] = mapped_column(String(16), default="monthly")
+    salary_rate: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class Category(Base):
@@ -91,6 +93,7 @@ class Product(Base):
     sizes: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
+    image_url: Mapped[str | None] = mapped_column(String(500000), nullable=True)
 
 
 class Modifier(Base):
@@ -192,3 +195,38 @@ class LicenseAudit(Base):
     old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     new_status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
+class SalaryEntry(Base):
+    __tablename__ = "salary_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    note: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Debt(Base):
+    __tablename__ = "debts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), unique=True)
+    customer: Mapped[str] = mapped_column(String(64))
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    note: Mapped[str] = mapped_column(String(256), default="")
+    total: Mapped[int] = mapped_column(BigInteger)
+    paid: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class DebtPayment(Base):
+    __tablename__ = "debt_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    debt_id: Mapped[int] = mapped_column(ForeignKey("debts.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    method: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

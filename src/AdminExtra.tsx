@@ -203,7 +203,7 @@ export function ProductForm({ product, canDelete, onClose }: { product: Product 
   )
 }
 
-interface StaffRow { id: number; name: string; role: Role; active: boolean }
+interface StaffRow { id: number; name: string; role: Role; active: boolean; salaryType: 'monthly' | 'daily'; salaryRate: number }
 
 export function StaffView() {
   const me = useAppState().session?.staff
@@ -215,7 +215,7 @@ export function StaffView() {
 
   const update = async (s: StaffRow, patch: Partial<StaffRow> & { pin?: string }) => {
     try {
-      await api(`/api/staff/${s.id}`, { method: 'PUT', body: { name: s.name, role: s.role, active: s.active, ...patch } })
+      await api(`/api/staff/${s.id}`, { method: 'PUT', body: { name: s.name, role: s.role, active: s.active, salaryType: s.salaryType, salaryRate: s.salaryRate, ...patch } })
       await load()
     } catch (e) {
       alert((e as Error).message)

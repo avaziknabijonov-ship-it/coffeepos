@@ -201,7 +201,7 @@ function Cart(props: {
       <div className="space-y-3 border-t border-stone-200 p-4">
         <div className="flex items-center gap-2 text-sm">
           <span className="text-stone-500">{t('Chegirma')}</span>
-          {[0, 5, 10].map((p) => (
+          {[0, 10, 20, 30, 40, 50].map((p) => (
             <button key={p} onClick={() => props.setDiscountPct(p)}
               className={`rounded-lg px-3 py-1.5 font-medium ${props.discountPct === p ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>
               {p === 0 ? t("Yo'q") : `${p}%`}

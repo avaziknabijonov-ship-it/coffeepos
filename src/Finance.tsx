@@ -81,3 +81,49 @@ export function DebtsView() {
     {list.length === 0 && <p className="text-stone-500">Hozircha qarz yo‘q.</p>}
   </section>
 }
+
+
+type Expense = { id: number; amount: number; category: string; note: string; method: string; staffName: string; createdAt: number }
+
+export function ExpensesView() {
+  const [list, setList] = useState<Expense[]>([])
+  const [error, setError] = useState('')
+  const [amount, setAmount] = useState('')
+  const [category, setCategory] = useState('Boshqa')
+  const [note, setNote] = useState('')
+  const [method, setMethod] = useState('naqd')
+  const [busy, setBusy] = useState(false)
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('sv-SE'))
+  const load = () => api<Expense[]>('/api/expenses').then(setList).catch((e: Error) => setError(e.message))
+  useEffect(() => { void load() }, [])
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const value = Number(amount)
+    if (!Number.isSafeInteger(value) || value <= 0) return setError('To‘g‘ri summa kiriting')
+    setBusy(true); setError('')
+    try {
+      await api('/api/expenses', { body: { amount: value, category, note, method } })
+      setAmount(''); setNote(''); await load()
+    } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
+  }
+  const filtered = list.filter(e => new Date(e.createdAt).toLocaleDateString('sv-SE') === date)
+  return <section className="space-y-4 rounded-2xl border bg-white p-4">
+    <h2 className="font-bold">Kunlik chiqimlar</h2>
+    <form className="flex flex-wrap items-end gap-2" onSubmit={e => void save(e)}>
+      <label className="text-sm">Summa (so‘m)<input required type="number" min="1" max="1000000000" className={field + ' block w-40'} value={amount} onChange={e => setAmount(e.target.value)} /></label>
+      <label className="text-sm">Sabab<select className={field + ' block'} value={category} onChange={e => setCategory(e.target.value)}>
+        {['Boshqa', 'Xomashyo', 'Transport', 'Tozalash', 'Kommunal', 'Ta’mirlash'].map(x => <option key={x}>{x}</option>)}
+      </select></label>
+      <label className="text-sm">To‘lov turi<select className={field + ' block'} value={method} onChange={e => setMethod(e.target.value)}>
+        <option value="naqd">Naqd</option><option value="karta">Karta</option><option value="payme">Payme</option><option value="click">Click</option>
+      </select></label>
+      <label className="text-sm">Izoh<input className={field + ' block'} maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder="Nimaga sarflandi?" /></label>
+      <button disabled={busy} className={button}>Chiqimni saqlash</button>
+    </form>
+    {error && <p className="text-sm text-red-600">{error}</p>}
+    <div className="flex flex-wrap items-center justify-between gap-2"><label className="text-sm">Sana <input className={field + ' ml-2'} type="date" value={date} onChange={e => setDate(e.target.value)} /></label><strong>Jami: {fmt(filtered.reduce((a, e) => a + e.amount, 0))} so‘m</strong></div>
+    <div className="divide-y">{filtered.map(e => <div key={e.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><strong>{e.category}</strong> · {e.note || 'Izohsiz'}<p className="text-stone-500">{e.staffName} · {e.method} · {new Date(e.createdAt).toLocaleTimeString('uz-UZ')}</p></div><strong>{fmt(e.amount)} so‘m</strong></div>)}</div>
+    {filtered.length === 0 && <p className="text-sm text-stone-500">Bu kunda chiqim yo‘q.</p>}
+    <p className="text-xs text-stone-500">Naqd chiqim ochiq smenadan ayriladi. Bu xarajat ombor qoldig‘ini avtomatik oshirmaydi.</p>
+  </section>
+}

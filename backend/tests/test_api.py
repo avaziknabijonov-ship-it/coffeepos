@@ -34,6 +34,10 @@ def test_full_flow():
         assert r.status_code == 200, r.text
         o = r.json()
         assert o["number"] == 1 and o["total"] == 2 * (30000 + 6000 + 5000)
+        assert c.post("/api/orders", json={**order, "discountPct": 51}, headers=kassir).status_code == 403
+        assert c.post("/api/orders", json={**order, "discountPct": 50}, headers=kassir).status_code == 200
+        assert c.post("/api/orders", json={**order, "discountPct": 15}, headers=kassir).status_code == 200
+
         assert o["items"][0]["mods"] == ["Bodom suti", "+1 shot"]
 
         stock = c.get("/api/sync", headers=barista).json()["stock"]

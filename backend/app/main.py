@@ -906,6 +906,9 @@ def salary_config(sid: int, body: SalaryConfigIn, ctx: Ctx = Depends(require(*MA
     staff = ctx.db.get(Staff, sid)
     if not staff or staff.company_id != ctx.cid:
         raise HTTPException(404, "Xodim topilmadi")
+    # Freeze the rate used for future daily accruals. Historical days retain their rate.
+    if staff.salary_type == "daily" and body.salaryType == "daily" and staff.salary_rate != body.salaryRate:
+        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="rate", amount=body.salaryRate, note="Daily rate change"))
     staff.salary_type, staff.salary_rate = body.salaryType, body.salaryRate
     ctx.db.commit()
     return staff_out(staff)
@@ -950,14 +953,27 @@ def salary_report(month: str, ctx: Ctx = Depends(require(*MANAGERS))) -> list[di
         bonus = sum(e.amount for e in own if e.kind == "bonus")
         deduction = sum(e.amount for e in own if e.kind == "deduction")
         paid = sum(e.amount for e in own if e.kind in ("advance", "payment"))
-        earned = (staff.salary_rate * days if staff.salary_type == "daily" else staff.salary_rate) + bonus - deduction
         if staff.salary_type == "daily":
-            all_days = sum(e.amount for e in history if e.kind == "day")
-            all_bonus = sum(e.amount for e in history if e.kind == "bonus")
-            all_deduction = sum(e.amount for e in history if e.kind == "deduction")
-            all_paid = sum(e.amount for e in history if e.kind in ("advance", "payment"))
-            remaining = staff.salary_rate * all_days + all_bonus - all_deduction - all_paid
+            # Rate change events are stored in salary_entries, so old days do not
+            # change when the employee's daily rate is edited.
+            events = sorted(history, key=lambda e: (e.created_at, e.id))
+            rates = [e for e in events if e.kind == "rate"]
+            initial_rate = rates[0].amount if rates else staff.salary_rate
+            current_rate = initial_rate
+            accrued = 0
+            accrued_month = 0
+            for entry in events:
+                if entry.kind == "rate":
+                    current_rate = entry.amount
+                elif entry.kind == "day":
+                    value = entry.amount * current_rate
+                    accrued += value
+                    if entry.created_at >= month_start_ms:
+                        accrued_month += value
+            earned = accrued_month + bonus - deduction
+            remaining = accrued + sum(e.amount for e in history if e.kind == "bonus") - sum(e.amount for e in history if e.kind == "deduction") - sum(e.amount for e in history if e.kind in ("advance", "payment"))
         else:
+            earned = staff.salary_rate + bonus - deduction
             remaining = earned - paid
         result.append({"staffId": staff.id, "name": staff.name, "salaryType": staff.salary_type, "salaryRate": staff.salary_rate, "days": days, "earned": earned, "paid": paid, "remaining": remaining})
     return result

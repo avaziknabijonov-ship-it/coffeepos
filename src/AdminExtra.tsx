@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
-import { Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { ModGroupId, Payment, Product, Role, Size, Unit } from './data'
 import { api } from './api'
@@ -37,17 +37,31 @@ export function MenuEditor() {
   const [catName, setCatName] = useState('')
   const [ing, setIng] = useState({ name: '', unit: 'g' as Unit, cost: '', min: '' })
   const role = useAppState().session?.staff.role
+  const renameCategory = async (id: string, current: string) => {
+    const name = prompt(t('Kategoriya nomi'), current)?.trim()
+    if (name && name !== current) await run(() => api(`/api/categories/${id}`, { method: 'PATCH', body: { name } }))
+  }
+  const moveCategory = async (index: number, direction: number) => {
+    const ids = CATEGORIES.map(c => c.id)
+    const target = index + direction
+    if (target < 0 || target >= ids.length) return
+    ;[ids[index], ids[target]] = [ids[target], ids[index]]
+    await run(() => api('/api/categories/order', { method: 'PUT', body: { keys: ids } }))
+  }
 
   return (
     <div className="space-y-5">
       <Section title={t('Mahsulotlar')} action={<button className={`${btn} flex items-center gap-1`} onClick={() => setEditing('new')}><Plus className="size-4" />{t('Yangi mahsulot')}</button>}>
         <div className="space-y-5">
-          {CATEGORIES.map((c) => {
+          {CATEGORIES.map((c, index) => {
             const list = PRODUCTS.filter((p) => p.cat === c.id)
             return (
               <div key={c.id}>
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-stone-500">
-                  {c.name}
+                  <span className="flex-1">{c.name}</span>
+                  <button title={t('Nomini o‘zgartirish')} aria-label={t('Nomini o‘zgartirish')} onClick={() => void renameCategory(c.id, c.name)} className="rounded p-1 hover:bg-stone-100"><Pencil className="size-4" /></button>
+                  <button title={t('Yuqoriga')} aria-label={t('Yuqoriga')} disabled={index === 0} onClick={() => void moveCategory(index, -1)} className="rounded p-1 disabled:opacity-30 hover:bg-stone-100"><ArrowUp className="size-4" /></button>
+                  <button title={t('Pastga')} aria-label={t('Pastga')} disabled={index === CATEGORIES.length - 1} onClick={() => void moveCategory(index, 1)} className="rounded p-1 disabled:opacity-30 hover:bg-stone-100"><ArrowDown className="size-4" /></button>
                   {list.length === 0 && (
                     <button aria-label={t("Kategoriyani o'chirish")} onClick={() => run(() => api(`/api/categories/${c.id}`, { method: 'DELETE' }))} className="text-stone-400 hover:text-red-600"><Trash2 className="size-4" /></button>
                   )}

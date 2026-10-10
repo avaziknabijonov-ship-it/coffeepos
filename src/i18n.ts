@@ -15,6 +15,15 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'Kategoriya nomi': 'Название категории', 'Nomini o‘zgartirish': 'Переименовать', Yuqoriga: 'Выше', Pastga: 'Ниже',
+  Oylik: 'Зарплата', Qarzlar: 'Долги', 'Kunlik chiqimlar': 'Ежедневные расходы',
+  'Xodimlar oyligi': 'Зарплата сотрудников', Kunlik: 'Посуточно', Stavka: 'Ставка',
+  'Ish kunlari:': 'Рабочие дни:', 'Hisoblandi:': 'Начислено:', 'To‘landi:': 'Выплачено:', 'Qoldiq:': 'Остаток:',
+  '+ Ish kuni': '+ Рабочий день', '+ Bonus': '+ Бонус', Ushlanma: 'Удержание', Avans: 'Аванс', 'Oylik to‘landi': 'Выплата зарплаты',
+  'Qarzlar ro‘yxati': 'Список долгов', 'Qarz to‘lash': 'Погасить долг', 'To‘lovlar tarixi': 'История платежей',
+  'Rasm yuklash': 'Загрузить фото', 'Rasmni olib tashlash': 'Удалить фото',
+  'Summa (so‘m)': 'Сумма (сум)', 'To‘lov turi': 'Способ оплаты', 'Chiqimni saqlash': 'Сохранить расход',
+  'Bu kunda chiqim yo‘q.': 'За этот день расходов нет.',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

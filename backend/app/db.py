@@ -230,3 +230,16 @@ class DebtPayment(Base):
     method: Mapped[str] = mapped_column(String(16))
     note: Mapped[str] = mapped_column(String(256), default="")
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"), nullable=True, index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    category: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(String(500), default="")
+    method: Mapped[str] = mapped_column(String(16))
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

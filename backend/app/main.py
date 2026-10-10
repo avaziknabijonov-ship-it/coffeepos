@@ -706,11 +706,13 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     for p in repayments:
         repaid_by_method[p.method] = repaid_by_method.get(p.method, 0) + p.amount
     expenses = db.scalars(select(Expense).where(Expense.shift_id == shift.id)).all()
-    expenses_by_method = {m: sum(e.amount for e in expenses if e.method == m) for m in ("naqd", "karta", "payme", "click")}\n    cash_expenses = expenses_by_method["naqd"]
+    expenses_by_method = {m: sum(e.amount for e in expenses if e.method == m) for m in ("naqd", "karta", "payme", "click")}
+    cash_expenses = expenses_by_method["naqd"]
     return {
         "shift": shift_out(shift),
         "expenses": sum(e.amount for e in expenses),
-        "cashExpenses": cash_expenses,\n        "expensesByMethod": expenses_by_method,
+        "cashExpenses": cash_expenses,
+        "expensesByMethod": expenses_by_method,
         "debtRepayments": sum(p.amount for p in repayments),
         "debtRepaymentsByMethod": repaid_by_method,
         "orders": len(orders),

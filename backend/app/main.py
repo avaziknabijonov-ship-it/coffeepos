@@ -44,6 +44,9 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE staff ADD COLUMN salary_rate BIGINT DEFAULT 0"))
         if "image_url" not in product_cols:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url TEXT"))
+        shift_cols = {c["name"] for c in inspect(engine).get_columns("shifts")}
+        if "closing_payments" not in shift_cols:
+            conn.execute(text("ALTER TABLE shifts ADD COLUMN closing_payments JSON"))
         payment_cols = {c["name"] for c in inspect(engine).get_columns("debt_payments")}
         if "shift_id" not in payment_cols:
             conn.execute(text("ALTER TABLE debt_payments ADD COLUMN shift_id INTEGER"))
@@ -157,7 +160,7 @@ def shift_out(s: Shift | None) -> dict | None:
         return None
     return {
         "id": s.id, "staff": s.staff_name, "openedAt": s.opened_at, "openingCash": s.opening_cash,
-        "closedAt": s.closed_at, "closingCash": s.closing_cash, "expectedCash": s.expected_cash,
+        "closedAt": s.closed_at, "closingCash": s.closing_cash, "expectedCash": s.expected_cash, "closingPayments": s.closing_payments,
     }
 
 
@@ -688,6 +691,7 @@ class OpenShiftIn(BaseModel):
 
 class CloseShiftIn(BaseModel):
     closingCash: int = Field(ge=0)
+    closingPayments: dict[Literal["karta", "payme", "click"], int] = Field(default_factory=dict)
 
 
 def shift_summary(db: Session, shift: Shift) -> dict:
@@ -710,6 +714,7 @@ def shift_summary(db: Session, shift: Shift) -> dict:
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
+        "expectedPayments": {m: by_payment.get(m, 0) + repaid_by_method.get(m, 0) for m in ("karta", "payme", "click")},
         "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) + repaid_by_method.get("naqd", 0) - cash_expenses,
     }
 
@@ -736,6 +741,10 @@ def shift_close(body: CloseShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
     if not s:
         raise HTTPException(409, "Ochiq smena yo'q")
     summary = shift_summary(ctx.db, s)
+    for method in ("karta", "payme", "click"):
+        if method not in body.closingPayments or type(body.closingPayments[method]) is not int or body.closingPayments[method] < 0:
+            raise HTTPException(422, f"{method} summasini kiriting")
+    s.closing_payments = {"naqd": body.closingCash, **body.closingPayments}
     s.closed_at, s.closed_by = now_ms(), ctx.staff.name
     s.closing_cash, s.expected_cash = body.closingCash, summary["expectedCash"]
     ctx.db.commit()

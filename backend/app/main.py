@@ -1042,15 +1042,17 @@ def create_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
     if body.method == "naqd" and not shift:
         raise HTTPException(409, "Naqd chiqim uchun avval smenani oching")
     category = body.category.strip()
+    expense_note = body.note.strip()
     if category == "Oylik":
         if body.salaryStaffId is None:
             raise HTTPException(400, "Oylik oladigan xodimni tanlang")
         staff = ctx.db.get(Staff, body.salaryStaffId)
         if not staff or staff.company_id != ctx.cid:
             raise HTTPException(404, "Xodim topilmadi")
-        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="payment", amount=body.amount, note=("Kassadan oylik; bergan: " + ctx.staff.name + "; " + body.note.strip())[:256]))
+        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="payment", amount=body.amount, note=("Kassadan oylik; bergan: " + ctx.staff.name + "; " + expense_note)[:256]))
+        expense_note = ("Oylik oluvchi: " + staff.name + ("; " + expense_note if expense_note else ""))[:500]
     e = Expense(company_id=ctx.cid, shift_id=shift.id if shift else None,
-                amount=body.amount, category=body.category.strip(), note=body.note.strip(),
+                amount=body.amount, category=category, note=expense_note,
                 method=body.method, staff_name=ctx.staff.name)
     ctx.db.add(e)
     ctx.db.commit()

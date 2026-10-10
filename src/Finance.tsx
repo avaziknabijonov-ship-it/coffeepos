@@ -20,11 +20,11 @@ export function SalaryView() {
     try { await api('/api/staff/' + s.staffId + '/salary', { method: 'PATCH', body: { salaryType, salaryRate } }); await load() } catch (e) { alert((e as Error).message) }
   }
   const add = async (s: Salary, kind: string) => {
-    const raw = prompt(kind === 'day' ? 'Necha kun ishladi?' : 'Summani kiriting')
+    const raw = prompt(t(kind === 'day' ? 'Necha kun ishladi?' : 'Summani kiriting'))
     if (!raw) return
     const amount = Number(raw.replace(/\s/g, ''))
-    if (!Number.isInteger(amount) || amount <= 0) return alert('Musbat butun son kiriting')
-    const note = prompt('Izoh (ixtiyoriy)') ?? ''
+    if (!Number.isInteger(amount) || amount <= 0) return alert(t('Musbat butun son kiriting'))
+    const note = prompt(t('Izoh (ixtiyoriy)')) ?? ''
     try { await api('/api/salary/entries', { body: { staffId: s.staffId, kind, amount, note } }); await load() } catch (e) { alert((e as Error).message) }
   }
   return <section className="space-y-4 rounded-2xl border bg-white p-4">
@@ -46,7 +46,7 @@ export function SalaryView() {
         <button className={button} onClick={() => void add(s, 'payment')}>{t('Oylik to‘landi')}</button>
       </div>
     </div>)}
-    <p className="text-xs text-stone-500">Kunlik ish kunlari qo‘lda kiritiladi. Kunlik xodimning qoldig‘i avvalgi oylardan yig‘ilgan qarzni ham hisobga oladi; to‘lovlar shu qoldiqdan ayriladi. Oylik stavka tanlangan oy uchun to‘liq hisoblanadi. Stavkani o‘zgartirish avvalgi kunlar hisobiga ham ta’sir qiladi.</p>
+    <p className="text-xs text-stone-500">{t('Kunlik ish kunlari qo‘lda kiritiladi. Kunlik xodimning qoldig‘i avvalgi oylardan yig‘ilgan qarzni ham hisobga oladi; to‘lovlar shu qoldiqdan ayriladi. Oylik stavka tanlangan oy uchun to‘liq hisoblanadi. Stavkani o‘zgartirish avvalgi kunlar hisobiga ham ta’sir qiladi.')}</p>
   </section>
 }
 
@@ -57,12 +57,12 @@ export function DebtsView() {
   const load = () => api<Debt[]>('/api/debts').then(setList).catch((e: Error) => setError(e.message))
   useEffect(() => { void load() }, [])
   const pay = async (d: Debt) => {
-    const raw = prompt('Qaytarilgan summa (so‘m)')
+    const raw = prompt(t('Qaytarilgan summa (so‘m)'))
     if (!raw) return
     const amount = Number(raw.replace(/\s/g, ''))
-    if (!Number.isInteger(amount) || amount <= 0 || amount > d.remaining) return alert('Summa qarz qoldig‘idan oshmasin')
-    const method = prompt('To‘lov usuli: naqd, karta, payme, click', 'naqd')
-    if (!['naqd', 'karta', 'payme', 'click'].includes(method ?? '')) return alert('To‘lov usuli noto‘g‘ri')
+    if (!Number.isInteger(amount) || amount <= 0 || amount > d.remaining) return alert(t('Summa qarz qoldig‘idan oshmasin'))
+    const method = prompt(t('To‘lov usuli: naqd, karta, payme, click'), 'naqd')
+    if (!['naqd', 'karta', 'payme', 'click'].includes(method ?? '')) return alert(t('To‘lov usuli noto‘g‘ri'))
     const note = prompt('Izoh (ixtiyoriy)') ?? ''
     try { await api('/api/debts/' + d.id + '/payments', { body: { amount, method, note } }); await load(); const h = await api<Payment[]>('/api/debts/' + d.id + '/payments'); setHistory(old => ({ ...old, [d.id]: h })) } catch (e) { alert((e as Error).message) }
   }
@@ -78,9 +78,9 @@ export function DebtsView() {
       {d.note && <p className="text-sm text-stone-600">{t('Izoh')}: {d.note}</p>}
       <p className="text-sm">{t('Jami')} {fmt(d.total)} · {t('Qaytarildi')} {fmt(d.paid)}</p>
       <div className="flex gap-2"><button className={button} disabled={d.remaining <= 0} onClick={() => void pay(d)}>{t('Qarz to‘lash')}</button><button className={field} onClick={() => void toggle(d.id)}>{t('To‘lovlar tarixi')}</button></div>
-      {history[d.id] && <div className="space-y-1 text-sm">{history[d.id].map(p => <p key={p.id}>{new Date(p.createdAt).toLocaleDateString('ru-RU')} · {fmt(p.amount)} so‘m · {p.method} · {p.note}</p>)}{history[d.id].length === 0 && t('To‘lovlar yo‘q')}</div>}
+      {history[d.id] && <div className="space-y-1 text-sm">{history[d.id].map(p => <p key={p.id}>{new Date(p.createdAt).toLocaleDateString('ru-RU')} · {fmt(p.amount)} {t("so'm")} · {p.method} · {p.note}</p>)}{history[d.id].length === 0 && t('To‘lovlar yo‘q')}</div>}
     </div>)}
-    {list.length === 0 && <p className="text-stone-500">Hozircha qarz yo‘q.</p>}
+    {list.length === 0 && <p className="text-stone-500">{t('Hozircha qarz yo‘q.')}</p>}
   </section>
 }
 
@@ -104,7 +104,7 @@ export function ExpensesView() {
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     const value = Number(amount)
-    if (!Number.isSafeInteger(value) || value <= 0) return setError('To‘g‘ri summa kiriting')
+    if (!Number.isSafeInteger(value) || value <= 0) return setError(t('To‘g‘ri summa kiriting'))
     setBusy(true); setError('')
     try {
       const targetId = salaryStaffId

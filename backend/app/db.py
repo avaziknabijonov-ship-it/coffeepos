@@ -226,6 +226,7 @@ class DebtPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     debt_id: Mapped[int] = mapped_column(ForeignKey("debts.id"), index=True)
+    shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"), nullable=True, index=True)
     amount: Mapped[int] = mapped_column(BigInteger)
     method: Mapped[str] = mapped_column(String(16))
     note: Mapped[str] = mapped_column(String(256), default="")

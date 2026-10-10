@@ -643,6 +643,11 @@ def list_staff(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
     return [staff_out(s) for s in rows(ctx.db, Staff, ctx.cid)]
 
 
+@app.get("/api/staff/expense-recipients")
+def expense_recipients(ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
+    return [{"id": staff.id, "name": staff.name} for staff in rows(ctx.db, Staff, ctx.cid) if staff.active]
+
+
 @app.post("/api/staff")
 def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     guard_owner(ctx, body.role)
@@ -987,9 +992,7 @@ def create_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
         staff = ctx.db.get(Staff, body.salaryStaffId)
         if not staff or staff.company_id != ctx.cid:
             raise HTTPException(404, "Xodim topilmadi")
-        if ctx.staff.role == "kassir" and staff.id != ctx.staff.id:
-            raise HTTPException(403, "Kassir faqat o‘z oyligini olishi mumkin")
-        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="payment", amount=body.amount, note="Kassadan oylik: " + body.note.strip()[:220]))
+        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="payment", amount=body.amount, note=("Kassadan oylik; bergan: " + ctx.staff.name + "; " + body.note.strip())[:256]))
     e = Expense(company_id=ctx.cid, shift_id=shift.id if shift else None,
                 amount=body.amount, category=body.category.strip(), note=body.note.strip(),
                 method=body.method, staff_name=ctx.staff.name)

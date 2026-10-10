@@ -324,7 +324,7 @@ export function ShiftsView() {
       </div>
       <h3 className="mt-5 font-semibold">Сверка способов оплаты</h3>
       <div className="mt-2 space-y-2 text-sm">{(['naqd', 'karta', 'payme', 'click'] as const).map(p => {
-        const expected = p === 'naqd' ? report.expectedCash : (report.expectedPayments?.[p] ?? ((report.byPayment[p] ?? 0) + (report.debtRepaymentsByMethod?.[p] ?? 0)))
+        const expected = p === 'naqd' ? report.expectedCash : (report.expectedPayments?.[p] ?? ((report.byPayment[p] ?? 0) + (report.debtRepaymentsByMethod?.[p] ?? 0) - (report.expensesByMethod?.[p] ?? 0)))
         const actual = report.shift.closingPayments?.[p] ?? (p === 'naqd' ? report.shift.closingCash : null)
         return <div key={p} className="rounded-lg border p-2"><b>{t(PAYMENT_LABEL[p])}</b> · По учёту: {som(expected)} · Введено: {actual == null ? '—' : som(actual)} · Разница: {actual == null ? '—' : som(actual - expected)}</div>
       })}</div>

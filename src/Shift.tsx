@@ -56,6 +56,10 @@ function Summary({ s }: { s: ShiftInfo }) {
         <div key={p} className="flex justify-between pl-3"><dt className="text-stone-500">{t(PAYMENT_LABEL[p])}</dt><dd>{som(s.byPayment[p] ?? 0)}</dd></div>
       ))}
       <div className="flex justify-between border-t border-stone-200 pt-1.5"><dt className="text-stone-500">{t("Boshlang'ich naqd")}</dt><dd>{som(s.shift.openingCash)}</dd></div>
+      <div className="flex justify-between border-t border-stone-200 pt-1.5"><dt className="font-medium">{t('Qarzdan qaytarilgan')}</dt><dd>{som(s.debtRepayments ?? 0)}</dd></div>
+      {(['naqd', 'karta', 'payme', 'click'] as const).map(p => <div key={p} className="flex justify-between pl-3"><dt className="text-stone-500">{t(PAYMENT_LABEL[p])}</dt><dd>{som(s.debtRepaymentsByMethod?.[p] ?? 0)}</dd></div>)}
+      <div className="flex justify-between"><dt className="text-stone-500">{t('Kunlik chiqimlar')}</dt><dd>{som(s.expenses ?? 0)}</dd></div>
+      <div className="flex justify-between pl-3"><dt className="text-stone-500">{t('Naqd chiqimlar')}</dt><dd>{som(s.cashExpenses ?? 0)}</dd></div>
       <div className="flex justify-between"><dt className="font-medium">{t("Kassada bo'lishi kerak")}</dt><dd className="font-bold">{som(s.expectedCash)}</dd></div>
     </dl>
   )

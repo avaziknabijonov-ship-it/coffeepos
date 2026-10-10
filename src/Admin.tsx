@@ -9,7 +9,7 @@ import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 import { SalaryView, DebtsView, ExpensesView } from './Finance'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts' | 'expenses'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts' | 'expenses' | 'profit'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'stock', label: 'Ombor' },
   { id: 'inventory', label: 'Inventarizatsiya' },
@@ -21,6 +21,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'salary', label: 'Oylik' },
   { id: 'debts', label: 'Qarzlar' },
   { id: 'expenses', label: 'Kunlik chiqimlar' },
+  { id: 'profit', label: 'Foyda hisoboti' },
 ]
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
@@ -56,6 +57,7 @@ export default function Admin({ initialView = 'stock' }: { initialView?: View })
         {view === 'salary' && <SalaryView />}
         {view === 'debts' && <DebtsView />}
         {view === 'expenses' && <ExpensesView />}
+        {view === 'profit' && <ProfitReport />}
       </div>
     </div>
   )
@@ -339,4 +341,32 @@ function Orders({ today }: { today: Orders }) {
       </div>
     </Card>
   )
+}
+
+type ProfitData = { orders: number; revenue: number; cost: number; grossProfit: number; expenses: number; netProfit: number; debtSales: number; expensesByCategory: Record<string, number> }
+function ProfitReport() {
+  const [period, setPeriod] = useState<'day' | 'month'>('day')
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('sv-SE'))
+  const [report, setReport] = useState<ProfitData | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setError('')
+    api<ProfitData>('/api/reports/profit?period=' + period + '&date=' + date).then(setReport).catch((e: Error) => setError(e.message))
+  }, [period, date])
+  return <Card title={t('Foyda hisoboti')}>
+    <div className="mb-4 flex flex-wrap gap-2">
+      <select className="rounded-lg border p-2" value={period} onChange={e => setPeriod(e.target.value as 'day' | 'month')}>
+        <option value="day">День</option><option value="month">Месяц</option>
+      </select>
+      <input className="rounded-lg border p-2" type={period === 'day' ? 'date' : 'month'} value={period === 'day' ? date : date.slice(0, 7)} onChange={e => setDate(period === 'day' ? e.target.value : e.target.value + '-01')} />
+    </div>
+    {error && <p className="text-red-600">{error}</p>}
+    {report && <div className="space-y-2 text-sm">
+      {([['Заказы', report.orders], ['Выручка', report.revenue], ['Себестоимость', report.cost], ['Валовая прибыль', report.grossProfit], ['Расходы', report.expenses], ['Чистая прибыль (расчётная)', report.netProfit], ['Продажи в долг (включены в выручку)', report.debtSales]] as const).map(([name, amount]) =>
+        <div key={name} className="flex justify-between gap-3 border-b py-2"><span>{name}</span><b>{name === 'Заказы' ? amount : som(amount)}</b></div>)}
+      <h3 className="pt-3 font-semibold">Расходы по категориям</h3>
+      {Object.entries(report.expensesByCategory).map(([name, amount]) => <div key={name} className="flex justify-between gap-3"><span>{name}</span><b>{som(amount)}</b></div>)}
+      <p className="pt-3 text-stone-500">Расчётная прибыль учитывает продажи в долг как выручку. Погашения старых долгов повторно в прибыль не включаются.</p>
+    </div>}
+  </Card>
 }

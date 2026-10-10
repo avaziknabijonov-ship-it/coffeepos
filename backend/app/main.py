@@ -961,6 +961,7 @@ class ExpenseIn(BaseModel):
     category: str = Field(min_length=1, max_length=64)
     note: str = Field(default="", max_length=500)
     method: Literal["naqd", "karta", "payme", "click"] = "naqd"
+    salaryStaffId: int | None = None
 
 
 def expense_out(e: Expense) -> dict:
@@ -969,7 +970,7 @@ def expense_out(e: Expense) -> dict:
 
 
 @app.get("/api/expenses")
-def list_expenses(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+def list_expenses(ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
     q = select(Expense).where(Expense.company_id == ctx.cid).order_by(Expense.created_at.desc()).limit(500)
     return [expense_out(e) for e in ctx.db.scalars(q)]
 
@@ -979,6 +980,16 @@ def create_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
     shift = open_shift(ctx.db, ctx.cid)
     if body.method == "naqd" and not shift:
         raise HTTPException(409, "Naqd chiqim uchun avval smenani oching")
+    category = body.category.strip()
+    if category == "Oylik":
+        if body.salaryStaffId is None:
+            raise HTTPException(400, "Oylik oladigan xodimni tanlang")
+        staff = ctx.db.get(Staff, body.salaryStaffId)
+        if not staff or staff.company_id != ctx.cid:
+            raise HTTPException(404, "Xodim topilmadi")
+        if ctx.staff.role == "kassir" and staff.id != ctx.staff.id:
+            raise HTTPException(403, "Kassir faqat o‘z oyligini olishi mumkin")
+        ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="payment", amount=body.amount, note="Kassadan oylik: " + body.note.strip()[:220]))
     e = Expense(company_id=ctx.cid, shift_id=shift.id if shift else None,
                 amount=body.amount, category=body.category.strip(), note=body.note.strip(),
                 method=body.method, staff_name=ctx.staff.name)

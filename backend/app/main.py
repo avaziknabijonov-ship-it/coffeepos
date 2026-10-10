@@ -800,7 +800,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     shift = open_shift(db, cid)
     if not shift:
         raise HTTPException(409, "Avval smenani oching")
-    if body.discountPct > 0 and body.discountPct not in (5, 10) and ctx.staff.role not in MANAGERS:
+    if body.discountPct > 50 and ctx.staff.role not in MANAGERS:
         raise HTTPException(403, "Bunday chegirma uchun ruxsat yo'q")
     prods = {p.key: p for p in rows(db, Product, cid)}
     mods = {m.key: m for m in rows(db, Modifier, cid)}

@@ -44,6 +44,21 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE staff ADD COLUMN salary_rate BIGINT DEFAULT 0"))
         if "image_url" not in product_cols:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url TEXT"))
+        payment_cols = {c["name"] for c in inspect(engine).get_columns("debt_payments")}
+        if "shift_id" not in payment_cols:
+            conn.execute(text("ALTER TABLE debt_payments ADD COLUMN shift_id INTEGER"))
+    # Assign old repayments to a shift only when their timestamp matches exactly one shift.
+    with SessionLocal() as db:
+        old_payments = db.scalars(select(DebtPayment).where(DebtPayment.shift_id.is_(None))).all()
+        for payment in old_payments:
+            candidates = db.scalars(select(Shift).where(
+                Shift.company_id == payment.company_id,
+                Shift.opened_at <= payment.created_at,
+                (Shift.closed_at.is_(None) | (Shift.closed_at >= payment.created_at)),
+            )).all()
+            if len(candidates) == 1:
+                payment.shift_id = candidates[0].id
+        db.commit()
 
 
 def init_db() -> None:
@@ -674,18 +689,23 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     orders = db.scalars(select(Order).where(Order.shift_id == shift.id)).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        if o.payment != "qarz":
-            by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    repayments = db.scalars(select(DebtPayment).where(DebtPayment.shift_id == shift.id)).all()
+    repaid_by_method: dict[str, int] = {}
+    for p in repayments:
+        repaid_by_method[p.method] = repaid_by_method.get(p.method, 0) + p.amount
     expenses = db.scalars(select(Expense).where(Expense.shift_id == shift.id)).all()
     cash_expenses = sum(e.amount for e in expenses if e.method == "naqd")
     return {
         "shift": shift_out(shift),
         "expenses": sum(e.amount for e in expenses),
         "cashExpenses": cash_expenses,
+        "debtRepayments": sum(p.amount for p in repayments),
+        "debtRepaymentsByMethod": repaid_by_method,
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_expenses,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) + repaid_by_method.get("naqd", 0) - cash_expenses,
     }
 
 
@@ -916,8 +936,11 @@ def pay_debt(debt_id: int, body: DebtPaymentIn, ctx: Ctx = Depends(require(*CASH
         raise HTTPException(404, "Qarz topilmadi")
     if body.amount > debt.total - debt.paid:
         raise HTTPException(400, "To'lov qarz qoldig'idan oshmasin")
+    shift = open_shift(ctx.db, ctx.cid)
+    if not shift:
+        raise HTTPException(409, "Qarz to‘lovini qabul qilish uchun avval smenani oching")
     debt.paid += body.amount
-    ctx.db.add(DebtPayment(company_id=ctx.cid, debt_id=debt.id, amount=body.amount, method=body.method, note=body.note))
+    ctx.db.add(DebtPayment(company_id=ctx.cid, debt_id=debt.id, shift_id=shift.id, amount=body.amount, method=body.method, note=body.note))
     ctx.db.commit()
     return {"remaining": debt.total - debt.paid}
 

@@ -505,6 +505,8 @@ def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(400, "Miqdor musbat bo'lsin")
     else:
         delta = body.qty if body.reason == "intake" else -body.qty
+    if i.stock + delta < -0.000001:
+        raise HTTPException(400, "Omborda yetarli qoldiq yo'q")
     note = (body.note or "other") if body.reason == "writeoff" else None
     i.stock += delta
     ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, note=note, staff_name=ctx.staff.name))

@@ -171,7 +171,7 @@ export function ProductForm({ product, canDelete, onClose }: { product: Product 
           </div>
           <div className="flex items-center gap-3 rounded-xl border border-stone-200 p-3">
             {imageUrl && <img src={imageUrl} alt={name} className="size-20 rounded-lg object-cover" />}
-            <label className="cursor-pointer rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">Rasm yuklash<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pickImage(e.target.files?.[0])} /></label>
+            <label className="cursor-pointer rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">{t('Rasm yuklash')}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pickImage(e.target.files?.[0])} /></label>
             {imageUrl && <button onClick={() => setImageUrl('')} className="text-sm text-red-600">Rasmni olib tashlash</button>}
           </div>
           <div className="flex flex-wrap gap-4 text-sm">

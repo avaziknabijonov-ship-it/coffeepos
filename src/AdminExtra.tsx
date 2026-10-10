@@ -296,7 +296,7 @@ export function ShiftsView() {
           <th className="pb-2">{t('Sana')}</th><th className="pb-2">{t('Kassir')}</th>
           <th className="pb-2 text-right">{t('Buyurtma')}</th><th className="pb-2 text-right">{t('Tushum')}</th>
           <th className="pb-2">{t("To'lov turlari")}</th><th className="pb-2 text-right">{t('Naqd farqi')}</th>
-          <th className="pb-2 text-right">Z-отчёт</th>
+          <th className="pb-2 text-right">{t('Z-hisobot')}</th>
         </tr></thead>
         <tbody>{list.map(s => {
           const diff = s.shift.closedAt ? (s.shift.closingCash ?? 0) - (s.shift.expectedCash ?? 0) : null
@@ -305,39 +305,39 @@ export function ShiftsView() {
             <td>{s.shift.staff}</td><td className="text-right">{s.orders}</td><td className="text-right">{fmt(s.revenue)}</td>
             <td className="pl-4">{(Object.keys(s.byPayment) as Payment[]).map(p => `${t(PAYMENT_LABEL[p])} ${fmt(s.byPayment[p] ?? 0)}`).join(' · ') || '—'}</td>
             <td className={`text-right ${diff !== null && diff !== 0 ? 'text-red-600' : ''}`}>{diff === null ? '—' : som(diff)}</td>
-            <td className="text-right"><button type="button" className="rounded bg-amber-600 px-3 py-1.5 text-white" onClick={() => void openReport(s.shift.id)}>Открыть</button></td>
+            <td className="text-right"><button type="button" className="rounded bg-amber-600 px-3 py-1.5 text-white" onClick={() => void openReport(s.shift.id)}>{t('Ochish')}</button></td>
           </tr>
         })}</tbody>
       </table></div>
     </Section>
-    {report && <Section title={`Z-отчёт — ${new Date(report.shift.openedAt).toLocaleString('ru-RU')}`} action={<button type="button" onClick={() => setReport(null)} className={btn}>Закрыть</button>}>
+    {report && <Section title={`${t('Z-hisobot')} — ${new Date(report.shift.openedAt).toLocaleString('ru-RU')}`} action={<button type="button" onClick={() => setReport(null)} className={btn}>{t('Yopish')}</button>}>
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-        <div>Кассир: <b>{report.shift.staff}</b></div><div>Заказы: <b>{report.orders}</b></div>
-        <div>Выручка: <b>{som(report.revenue)}</b></div>
-        <div>Начальная наличность: <b>{som(report.shift.openingCash)}</b></div>
-        <div>Погашение долгов: <b>{som(report.debtRepayments)}</b></div>
-        <div>Расходы: <b>{som(report.expenses)}</b></div>
-        <div>Расходы наличными: <b>{som(report.cashExpenses)}</b></div>
-        <div>Должно быть в кассе: <b>{som(report.expectedCash)}</b></div>
-        <div>Пересчитано: <b>{report.shift.closingCash === null ? '—' : som(report.shift.closingCash ?? 0)}</b></div>
-        <div>Разница: <b>{report.difference === null ? '—' : som(report.difference)}</b></div>
+        <div>{t('Kassir:')} <b>{report.shift.staff}</b></div><div>{t('Buyurtmalar:')} <b>{report.orders}</b></div>
+        <div>{t('Tushum:')} <b>{som(report.revenue)}</b></div>
+        <div>{t('Boshlang‘ich naqd:')} <b>{som(report.shift.openingCash)}</b></div>
+        <div>{t('Qarz qaytarilishi:')} <b>{som(report.debtRepayments)}</b></div>
+        <div>{t('Xarajatlar:')} <b>{som(report.expenses)}</b></div>
+        <div>{t('Naqd xarajatlar:')} <b>{som(report.cashExpenses)}</b></div>
+        <div>{t('Kassada bo‘lishi kerak:')} <b>{som(report.expectedCash)}</b></div>
+        <div>{t('Sanalgan:')} <b>{report.shift.closingCash === null ? '—' : som(report.shift.closingCash ?? 0)}</b></div>
+        <div>{t('Farq:')} <b>{report.difference === null ? '—' : som(report.difference)}</b></div>
       </div>
-      <h3 className="mt-5 font-semibold">Сверка способов оплаты</h3>
+      <h3 className="mt-5 font-semibold">{t('To‘lov turlarini solishtirish')}</h3>
       <div className="mt-2 space-y-2 text-sm">{(['naqd', 'karta', 'payme', 'click'] as const).map(p => {
         const expected = p === 'naqd' ? report.expectedCash : (report.expectedPayments?.[p] ?? ((report.byPayment[p] ?? 0) + (report.debtRepaymentsByMethod?.[p] ?? 0) - (report.expensesByMethod?.[p] ?? 0)))
         const actual = report.shift.closingPayments?.[p] ?? (p === 'naqd' ? report.shift.closingCash : null)
-        return <div key={p} className="rounded-lg border p-2"><b>{t(PAYMENT_LABEL[p])}</b> · По учёту: {som(expected)} · Введено: {actual == null ? '—' : som(actual)} · Разница: {actual == null ? '—' : som(actual - expected)}</div>
+        return <div key={p} className="rounded-lg border p-2"><b>{t(PAYMENT_LABEL[p])}</b> · {t('Hisob bo‘yicha:')} {som(expected)} · {t('Kiritilgan:')} {actual == null ? '—' : som(actual)} · {t('Farq:')} {actual == null ? '—' : som(actual - expected)}</div>
       })}</div>
-      <h3 className="mt-5 font-semibold">Способы оплаты</h3>
+      <h3 className="mt-5 font-semibold">{t('To‘lov turlari')}</h3>
       <div className="mt-2 space-y-1 text-sm">{Object.entries(report.byPayment).map(([method, amount]) => <div key={method}>{method}: {som(amount)}</div>)}</div>
-      <h3 className="mt-5 font-semibold">Расходы по операциям</h3>
-      {report.expenseDetails.length === 0 ? <p className="text-sm text-stone-500">Нет расходов</p> :
+      <h3 className="mt-5 font-semibold">{t('Xarajatlar tafsiloti')}</h3>
+      {report.expenseDetails.length === 0 ? <p className="text-sm text-stone-500">{t('Xarajatlar yo‘q')}</p> :
         <div className="mt-2 space-y-2">{report.expenseDetails.map(e => <div key={e.id} className="rounded-lg border p-3 text-sm">
-          <b>{e.category}: {som(e.amount)}</b> · {e.method}<div>{e.note || 'Без комментария'}</div>
-          <div className="text-stone-500">Выдал: {e.staffName} · {new Date(e.createdAt).toLocaleString('ru-RU')}</div>
+          <b>{e.category}: {som(e.amount)}</b> · {e.method}<div>{e.note || t('Izohsiz')}</div>
+          <div className="text-stone-500">{t('Bergan:')} {e.staffName} · {new Date(e.createdAt).toLocaleString('ru-RU')}</div>
         </div>)}</div>}
-      <h3 className="mt-5 font-semibold">Погашения долгов</h3>
-      {report.repaymentDetails.length === 0 ? <p className="text-sm text-stone-500">Нет погашений</p> :
+      <h3 className="mt-5 font-semibold">{t('Qarz to‘lovlari')}</h3>
+      {report.repaymentDetails.length === 0 ? <p className="text-sm text-stone-500">{t('To‘lovlar yo‘q')}</p> :
         <div className="mt-2 space-y-2">{report.repaymentDetails.map((p, i) => <div key={i} className="rounded-lg border p-3 text-sm">{som(p.amount)} · {p.method} · {p.note || '—'} · {new Date(p.createdAt).toLocaleString('ru-RU')}</div>)}</div>}
     </Section>}
   </div>

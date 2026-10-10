@@ -46,7 +46,7 @@ export function SalaryView() {
         <button className={button} onClick={() => void add(s, 'payment')}>{t('Oylik to‘landi')}</button>
       </div>
     </div>)}
-    <p className="text-xs text-stone-500">{t('Kunlik ish kunlari qo‘lda kiritiladi. Kunlik xodimning qoldig‘i avvalgi oylardan yig‘ilgan qarzni ham hisobga oladi; to‘lovlar shu qoldiqdan ayriladi. Oylik stavka tanlangan oy uchun to‘liq hisoblanadi. Stavkani o‘zgartirish avvalgi kunlar hisobiga ham ta’sir qiladi.')}</p>
+    <p className="text-xs text-stone-500">{t('Kunlik ish kunlari qo‘lda kiritiladi. Kunlik xodimning qoldig‘i avvalgi oylardan yig‘ilgan qarzni ham hisobga oladi; to‘lovlar shu qoldiqdan ayriladi. Oylik stavka tanlangan oy uchun to‘liq hisoblanadi. Stavka o‘zgartirilsa, avvalgi ish kunlari eski stavka bo‘yicha saqlanadi.')}</p>
   </section>
 }
 

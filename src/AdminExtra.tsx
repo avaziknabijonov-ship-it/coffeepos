@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { t } from './i18n'
+import { getLang, t } from './i18n'
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { ModGroupId, Payment, Product, Role, Size, Unit } from './data'
@@ -301,7 +301,7 @@ export function ShiftsView() {
         <tbody>{list.map(s => {
           const diff = s.shift.closedAt ? (s.shift.closingCash ?? 0) - (s.shift.expectedCash ?? 0) : null
           return <tr key={s.shift.id} className="border-t border-stone-100">
-            <td className="py-2">{new Date(s.shift.openedAt).toLocaleDateString('ru-RU')} {time(s.shift.openedAt)}–{s.shift.closedAt ? time(s.shift.closedAt) : t('ochiq')}</td>
+            <td className="py-2">{new Date(s.shift.openedAt).toLocaleDateString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')} {time(s.shift.openedAt)}–{s.shift.closedAt ? time(s.shift.closedAt) : t('ochiq')}</td>
             <td>{s.shift.staff}</td><td className="text-right">{s.orders}</td><td className="text-right">{fmt(s.revenue)}</td>
             <td className="pl-4">{(Object.keys(s.byPayment) as Payment[]).map(p => `${t(PAYMENT_LABEL[p])} ${fmt(s.byPayment[p] ?? 0)}`).join(' · ') || '—'}</td>
             <td className={`text-right ${diff !== null && diff !== 0 ? 'text-red-600' : ''}`}>{diff === null ? '—' : som(diff)}</td>
@@ -310,7 +310,7 @@ export function ShiftsView() {
         })}</tbody>
       </table></div>
     </Section>
-    {report && <Section title={`${t('Z-hisobot')} — ${new Date(report.shift.openedAt).toLocaleString('ru-RU')}`} action={<button type="button" onClick={() => setReport(null)} className={btn}>{t('Yopish')}</button>}>
+    {report && <Section title={`${t('Z-hisobot')} — ${new Date(report.shift.openedAt).toLocaleString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')}`} action={<button type="button" onClick={() => setReport(null)} className={btn}>{t('Yopish')}</button>}>
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
         <div>{t('Kassir:')} <b>{report.shift.staff}</b></div><div>{t('Buyurtmalar:')} <b>{report.orders}</b></div>
         <div>{t('Tushum:')} <b>{som(report.revenue)}</b></div>
@@ -329,16 +329,16 @@ export function ShiftsView() {
         return <div key={p} className="rounded-lg border p-2"><b>{t(PAYMENT_LABEL[p])}</b> · {t('Hisob bo‘yicha:')} {som(expected)} · {t('Kiritilgan:')} {actual == null ? '—' : som(actual)} · {t('Farq:')} {actual == null ? '—' : som(actual - expected)}</div>
       })}</div>
       <h3 className="mt-5 font-semibold">{t('To‘lov turlari')}</h3>
-      <div className="mt-2 space-y-1 text-sm">{Object.entries(report.byPayment).map(([method, amount]) => <div key={method}>{method}: {som(amount)}</div>)}</div>
+      <div className="mt-2 space-y-1 text-sm">{Object.entries(report.byPayment).map(([method, amount]) => <div key={method}>{t(PAYMENT_LABEL[method as Payment] ?? method)}: {som(amount)}</div>)}</div>
       <h3 className="mt-5 font-semibold">{t('Xarajatlar tafsiloti')}</h3>
       {report.expenseDetails.length === 0 ? <p className="text-sm text-stone-500">{t('Xarajatlar yo‘q')}</p> :
         <div className="mt-2 space-y-2">{report.expenseDetails.map(e => <div key={e.id} className="rounded-lg border p-3 text-sm">
-          <b>{e.category}: {som(e.amount)}</b> · {e.method}<div>{e.note || t('Izohsiz')}</div>
-          <div className="text-stone-500">{t('Bergan:')} {e.staffName} · {new Date(e.createdAt).toLocaleString('ru-RU')}</div>
+          <b>{t(e.category)}: {som(e.amount)}</b> · {t(PAYMENT_LABEL[e.method as Payment] ?? e.method)}<div>{e.note || t('Izohsiz')}</div>
+          <div className="text-stone-500">{t('Bergan:')} {e.staffName} · {new Date(e.createdAt).toLocaleString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')}</div>
         </div>)}</div>}
       <h3 className="mt-5 font-semibold">{t('Qarz to‘lovlari')}</h3>
       {report.repaymentDetails.length === 0 ? <p className="text-sm text-stone-500">{t('To‘lovlar yo‘q')}</p> :
-        <div className="mt-2 space-y-2">{report.repaymentDetails.map((p, i) => <div key={i} className="rounded-lg border p-3 text-sm">{som(p.amount)} · {p.method} · {p.note || '—'} · {new Date(p.createdAt).toLocaleString('ru-RU')}</div>)}</div>}
+        <div className="mt-2 space-y-2">{report.repaymentDetails.map((p, i) => <div key={i} className="rounded-lg border p-3 text-sm">{som(p.amount)} · {t(PAYMENT_LABEL[p.method as Payment] ?? p.method)} · {p.note || '—'} · {new Date(p.createdAt).toLocaleString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')}</div>)}</div>}
     </Section>}
   </div>
 }

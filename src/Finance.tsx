@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { t } from './i18n'
 import { fmt } from './data'
 
 type Salary = { staffId: number; name: string; salaryType: 'monthly' | 'daily'; salaryRate: number; days: number; earned: number; paid: number; remaining: number }
@@ -26,22 +27,22 @@ export function SalaryView() {
     try { await api('/api/salary/entries', { body: { staffId: s.staffId, kind, amount, note } }); await load() } catch (e) { alert((e as Error).message) }
   }
   return <section className="space-y-4 rounded-2xl border bg-white p-4">
-    <div className="flex flex-wrap items-center gap-3"><h2 className="font-bold">Xodimlar oyligi</h2><input type="month" className={field} value={month} onChange={e => setMonth(e.target.value)} /></div>
+    <div className="flex flex-wrap items-center gap-3"><h2 className="font-bold">{t('Xodimlar oyligi')}</h2><input type="month" className={field} value={month} onChange={e => setMonth(e.target.value)} /></div>
     {error && <p className="text-red-600">{error}</p>}
     {list.map(s => <div key={s.staffId} className="space-y-3 rounded-xl border p-4">
       <div className="flex flex-wrap items-center gap-3"><strong className="flex-1">{s.name}</strong>
         <select className={field} value={s.salaryType} onChange={e => void setConfig(s, e.target.value as 'monthly' | 'daily', s.salaryRate)}>
-          <option value="monthly">Oylik</option><option value="daily">Kunlik</option>
+          <option value="monthly">{t('Oylik')}</option><option value="daily">{t('Kunlik')}</option>
         </select>
         <label className="text-sm">Stavka <input className={field + ' ml-2 w-36'} type="number" min="0" defaultValue={s.salaryRate} key={s.staffId + ':' + s.salaryRate} onBlur={e => { const n = Number(e.target.value); if (Number.isInteger(n) && n >= 0 && n !== s.salaryRate) void setConfig(s, s.salaryType, n) }} /></label>
       </div>
       <div className="grid gap-2 text-sm sm:grid-cols-4"><span>Ish kunlari: {s.days}</span><span>Hisoblandi: {fmt(s.earned)} so‘m</span><span>To‘landi: {fmt(s.paid)} so‘m</span><strong>Qoldiq: {fmt(s.remaining)} so‘m</strong></div>
       <div className="flex flex-wrap gap-2">
-        {s.salaryType === 'daily' && <button className={button} onClick={() => void add(s, 'day')}>+ Ish kuni</button>}
-        <button className={button} onClick={() => void add(s, 'bonus')}>+ Bonus</button>
-        <button className={button} onClick={() => void add(s, 'deduction')}>Ushlanma</button>
-        <button className={button} onClick={() => void add(s, 'advance')}>Avans</button>
-        <button className={button} onClick={() => void add(s, 'payment')}>Oylik to‘landi</button>
+        {s.salaryType === 'daily' && <button className={button} onClick={() => void add(s, 'day')}>{t('+ Ish kuni')}</button>}
+        <button className={button} onClick={() => void add(s, 'bonus')}>{t('+ Bonus')}</button>
+        <button className={button} onClick={() => void add(s, 'deduction')}>{t('Ushlanma')}</button>
+        <button className={button} onClick={() => void add(s, 'advance')}>{t('Avans')}</button>
+        <button className={button} onClick={() => void add(s, 'payment')}>{t('Oylik to‘landi')}</button>
       </div>
     </div>)}
     <p className="text-xs text-stone-500">Kunlik ish kunlari qo‘lda kiritiladi. Oylik stavka tanlangan oy uchun to‘liq hisoblanadi. Hozircha ishga kirish sanasi bo‘yicha proporsional hisoblash yo‘q.</p>
@@ -69,13 +70,13 @@ export function DebtsView() {
     try { const h = await api<Payment[]>('/api/debts/' + id + '/payments'); setHistory(old => ({ ...old, [id]: h })) } catch (e) { alert((e as Error).message) }
   }
   return <section className="space-y-3 rounded-2xl border bg-white p-4">
-    <h2 className="font-bold">Qarzlar ro‘yxati</h2>
+    <h2 className="font-bold">{t('Qarzlar ro‘yxati')}</h2>
     {error && <p className="text-red-600">{error}</p>}
     {list.map(d => <div key={d.id} className="space-y-2 rounded-xl border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><strong>{d.customer}</strong><span>{d.phone}</span><span className="font-semibold">Qoldiq: {fmt(d.remaining)} so‘m</span></div>
       {d.note && <p className="text-sm text-stone-600">Izoh: {d.note}</p>}
       <p className="text-sm">Jami {fmt(d.total)} · Qaytarildi {fmt(d.paid)}</p>
-      <div className="flex gap-2"><button className={button} disabled={d.remaining <= 0} onClick={() => void pay(d)}>Qarz to‘lash</button><button className={field} onClick={() => void toggle(d.id)}>To‘lovlar tarixi</button></div>
+      <div className="flex gap-2"><button className={button} disabled={d.remaining <= 0} onClick={() => void pay(d)}>{t('Qarz to‘lash')}</button><button className={field} onClick={() => void toggle(d.id)}>{t('To‘lovlar tarixi')}</button></div>
       {history[d.id] && <div className="space-y-1 text-sm">{history[d.id].map(p => <p key={p.id}>{new Date(p.createdAt).toLocaleDateString('ru-RU')} · {fmt(p.amount)} so‘m · {p.method} · {p.note}</p>)}{history[d.id].length === 0 && 'To‘lovlar yo‘q'}</div>}
     </div>)}
     {list.length === 0 && <p className="text-stone-500">Hozircha qarz yo‘q.</p>}
@@ -108,7 +109,7 @@ export function ExpensesView() {
   }
   const filtered = list.filter(e => new Date(e.createdAt).toLocaleDateString('sv-SE') === date)
   return <section className="space-y-4 rounded-2xl border bg-white p-4">
-    <h2 className="font-bold">Kunlik chiqimlar</h2>
+    <h2 className="font-bold">{t('Kunlik chiqimlar')}</h2>
     <form className="flex flex-wrap items-end gap-2" onSubmit={e => void save(e)}>
       <label className="text-sm">Summa (so‘m)<input required type="number" min="1" max="1000000000" className={field + ' block w-40'} value={amount} onChange={e => setAmount(e.target.value)} /></label>
       <label className="text-sm">Sabab<select className={field + ' block'} value={category} onChange={e => setCategory(e.target.value)}>
@@ -117,13 +118,13 @@ export function ExpensesView() {
       <label className="text-sm">To‘lov turi<select className={field + ' block'} value={method} onChange={e => setMethod(e.target.value)}>
         <option value="naqd">Naqd</option><option value="karta">Karta</option><option value="payme">Payme</option><option value="click">Click</option>
       </select></label>
-      <label className="text-sm">Izoh<input className={field + ' block'} maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder="Nimaga sarflandi?" /></label>
-      <button disabled={busy} className={button}>Chiqimni saqlash</button>
+      <label className="text-sm">Izoh<input className={field + ' block'} maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder={t('Nimaga sarflandi?')} /></label>
+      <button disabled={busy} className={button}>{t('Chiqimni saqlash')}</button>
     </form>
     {error && <p className="text-sm text-red-600">{error}</p>}
     <div className="flex flex-wrap items-center justify-between gap-2"><label className="text-sm">Sana <input className={field + ' ml-2'} type="date" value={date} onChange={e => setDate(e.target.value)} /></label><strong>Jami: {fmt(filtered.reduce((a, e) => a + e.amount, 0))} so‘m</strong></div>
     <div className="divide-y">{filtered.map(e => <div key={e.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><strong>{e.category}</strong> · {e.note || 'Izohsiz'}<p className="text-stone-500">{e.staffName} · {e.method} · {new Date(e.createdAt).toLocaleTimeString('uz-UZ')}</p></div><strong>{fmt(e.amount)} so‘m</strong></div>)}</div>
-    {filtered.length === 0 && <p className="text-sm text-stone-500">Bu kunda chiqim yo‘q.</p>}
+    {filtered.length === 0 && <p className="text-sm text-stone-500">{t('Bu kunda chiqim yo‘q.')}</p>}
     <p className="text-xs text-stone-500">Naqd chiqim ochiq smenadan ayriladi. Bu xarajat ombor qoldig‘ini avtomatik oshirmaydi.</p>
   </section>
 }

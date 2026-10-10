@@ -56,7 +56,7 @@ def test_full_flow():
         r = c.post("/api/stock", json={"ing": "beans", "qty": 1000, "reason": "intake"}, headers=owner)
         assert r.json()["stock"] == stock["beans"] + 1000
 
-        closed = c.post("/api/shifts/close", json={"closingCash": 282000}, headers=kassir).json()
+        closed = c.post("/api/shifts/close", json={"closingCash": 282000, "closingPayments": {"karta": 0, "payme": 0, "click": 0}}, headers=kassir).json()
         assert closed["expectedCash"] == 200000 + 82000 and closed["difference"] == 0
         assert c.get("/api/reports/daily", headers=owner).json()[-1]["revenue"] == 82000
 
@@ -95,3 +95,28 @@ def test_inventory_and_losses():
         assert rep["byNote"] == {"spill": round(100 * beans["cost"])}
         assert rep["inventories"] == 1 and rep["shortage"] == inv["shortage"]
         assert rep["items"][0]["ing"] == "beans" and rep["items"][0]["writeoffQty"] == 100
+
+
+def test_shift_expenses_profit_and_historical_report():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/register", json={"companyName": "Report Cafe", "slug": "report-cafe", "ownerName": "Manager", "ownerPin": "1234"})
+        assert r.status_code == 200, r.text
+        h = {"Authorization": f"Bearer {r.json()['token']}"}
+        assert c.post("/api/shifts/open", json={"openingCash": 100000}, headers=h).status_code == 200
+        e = c.post("/api/expenses", json={"amount": 5000, "category": "Transport", "method": "payme", "note": "Taxi"}, headers=h)
+        assert e.status_code == 200, e.text
+        current = c.get("/api/shifts/current", headers=h).json()
+        assert current["expectedPayments"]["payme"] == -5000
+        assert current["expensesByMethod"]["payme"] == 5000
+        assert c.post("/api/shifts/close", json={"closingCash": 100000}, headers=h).status_code == 422
+        closed = c.post("/api/shifts/close", json={"closingCash": 100000, "closingPayments": {"karta": 0, "payme": 0, "click": 0}}, headers=h)
+        assert closed.status_code == 200, closed.text
+        shift_id = closed.json()["shift"]["id"]
+        history = c.get(f"/api/shifts/{shift_id}/report", headers=h)
+        assert history.status_code == 200, history.text
+        assert history.json()["expenseDetails"][0]["note"] == "Taxi"
+        assert history.json()["shift"]["closingPayments"]["payme"] == 0
+        profit = c.get("/api/reports/profit?period=day", headers=h)
+        assert profit.status_code == 200, profit.text
+        assert profit.json()["expenses"] == 5000
+        assert profit.json()["netProfit"] == -5000

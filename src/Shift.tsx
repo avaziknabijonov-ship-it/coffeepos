@@ -68,6 +68,7 @@ function Summary({ s }: { s: ShiftInfo }) {
 export function CloseShiftModal({ onClose }: { onClose: () => void }) {
   const { shift } = useAppState()
   const [cash, setCash] = useState('')
+  const [payments, setPayments] = useState<Record<'karta' | 'payme' | 'click', string>>({ karta: '', payme: '', click: '' })
   const [result, setResult] = useState<ShiftInfo | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,7 +78,9 @@ export function CloseShiftModal({ onClose }: { onClose: () => void }) {
     setBusy(true)
     setError('')
     try {
-      setResult(await closeShift(Number(cash) || 0))
+      setResult(await closeShift(Number(cash) || 0, {
+        karta: Number(payments.karta), payme: Number(payments.payme), click: Number(payments.click),
+      }))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -103,8 +106,13 @@ export function CloseShiftModal({ onClose }: { onClose: () => void }) {
               <input inputMode="numeric" value={cash ? fmt(Number(cash)) : ''} onChange={(e) => setCash(digits(e.target.value))} placeholder="0"
                 className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-3 text-lg outline-none focus:border-amber-500" />
             </label>
+            {(['karta', 'payme', 'click'] as const).map(p => <label key={p} className="block text-sm font-medium text-stone-600">
+              {t(PAYMENT_LABEL[p])} — {t('Sanalgan')} (hisob: {som(s.expectedPayments?.[p] ?? ((s.byPayment[p] ?? 0) + (s.debtRepaymentsByMethod?.[p] ?? 0)))})
+              <input required inputMode="numeric" value={payments[p] ? fmt(Number(payments[p])) : ''} onChange={e => setPayments(v => ({ ...v, [p]: digits(e.target.value) }))} placeholder="0"
+                className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-3 text-lg outline-none focus:border-amber-500" />
+            </label>)}
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <button disabled={busy || !cash} onClick={submit} className="w-full rounded-xl bg-stone-900 py-3.5 font-semibold text-white disabled:bg-stone-300">{t('Smenani yopish (Z-hisobot)')}</button>
+            <button disabled={busy || !cash || Object.values(payments).some(v => v === '')} onClick={submit} className="w-full rounded-xl bg-stone-900 py-3.5 font-semibold text-white disabled:bg-stone-300">{t('Smenani yopish (Z-hisobot)')}</button>
           </>
         )}
       </div>

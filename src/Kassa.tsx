@@ -201,24 +201,18 @@ function Cart(props: {
       <div className="space-y-3 border-t border-stone-200 p-4">
         <div className="flex items-center gap-2 text-sm">
           <span className="text-stone-500">{t('Chegirma')}</span>
-          {[0, 10, 20, 30, 40, 50].map((p) => (
-            <button key={p} onClick={() => props.setDiscountPct(p)}
-              className={`rounded-lg px-3 py-1.5 font-medium ${props.discountPct === p ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>
-              {p === 0 ? t("Yo'q") : `${p}%`}
-            </button>
-          ))}
           <label className="ml-auto flex items-center gap-1 text-stone-600">
             <input
               type="number"
               min={0}
-              max={100}
+              max={50}
               step={1}
               inputMode="numeric"
               aria-label="Chegirma foizi"
               value={props.discountPct}
               onChange={(e) => {
                 const value = e.currentTarget.valueAsNumber
-                props.setDiscountPct(Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : 0)
+                props.setDiscountPct(Number.isFinite(value) ? Math.min(50, Math.max(0, Math.round(value))) : 0)
               }}
               className="w-16 rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-right text-stone-900"
             />

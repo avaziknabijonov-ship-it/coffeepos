@@ -120,3 +120,63 @@ def test_shift_expenses_profit_and_historical_report():
         assert profit.status_code == 200, profit.text
         assert profit.json()["expenses"] == 5000
         assert profit.json()["netProfit"] == -5000
+
+
+def test_cash_expense_cannot_exceed_shift_balance():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/register", json={
+            "companyName": "Cash Guard Cafe", "slug": "cash-guard-cafe",
+            "ownerName": "Owner", "ownerPin": "1234",
+        })
+        assert r.status_code == 200, r.text
+        h = {"Authorization": f"Bearer {r.json()['token']}"}
+        assert c.post("/api/shifts/open", json={"openingCash": 28000}, headers=h).status_code == 200
+        too_much = c.post("/api/expenses", json={
+            "amount": 50000, "category": "Transport", "method": "naqd",
+        }, headers=h)
+        assert too_much.status_code == 409, too_much.text
+        assert c.get("/api/expenses", headers=h).json() == []
+        ok = c.post("/api/expenses", json={
+            "amount": 20000, "category": "Transport", "method": "naqd",
+        }, headers=h)
+        assert ok.status_code == 200, ok.text
+        current = c.get("/api/shifts/current", headers=h).json()
+        assert current["expectedCash"] == 8000
+        assert c.post("/api/expenses", json={
+            "amount": 8001, "category": "Transport", "method": "naqd",
+        }, headers=h).status_code == 409
+        assert len(c.get("/api/expenses", headers=h).json()) == 1
+
+
+def test_daily_salary_carries_unpaid_balance_into_next_month():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/register", json={
+            "companyName": "Wage Carry Cafe", "slug": "wage-carry-cafe",
+            "ownerName": "Owner", "ownerPin": "1234",
+        })
+        assert r.status_code == 200, r.text
+        h = {"Authorization": f"Bearer {r.json()['token']}"}
+        staff = c.get("/api/staff", headers=h).json()
+        sid = next(s["id"] for s in staff if s["role"] == "owner")
+        assert c.patch(f"/api/staff/{sid}/salary", json={
+            "salaryType": "daily", "salaryRate": 100000,
+        }, headers=h).status_code == 200
+        for _ in range(2):
+            assert c.post("/api/salary/entries", json={
+                "staffId": sid, "kind": "day", "amount": 1,
+            }, headers=h).status_code == 200
+        assert c.post("/api/salary/entries", json={
+            "staffId": sid, "kind": "payment", "amount": 50000,
+        }, headers=h).status_code == 200
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Tashkent"))
+        month = f"{now.year}-{now.month:02d}"
+        current = c.get(f"/api/salary?month={month}", headers=h).json()
+        row = next(s for s in current if s["staffId"] == sid)
+        assert row["earned"] == 200000
+        assert row["remaining"] == 150000
+        future_month = f"{now.year + (now.month == 12)}-{(now.month % 12) + 1:02d}"
+        future = c.get(f"/api/salary?month={future_month}", headers=h).json()
+        future_row = next(s for s in future if s["staffId"] == sid)
+        assert future_row["remaining"] == 150000

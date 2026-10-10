@@ -908,6 +908,9 @@ def salary_config(sid: int, body: SalaryConfigIn, ctx: Ctx = Depends(require(*MA
         raise HTTPException(404, "Xodim topilmadi")
     # Freeze the rate used for future daily accruals. Historical days retain their rate.
     if staff.salary_type == "daily" and body.salaryType == "daily" and staff.salary_rate != body.salaryRate:
+        existing_rate = ctx.db.scalar(select(SalaryEntry.id).where(SalaryEntry.company_id == ctx.cid, SalaryEntry.staff_id == staff.id, SalaryEntry.kind == "rate").limit(1))
+        if existing_rate is None:
+            ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="rate", amount=staff.salary_rate, created_at=0, note="Previous daily rate"))
         ctx.db.add(SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind="rate", amount=body.salaryRate, note="Daily rate change"))
     staff.salary_type, staff.salary_rate = body.salaryType, body.salaryRate
     ctx.db.commit()

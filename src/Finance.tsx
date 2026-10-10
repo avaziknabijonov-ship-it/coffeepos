@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { t } from './i18n'
+import { getLang, t } from './i18n'
 import { fmt } from './data'
 import { useAppState } from './store'
 
@@ -78,7 +78,7 @@ export function DebtsView() {
       {d.note && <p className="text-sm text-stone-600">{t('Izoh')}: {d.note}</p>}
       <p className="text-sm">{t('Jami')} {fmt(d.total)} · {t('Qaytarildi')} {fmt(d.paid)}</p>
       <div className="flex gap-2"><button className={button} disabled={d.remaining <= 0} onClick={() => void pay(d)}>{t('Qarz to‘lash')}</button><button className={field} onClick={() => void toggle(d.id)}>{t('To‘lovlar tarixi')}</button></div>
-      {history[d.id] && <div className="space-y-1 text-sm">{history[d.id].map(p => <p key={p.id}>{new Date(p.createdAt).toLocaleDateString('ru-RU')} · {fmt(p.amount)} {t("so'm")} · {p.method} · {p.note}</p>)}{history[d.id].length === 0 && t('To‘lovlar yo‘q')}</div>}
+      {history[d.id] && <div className="space-y-1 text-sm">{history[d.id].map(p => <p key={p.id}>{new Date(p.createdAt).toLocaleDateString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')} · {fmt(p.amount)} {t("so'm")} · {t(p.method)} · {p.note}</p>)}{history[d.id].length === 0 && t('To‘lovlar yo‘q')}</div>}
     </div>)}
     {list.length === 0 && <p className="text-stone-500">{t('Hozircha qarz yo‘q.')}</p>}
   </section>

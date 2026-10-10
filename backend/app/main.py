@@ -313,6 +313,37 @@ def add_category(body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     return {"id": cat.key, "name": cat.name}
 
 
+class CategoryEditIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.patch("/api/categories/{key}")
+def rename_category(key: str, body: CategoryEditIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cat = get_row(ctx.db, Category, ctx.cid, key)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Kategoriya nomini kiriting")
+    cat.name = name
+    ctx.db.commit()
+    return {"id": cat.key, "name": cat.name}
+
+
+class CategoryOrderIn(BaseModel):
+    keys: list[str] = Field(min_length=1)
+
+
+@app.put("/api/categories/order")
+def reorder_categories(body: CategoryOrderIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cats = rows(ctx.db, Category, ctx.cid)
+    actual = {c.key for c in cats}
+    if len(body.keys) != len(actual) or set(body.keys) != actual:
+        raise HTTPException(422, "Kategoriya ro'yxati mos kelmadi")
+    for i, key in enumerate(body.keys):
+        next(c for c in cats if c.key == key).sort = i
+    ctx.db.commit()
+    return {"ok": True}
+
+
 @app.delete("/api/categories/{key}")
 def delete_category(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     cat = get_row(ctx.db, Category, ctx.cid, key)

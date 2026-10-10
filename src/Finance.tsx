@@ -113,7 +113,7 @@ export function ExpensesView() {
     <form className="flex flex-wrap items-end gap-2" onSubmit={e => void save(e)}>
       <label className="text-sm">{t('Summa (so‘m)')}<input required type="number" min="1" max="1000000000" className={field + ' block w-40'} value={amount} onChange={e => setAmount(e.target.value)} /></label>
       <label className="text-sm">{t('Sabab')}<select className={field + ' block'} value={category} onChange={e => setCategory(e.target.value)}>
-        {['Boshqa', 'Xomashyo', 'Transport', 'Tozalash', 'Kommunal', 'Ta’mirlash'].map(x => <option key={x} value={x}>{t(x)}</option>)}
+        {['Boshqa', 'Xomashyo', 'Transport', 'Tozalash', 'Kommunal', 'Ta’mirlash'].map(x => <option key={x} value={x}>{t(x === 'Tozalash' ? 'expense:Tozalash' : x)}</option>)}
       </select></label>
       <label className="text-sm">{t('To‘lov turi')}<select className={field + ' block'} value={method} onChange={e => setMethod(e.target.value)}>
         <option value="naqd">{t('Naqd')}</option><option value="karta">{t('Karta')}</option><option value="payme">Payme</option><option value="click">Click</option>

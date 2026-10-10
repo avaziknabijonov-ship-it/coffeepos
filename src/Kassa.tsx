@@ -113,7 +113,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
                 className="relative flex min-h-32 disabled:opacity-40 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
-                {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="mb-2 h-28 w-full rounded-xl object-cover" /> : <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>
+                {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="mb-2 h-28 w-full rounded-xl object-cover" /> : <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
                   <span className="block font-semibold leading-tight">{p.name}</span>

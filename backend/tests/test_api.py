@@ -180,3 +180,26 @@ def test_daily_salary_carries_unpaid_balance_into_next_month():
         future = c.get(f"/api/salary?month={future_month}", headers=h).json()
         future_row = next(s for s in future if s["staffId"] == sid)
         assert future_row["remaining"] == 150000
+
+
+def test_daily_rate_change_preserves_old_accrual():
+    with TestClient(app) as client:
+        result = client.post("/api/auth/register", json={"companyName": "Rate History", "slug": "rate-history", "ownerName": "Owner", "ownerPin": "1234"})
+        auth = {"Authorization": f"Bearer {result.json()['token']}"}
+        sid = client.get("/api/staff", headers=auth).json()[0]["id"]
+        def rate(value):
+            return client.patch(f"/api/staff/{sid}/salary", json={"salaryType": "daily", "salaryRate": value}, headers=auth)
+        def entry(kind, amount):
+            return client.post("/api/salary/entries", json={"staffId": sid, "kind": kind, "amount": amount}, headers=auth)
+        assert rate(100000).status_code == 200
+        assert entry("day", 2).status_code == 200
+        assert rate(150000).status_code == 200
+        assert entry("day", 1).status_code == 200
+        assert entry("payment", 50000).status_code == 200
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Tashkent"))
+        report = client.get(f"/api/salary?month={now.year}-{now.month:02d}", headers=auth).json()
+        record = next(item for item in report if item["staffId"] == sid)
+        assert record["earned"] == 350000
+        assert record["remaining"] == 300000

@@ -742,6 +742,20 @@ def shift_close(body: CloseShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
     return {**summary, "shift": shift_out(s), "difference": body.closingCash - summary["expectedCash"]}
 
 
+@app.get("/api/shifts/{shift_id}/report")
+def shift_report(shift_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    shift = ctx.db.get(Shift, shift_id)
+    if not shift or shift.company_id != ctx.cid:
+        raise HTTPException(404, "Smena topilmadi")
+    report = shift_summary(ctx.db, shift)
+    expenses = ctx.db.scalars(select(Expense).where(Expense.company_id == ctx.cid, Expense.shift_id == shift_id).order_by(Expense.created_at)).all()
+    payments = ctx.db.scalars(select(DebtPayment).where(DebtPayment.company_id == ctx.cid, DebtPayment.shift_id == shift_id).order_by(DebtPayment.created_at)).all()
+    report["expenseDetails"] = [expense_out(e) for e in expenses]
+    report["repaymentDetails"] = [{"amount": p.amount, "method": p.method, "note": p.note, "createdAt": p.created_at} for p in payments]
+    report["difference"] = (shift.closing_cash - report["expectedCash"]) if shift.closed_at is not None and shift.closing_cash is not None else None
+    return report
+
+
 @app.get("/api/shifts")
 def shift_history(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
     q = select(Shift).where(Shift.company_id == ctx.cid).order_by(Shift.id.desc()).limit(30)

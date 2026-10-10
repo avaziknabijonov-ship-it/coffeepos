@@ -15,6 +15,7 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'expense:Tozalash': 'Уборка',
   'g': 'г',
   'ml': 'мл',
   'kg': 'кг',
@@ -22,7 +23,6 @@ const RU: Record<string, string> = {
   'Jami': 'Итого',
   'Qaytarildi': 'Погашено',
   'Bekor': 'Отмена',
-  'Boshqa': 'Другое',
   'Transport': 'Транспорт',
   'Kommunal': 'Коммунальные услуги',
   'Ta’mirlash': 'Ремонт',
@@ -33,11 +33,9 @@ const RU: Record<string, string> = {
   'Necha kun ishladi?': 'Сколько дней отработано?',
   'Summani kiriting': 'Введите сумму',
   'Izoh (ixtiyoriy)': 'Примечание (необязательно)',
-  'Tozalash': 'Уборка',
 
   'Qarzdan qaytarilgan': 'Погашение долгов',
   'Naqd chiqimlar': 'Расходы наличными',
-  'Sabab': 'Причина',
   'Izoh': 'Примечание',
   'Izohsiz': 'Без примечания',
   'Nimaga sarflandi?': 'На что потрачено?',

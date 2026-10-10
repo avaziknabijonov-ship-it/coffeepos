@@ -929,7 +929,9 @@ def add_salary_entry(body: SalaryEntryIn, ctx: Ctx = Depends(require(*MANAGERS))
     staff = ctx.db.get(Staff, body.staffId)
     if not staff or staff.company_id != ctx.cid:
         raise HTTPException(404, "Xodim topilmadi")
-    row = SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind=body.kind, amount=body.amount, note=body.note)
+    # Store the rate on each work-day event, so later rate changes cannot rewrite history.
+    note = f"daily_rate:{staff.salary_rate}" if body.kind == "day" and staff.salary_type == "daily" else body.note
+    row = SalaryEntry(company_id=ctx.cid, staff_id=staff.id, kind=body.kind, amount=body.amount, note=note)
     ctx.db.add(row)
     ctx.db.commit()
     return {"id": row.id}
@@ -969,7 +971,13 @@ def salary_report(month: str, ctx: Ctx = Depends(require(*MANAGERS))) -> list[di
                 if entry.kind == "rate":
                     current_rate = entry.amount
                 elif entry.kind == "day":
-                    value = entry.amount * current_rate
+                    frozen_rate = current_rate
+                    if entry.note and entry.note.startswith("daily_rate:"):
+                        try:
+                            frozen_rate = int(entry.note.split(":", 1)[1])
+                        except ValueError:
+                            pass
+                    value = entry.amount * frozen_rate
                     accrued += value
                     if entry.created_at >= month_start_ms:
                         accrued_month += value

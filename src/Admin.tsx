@@ -356,17 +356,17 @@ function ProfitReport() {
   return <Card title={t('Foyda hisoboti')}>
     <div className="mb-4 flex flex-wrap gap-2">
       <select className="rounded-lg border p-2" value={period} onChange={e => setPeriod(e.target.value as 'day' | 'month')}>
-        <option value="day">День</option><option value="month">Месяц</option>
+        <option value="day">{t("Kun")}</option><option value="month">{t("Oy")}</option>
       </select>
       <input className="rounded-lg border p-2" type={period === 'day' ? 'date' : 'month'} value={period === 'day' ? date : date.slice(0, 7)} onChange={e => setDate(period === 'day' ? e.target.value : e.target.value + '-01')} />
     </div>
     {error && <p className="text-red-600">{error}</p>}
     {report && <div className="space-y-2 text-sm">
-      {([['Заказы', report.orders], ['Выручка', report.revenue], ['Себестоимость', report.cost], ['Валовая прибыль', report.grossProfit], ['Расходы', report.expenses], ['Чистая прибыль (расчётная)', report.netProfit], ['Продажи в долг (включены в выручку)', report.debtSales]] as const).map(([name, amount]) =>
-        <div key={name} className="flex justify-between gap-3 border-b py-2"><span>{name}</span><b>{name === 'Заказы' ? amount : som(amount)}</b></div>)}
-      <h3 className="pt-3 font-semibold">Расходы по категориям</h3>
+      {([[t('Buyurtmalar'), report.orders], [t('Tushum'), report.revenue], [t('Tannarx'), report.cost], [t('Yalpi foyda'), report.grossProfit], [t('Xarajatlar'), report.expenses], [t('Hisoblangan sof foyda'), report.netProfit], [t('Qarzga sotuvlar (tushumga kiritilgan)'), report.debtSales]] as const).map(([name, amount]) =>
+        <div key={name} className="flex justify-between gap-3 border-b py-2"><span>{name}</span><b>{name === t('Buyurtmalar') ? amount : som(amount)}</b></div>)}
+      <h3 className="pt-3 font-semibold">{t("Xarajatlar kategoriyalar bo‘yicha")}</h3>
       {Object.entries(report.expensesByCategory).map(([name, amount]) => <div key={name} className="flex justify-between gap-3"><span>{name}</span><b>{som(amount)}</b></div>)}
-      <p className="pt-3 text-stone-500">Расчётная прибыль учитывает продажи в долг как выручку. Погашения старых долгов повторно в прибыль не включаются.</p>
+      <p className="pt-3 text-stone-500">{t("Hisoblangan foydaga qarzga sotuvlar ham kiradi. Eski qarz qaytarilishi foydaga qayta qo‘shilmaydi.")}</p>
     </div>}
   </Card>
 }

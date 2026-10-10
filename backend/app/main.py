@@ -1055,8 +1055,15 @@ def list_expenses(ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
 @app.post("/api/expenses")
 def create_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     shift = open_shift(ctx.db, ctx.cid)
-    if body.method == "naqd" and not shift:
-        raise HTTPException(409, "Naqd chiqim uchun avval smenani oching")
+    if body.method == "naqd":
+        if not shift:
+            raise HTTPException(409, "Naqd chiqim uchun avval smenani oching")
+        available_cash = shift_summary(ctx.db, shift)["expectedCash"]
+        if body.amount > available_cash:
+            raise HTTPException(
+                409,
+                f"Kassada mablag' yetarli emas. Mavjud: {available_cash:,} so'm; xarajat: {body.amount:,} so'm",
+            )
     category = body.category.strip()
     expense_note = body.note.strip()
     if category == "Oylik":

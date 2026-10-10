@@ -100,15 +100,15 @@ export function ExpensesView() {
   const [busy, setBusy] = useState(false)
   const [date, setDate] = useState(() => new Date().toLocaleDateString('sv-SE'))
   const load = () => api<Expense[]>('/api/expenses').then(setList).catch((e: Error) => setError(e.message))
-  useEffect(() => { void load(); if (session?.staff.role === 'owner' || session?.staff.role === 'admin') { void api<{ id: number; name: string }[]>('/api/staff').then(setStaffList).catch(() => {}) } }, [session?.staff.role])
+  useEffect(() => { void load(); void api<{ id: number; name: string }[]>('/api/staff/expense-recipients').then(setStaffList).catch(() => {}) }, [session?.staff.role])
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     const value = Number(amount)
     if (!Number.isSafeInteger(value) || value <= 0) return setError('To‘g‘ri summa kiriting')
     setBusy(true); setError('')
     try {
-      const targetId = session?.staff.role === 'kassir' ? session.staff.id : salaryStaffId
-      if (category === 'Oylik' && !targetId) return setError(t('Xodimni tanlang'))
+      const targetId = salaryStaffId
+      if (category === 'Oylik' && !targetId) { setBusy(false); return setError(t('Xodimni tanlang')) }
       await api('/api/expenses', { body: { amount: value, category, note, method, salaryStaffId: category === 'Oylik' ? targetId : null } })
       setAmount(''); setNote(''); await load()
     } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
@@ -121,7 +121,7 @@ export function ExpensesView() {
       <label className="text-sm">{t('Sabab')}<select className={field + ' block'} value={category} onChange={e => setCategory(e.target.value)}>
         {['Boshqa', 'Xomashyo', 'Transport', 'Tozalash', 'Kommunal', 'Ta’mirlash', 'Oylik'].map(x => <option key={x} value={x}>{t(x === 'Tozalash' ? 'expense:Tozalash' : x)}</option>)}
       </select></label>
-      {category === 'Oylik' && (session?.staff.role === 'kassir' ? <span className="text-sm">{t('Xodim')}: {session.staff.name}</span> : <label className="text-sm">{t('Xodim')}<select required className={field + ' block'} value={salaryStaffId} onChange={e => setSalaryStaffId(Number(e.target.value))}><option value={0}>{t('Xodimni tanlang')}</option>{staffList.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>)}
+      {category === 'Oylik' && <label className="text-sm">{t('Xodim')}<select required className={field + ' block'} value={salaryStaffId} onChange={e => setSalaryStaffId(Number(e.target.value))}><option value={0}>{t('Xodimni tanlang')}</option>{staffList.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}
       <label className="text-sm">{t('To‘lov turi')}<select className={field + ' block'} value={method} onChange={e => setMethod(e.target.value)}>
         <option value="naqd">{t('Naqd')}</option><option value="karta">{t('Karta')}</option><option value="payme">Payme</option><option value="click">Click</option>
       </select></label>

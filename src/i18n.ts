@@ -15,6 +15,16 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'Kun': 'День',
+  'Oy': 'Месяц',
+  'Buyurtmalar': 'Заказы',
+  'Tushum': 'Выручка',
+  'Tannarx': 'Себестоимость',
+  'Xarajatlar': 'Расходы',
+  'Hisoblangan sof foyda': 'Чистая прибыль (расчётная)',
+  'Qarzga sotuvlar (tushumga kiritilgan)': 'Продажи в долг (включены в выручку)',
+  'Xarajatlar kategoriyalar bo‘yicha': 'Расходы по категориям',
+  'Hisoblangan foydaga qarzga sotuvlar ham kiradi. Eski qarz qaytarilishi foydaga qayta qo‘shilmaydi.': 'Расчётная прибыль учитывает продажи в долг как выручку. Погашения старых долгов повторно в прибыль не включаются.',
   'Foyda hisoboti': 'Отчёт о прибыли',
   'Xodim': 'Сотрудник',
   'Xodimni tanlang': 'Выберите сотрудника',

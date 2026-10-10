@@ -133,6 +133,8 @@ def test_cash_expense_cannot_exceed_shift_balance():
         assert r.status_code == 200, r.text
         h = {"Authorization": f"Bearer {r.json()['token']}"}
         assert c.post("/api/shifts/open", json={"openingCash": 28000}, headers=h).status_code == 200
+        before = c.get("/api/shifts/current", headers=h).json()
+        assert before["expectedCash"] == 28000, before
         too_much = c.post("/api/expenses", json={
             "amount": 50000, "category": "Transport", "method": "naqd",
         }, headers=h)

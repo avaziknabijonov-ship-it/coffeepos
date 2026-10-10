@@ -207,6 +207,23 @@ function Cart(props: {
               {p === 0 ? t("Yo'q") : `${p}%`}
             </button>
           ))}
+          <label className="ml-auto flex items-center gap-1 text-stone-600">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              inputMode="numeric"
+              aria-label="Chegirma foizi"
+              value={props.discountPct}
+              onChange={(e) => {
+                const value = e.currentTarget.valueAsNumber
+                props.setDiscountPct(Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : 0)
+              }}
+              className="w-16 rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-right text-stone-900"
+            />
+            <span>%</span>
+          </label>
         </div>
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">

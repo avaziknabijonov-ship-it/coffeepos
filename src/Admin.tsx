@@ -7,9 +7,9 @@ import { api } from './api'
 import { refreshMenu, startOfToday, stockMove, useAppState } from './store'
 import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
-import { SalaryView, DebtsView } from './Finance'
+import { SalaryView, DebtsView, ExpensesView } from './Finance'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts' | 'expenses'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'stock', label: 'Ombor' },
   { id: 'inventory', label: 'Inventarizatsiya' },
@@ -20,6 +20,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'shifts', label: 'Smenalar' },
   { id: 'salary', label: 'Oylik' },
   { id: 'debts', label: 'Qarzlar' },
+  { id: 'expenses', label: 'Kunlik chiqimlar' },
 ]
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
@@ -54,6 +55,7 @@ export default function Admin({ initialView = 'stock' }: { initialView?: View })
         {view === 'shifts' && <ShiftsView />}
         {view === 'salary' && <SalaryView />}
         {view === 'debts' && <DebtsView />}
+        {view === 'expenses' && <ExpensesView />}
       </div>
     </div>
   )

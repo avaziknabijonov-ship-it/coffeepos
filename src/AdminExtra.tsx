@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getLang, t } from './i18n'
+import { getLang, t, tServer } from './i18n'
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { ModGroupId, Payment, Product, Role, Size, Unit } from './data'
@@ -333,7 +333,7 @@ export function ShiftsView() {
       <h3 className="mt-5 font-semibold">{t('Xarajatlar tafsiloti')}</h3>
       {report.expenseDetails.length === 0 ? <p className="text-sm text-stone-500">{t('Xarajatlar yo‘q')}</p> :
         <div className="mt-2 space-y-2">{report.expenseDetails.map(e => <div key={e.id} className="rounded-lg border p-3 text-sm">
-          <b>{t(e.category)}: {som(e.amount)}</b> · {t(PAYMENT_LABEL[e.method as Payment] ?? e.method)}<div>{e.note ? t(e.note) : t('Izohsiz')}</div>
+          <b>{t(e.category)}: {som(e.amount)}</b> · {t(PAYMENT_LABEL[e.method as Payment] ?? e.method)}<div>{e.note ? tServer(e.note) : t('Izohsiz')}</div>
           <div className="text-stone-500">{t('Bergan:')} {e.staffName} · {new Date(e.createdAt).toLocaleString(getLang() === 'ru' ? 'ru-RU' : 'uz-UZ')}</div>
         </div>)}</div>}
       <h3 className="mt-5 font-semibold">{t('Qarz to‘lovlari')}</h3>

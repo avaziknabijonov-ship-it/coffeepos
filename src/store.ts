@@ -7,7 +7,7 @@ import type { Lang } from './i18n'
 
 export interface Session { staff: { id: number; name: string; role: Role }; company: { slug: string; name: string } }
 export interface ShiftInfo {
-  shift: { id: number; staff: string; openedAt: number; openingCash: number; closedAt?: number | null; closingCash?: number | null; expectedCash?: number | null }
+  shift: { id: number; staff: string; openedAt: number; openingCash: number; closedAt?: number | null; closingCash?: number | null; expectedCash?: number | null; closingPayments?: Partial<Record<Exclude<Payment, "qarz">, number>> | null }
   orders: number
   revenue: number
   byPayment: Partial<Record<Payment, number>>
@@ -16,6 +16,7 @@ export interface ShiftInfo {
   expenses: number
   cashExpenses: number
   expectedCash: number
+  expectedPayments?: Partial<Record<Exclude<Payment, "qarz">, number>>
   difference?: number
 }
 export interface State {
@@ -145,8 +146,8 @@ export async function openShift(openingCash: number) {
   await sync()
 }
 
-export async function closeShift(closingCash: number) {
-  const r = await api<ShiftInfo>('/api/shifts/close', { body: { closingCash } })
+export async function closeShift(closingCash: number, closingPayments: Record<"karta" | "payme" | "click", number>) {
+  const r = await api<ShiftInfo>('/api/shifts/close', { body: { closingCash, closingPayments } })
   await sync()
   return r
 }

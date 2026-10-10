@@ -120,6 +120,7 @@ class Shift(Base):
     closed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     closing_cash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     expected_cash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    closing_payments: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Order(Base):

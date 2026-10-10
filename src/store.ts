@@ -15,6 +15,7 @@ export interface ShiftInfo {
   debtRepaymentsByMethod: Partial<Record<Exclude<Payment, "qarz">, number>>
   expenses: number
   cashExpenses: number
+  expensesByMethod?: Partial<Record<Exclude<Payment, "qarz">, number>>
   expectedCash: number
   expectedPayments?: Partial<Record<Exclude<Payment, "qarz">, number>>
   difference?: number

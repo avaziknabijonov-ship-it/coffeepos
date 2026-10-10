@@ -17,9 +17,6 @@ const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Beril
 const RU: Record<string, string> = {
   'Kun': 'День',
   'Oy': 'Месяц',
-  'Buyurtmalar': 'Заказы',
-  'Tushum': 'Выручка',
-  'Tannarx': 'Себестоимость',
   'Xarajatlar': 'Расходы',
   'Hisoblangan sof foyda': 'Чистая прибыль (расчётная)',
   'Qarzga sotuvlar (tushumga kiritilgan)': 'Продажи в долг (включены в выручку)',

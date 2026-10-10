@@ -706,17 +706,17 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     for p in repayments:
         repaid_by_method[p.method] = repaid_by_method.get(p.method, 0) + p.amount
     expenses = db.scalars(select(Expense).where(Expense.shift_id == shift.id)).all()
-    cash_expenses = sum(e.amount for e in expenses if e.method == "naqd")
+    expenses_by_method = {m: sum(e.amount for e in expenses if e.method == m) for m in ("naqd", "karta", "payme", "click")}\n    cash_expenses = expenses_by_method["naqd"]
     return {
         "shift": shift_out(shift),
         "expenses": sum(e.amount for e in expenses),
-        "cashExpenses": cash_expenses,
+        "cashExpenses": cash_expenses,\n        "expensesByMethod": expenses_by_method,
         "debtRepayments": sum(p.amount for p in repayments),
         "debtRepaymentsByMethod": repaid_by_method,
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
-        "expectedPayments": {m: by_payment.get(m, 0) + repaid_by_method.get(m, 0) for m in ("karta", "payme", "click")},
+        "expectedPayments": {m: by_payment.get(m, 0) + repaid_by_method.get(m, 0) - expenses_by_method[m] for m in ("karta", "payme", "click")},
         "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) + repaid_by_method.get("naqd", 0) - cash_expenses,
     }
 

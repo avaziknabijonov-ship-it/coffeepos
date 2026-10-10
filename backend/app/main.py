@@ -936,16 +936,30 @@ def salary_report(month: str, ctx: Ctx = Depends(require(*MANAGERS))) -> list[di
         end = (start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1))
     except ValueError:
         raise HTTPException(400, "Oy YYYY-MM formatida bo'lsin")
-    entries = ctx.db.scalars(select(SalaryEntry).where(SalaryEntry.company_id == ctx.cid, SalaryEntry.created_at >= int(start.timestamp() * 1000), SalaryEntry.created_at < int(end.timestamp() * 1000))).all()
+    # Fetch through the selected month's end so unpaid daily wages carry into later months.
+    entries = ctx.db.scalars(select(SalaryEntry).where(
+        SalaryEntry.company_id == ctx.cid,
+        SalaryEntry.created_at < int(end.timestamp() * 1000),
+    )).all()
+    month_start_ms = int(start.timestamp() * 1000)
     result = []
     for staff in rows(ctx.db, Staff, ctx.cid):
-        own = [e for e in entries if e.staff_id == staff.id]
+        history = [e for e in entries if e.staff_id == staff.id]
+        own = [e for e in history if e.created_at >= month_start_ms]
         days = sum(e.amount for e in own if e.kind == "day")
         bonus = sum(e.amount for e in own if e.kind == "bonus")
         deduction = sum(e.amount for e in own if e.kind == "deduction")
         paid = sum(e.amount for e in own if e.kind in ("advance", "payment"))
         earned = (staff.salary_rate * days if staff.salary_type == "daily" else staff.salary_rate) + bonus - deduction
-        result.append({"staffId": staff.id, "name": staff.name, "salaryType": staff.salary_type, "salaryRate": staff.salary_rate, "days": days, "earned": earned, "paid": paid, "remaining": earned - paid})
+        if staff.salary_type == "daily":
+            all_days = sum(e.amount for e in history if e.kind == "day")
+            all_bonus = sum(e.amount for e in history if e.kind == "bonus")
+            all_deduction = sum(e.amount for e in history if e.kind == "deduction")
+            all_paid = sum(e.amount for e in history if e.kind in ("advance", "payment"))
+            remaining = staff.salary_rate * all_days + all_bonus - all_deduction - all_paid
+        else:
+            remaining = earned - paid
+        result.append({"staffId": staff.id, "name": staff.name, "salaryType": staff.salary_type, "salaryRate": staff.salary_rate, "days": days, "earned": earned, "paid": paid, "remaining": remaining})
     return result
 
 

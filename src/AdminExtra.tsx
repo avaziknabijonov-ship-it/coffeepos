@@ -322,6 +322,12 @@ export function ShiftsView() {
         <div>Пересчитано: <b>{report.shift.closingCash === null ? '—' : som(report.shift.closingCash ?? 0)}</b></div>
         <div>Разница: <b>{report.difference === null ? '—' : som(report.difference)}</b></div>
       </div>
+      <h3 className="mt-5 font-semibold">Сверка способов оплаты</h3>
+      <div className="mt-2 space-y-2 text-sm">{(['naqd', 'karta', 'payme', 'click'] as const).map(p => {
+        const expected = p === 'naqd' ? report.expectedCash : (report.expectedPayments?.[p] ?? ((report.byPayment[p] ?? 0) + (report.debtRepaymentsByMethod?.[p] ?? 0)))
+        const actual = report.shift.closingPayments?.[p] ?? (p === 'naqd' ? report.shift.closingCash : null)
+        return <div key={p} className="rounded-lg border p-2"><b>{t(PAYMENT_LABEL[p])}</b> · По учёту: {som(expected)} · Введено: {actual == null ? '—' : som(actual)} · Разница: {actual == null ? '—' : som(actual - expected)}</div>
+      })}</div>
       <h3 className="mt-5 font-semibold">Способы оплаты</h3>
       <div className="mt-2 space-y-1 text-sm">{Object.entries(report.byPayment).map(([method, amount]) => <div key={method}>{method}: {som(amount)}</div>)}</div>
       <h3 className="mt-5 font-semibold">Расходы по операциям</h3>

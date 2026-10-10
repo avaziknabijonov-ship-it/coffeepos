@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from . import seed
 from .platform import router as platform_router, page_router as platform_page_router
 from .db import (
-    Base, Category, Company, Debt, DebtPayment, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
+    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -645,12 +645,16 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     for o in orders:
         if o.payment != "qarz":
             by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    expenses = db.scalars(select(Expense).where(Expense.shift_id == shift.id)).all()
+    cash_expenses = sum(e.amount for e in expenses if e.method == "naqd")
     return {
         "shift": shift_out(shift),
+        "expenses": sum(e.amount for e in expenses),
+        "cashExpenses": cash_expenses,
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0),
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_expenses,
     }
 
 
@@ -894,3 +898,37 @@ def debt_payment_history(debt_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -
         raise HTTPException(404, "Qarz topilmadi")
     payments = ctx.db.scalars(select(DebtPayment).where(DebtPayment.company_id == ctx.cid, DebtPayment.debt_id == debt_id).order_by(DebtPayment.id.desc())).all()
     return [{"id": p.id, "amount": p.amount, "method": p.method, "note": p.note, "createdAt": p.created_at} for p in payments]
+
+
+# ---------- daily expenses ----------
+
+class ExpenseIn(BaseModel):
+    amount: int = Field(gt=0, le=1_000_000_000)
+    category: str = Field(min_length=1, max_length=64)
+    note: str = Field(default="", max_length=500)
+    method: Literal["naqd", "karta", "payme", "click"] = "naqd"
+
+
+def expense_out(e: Expense) -> dict:
+    return {"id": e.id, "amount": e.amount, "category": e.category, "note": e.note,
+            "method": e.method, "staffName": e.staff_name, "createdAt": e.created_at, "shiftId": e.shift_id}
+
+
+@app.get("/api/expenses")
+def list_expenses(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(Expense).where(Expense.company_id == ctx.cid).order_by(Expense.created_at.desc()).limit(500)
+    return [expense_out(e) for e in ctx.db.scalars(q)]
+
+
+@app.post("/api/expenses")
+def create_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    shift = open_shift(ctx.db, ctx.cid)
+    if body.method == "naqd" and not shift:
+        raise HTTPException(409, "Naqd chiqim uchun avval smenani oching")
+    e = Expense(company_id=ctx.cid, shift_id=shift.id if shift else None,
+                amount=body.amount, category=body.category.strip(), note=body.note.strip(),
+                method=body.method, staff_name=ctx.staff.name)
+    ctx.db.add(e)
+    ctx.db.commit()
+    ctx.db.refresh(e)
+    return expense_out(e)

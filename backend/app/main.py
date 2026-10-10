@@ -982,6 +982,37 @@ def debt_payment_history(debt_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -
     return [{"id": p.id, "amount": p.amount, "method": p.method, "note": p.note, "createdAt": p.created_at} for p in payments]
 
 
+# ---------- profit reports ----------
+
+@app.get("/api/reports/profit")
+def profit_report(period: Literal["day", "month"] = "day", date: str = "", ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    try:
+        selected = datetime.strptime(date or datetime.now(TZ).strftime("%Y-%m-%d"), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(422, "Sana noto'g'ri")
+    if period == "month":
+        start = selected.replace(day=1)
+        end = (start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1))
+    else:
+        start = selected
+        end = start + timedelta(days=1)
+    from_ts = int(datetime(start.year, start.month, start.day, tzinfo=TZ).timestamp() * 1000)
+    to_ts = int(datetime(end.year, end.month, end.day, tzinfo=TZ).timestamp() * 1000)
+    orders = ctx.db.scalars(select(Order).where(Order.company_id == ctx.cid, Order.created_at >= from_ts, Order.created_at < to_ts)).all()
+    expenses = ctx.db.scalars(select(Expense).where(Expense.company_id == ctx.cid, Expense.created_at >= from_ts, Expense.created_at < to_ts)).all()
+    revenue = sum(o.total for o in orders)
+    cost = sum(o.cost for o in orders)
+    expenses_total = sum(e.amount for e in expenses)
+    categories: dict[str, int] = {}
+    for e in expenses:
+        categories[e.category] = categories.get(e.category, 0) + e.amount
+    return {"period": period, "start": from_ts, "end": to_ts, "orders": len(orders),
+            "revenue": revenue, "cost": cost, "grossProfit": revenue - cost,
+            "expenses": expenses_total, "netProfit": revenue - cost - expenses_total,
+            "expensesByCategory": categories,
+            "debtSales": sum(o.total for o in orders if o.payment == "qarz")}
+
+
 # ---------- daily expenses ----------
 
 class ExpenseIn(BaseModel):

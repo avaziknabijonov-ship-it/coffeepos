@@ -168,6 +168,7 @@ const RU: Record<string, string> = {
 }
 
 const RU_PATTERNS: [RegExp, string][] = [
+  [/^Kassada mablag' yetarli emas\. Mavjud: (.*); xarajat: (.*)$/, 'Недостаточно денег в кассе. Доступно: $1; расход: $2'],
   [/^Xomashyo topilmadi: (.*)$/, 'Сырьё не найдено: $1'],
   [/^(.*) stop-listda$/, '$1 в стоп-листе'],
   [/^(.*): bitta guruhdan bitta tanlanadi$/, '$1: из группы выбирается только один вариант'],

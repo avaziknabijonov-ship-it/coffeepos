@@ -74,6 +74,7 @@ export function CloseShiftModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const s = result ?? shift
   const submit = async () => {
+    if (!cash || Object.values(payments).some(v => v === '')) return
     if (!confirm(t('Smena yopilsinmi?'))) return
     setBusy(true)
     setError('')
@@ -107,7 +108,7 @@ export function CloseShiftModal({ onClose }: { onClose: () => void }) {
                 className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-3 text-lg outline-none focus:border-amber-500" />
             </label>
             {(['karta', 'payme', 'click'] as const).map(p => <label key={p} className="block text-sm font-medium text-stone-600">
-              {t(PAYMENT_LABEL[p])} — {t('Sanalgan')} (hisob: {som(s.expectedPayments?.[p] ?? ((s.byPayment[p] ?? 0) + (s.debtRepaymentsByMethod?.[p] ?? 0)))})
+              {t(PAYMENT_LABEL[p])} — {t('Sanalgan')} (hisob: {som(s.expectedPayments?.[p] ?? ((s.byPayment[p] ?? 0) + (s.debtRepaymentsByMethod?.[p] ?? 0) - (s.expensesByMethod?.[p] ?? 0)))})
               <input required inputMode="numeric" value={payments[p] ? fmt(Number(payments[p])) : ''} onChange={e => setPayments(v => ({ ...v, [p]: digits(e.target.value) }))} placeholder="0"
                 className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-3 text-lg outline-none focus:border-amber-500" />
             </label>)}

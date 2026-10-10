@@ -181,7 +181,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
 }
 
 function perBulk(cost: number, unit: string) {
-  return unit === 'g' ? `${fmt(cost * 1000)} / kg` : unit === 'ml' ? `${fmt(cost * 1000)} / l` : `${fmt(cost)} / ${t('dona')}`
+  return unit === 'g' ? `${fmt(cost * 1000)} / ${t('kg')}` : unit === 'ml' ? `${fmt(cost * 1000)} / ${t('l')}` : `${fmt(cost)} / ${t('dona')}`
 }
 
 function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
@@ -228,13 +228,13 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
                       <div className="flex flex-wrap items-center justify-end gap-1">
                         <input aria-label="Bir birlik tannarxi" type="number" min="0" step="any" value={newCost} onChange={(e) => setNewCost(e.target.value)}
                           className="w-24 rounded-lg border border-stone-300 px-2 py-1.5 text-right" />
-                        <button disabled={savingCost} onClick={() => void saveCost(i)} className="rounded-lg bg-stone-900 px-2 py-1.5 text-white disabled:opacity-50">Saqlash</button>
-                        <button disabled={savingCost} onClick={() => setEditingCost(null)} className="rounded-lg border px-2 py-1.5">Bekor</button>
+                        <button disabled={savingCost} onClick={() => void saveCost(i)} className="rounded-lg bg-stone-900 px-2 py-1.5 text-white disabled:opacity-50">{t('Saqlash')}</button>
+                        <button disabled={savingCost} onClick={() => setEditingCost(null)} className="rounded-lg border px-2 py-1.5">{t('Bekor')}</button>
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-2">
                         <span>{perBulk(i.cost, i.unit)}</span>
-                        {canEditCost && <button onClick={() => { setEditingCost(i.id); setNewCost(String(i.cost)) }} className="rounded-lg border border-stone-200 px-2 py-1 text-xs">Tahrirlash</button>}
+                        {canEditCost && <button onClick={() => { setEditingCost(i.id); setNewCost(String(i.cost)) }} className="rounded-lg border border-stone-200 px-2 py-1 text-xs">{t('Tahrirlash')}</button>}
                       </div>
                     )}
                   </td>

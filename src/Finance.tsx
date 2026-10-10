@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { getLang, t } from './i18n'
+import { getLang, t, tServer } from './i18n'
 import { fmt } from './data'
 import { useAppState } from './store'
 
@@ -130,7 +130,7 @@ export function ExpensesView() {
     </form>
     {error && <p className="text-sm text-red-600">{error}</p>}
     <div className="flex flex-wrap items-center justify-between gap-2"><label className="text-sm">{t('Sana')} <input className={field + ' ml-2'} type="date" value={date} onChange={e => setDate(e.target.value)} /></label><strong>{t('Jami')}: {fmt(filtered.reduce((a, e) => a + e.amount, 0))} {t("so'm")}</strong></div>
-    <div className="divide-y">{filtered.map(e => <div key={e.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><strong>{t(e.category)}</strong> · {e.note ? t(e.note) : t('Izohsiz')}<p className="text-stone-500">{e.staffName} · {t(e.method)} · {new Date(e.createdAt).toLocaleTimeString('uz-UZ')}</p></div><strong>{fmt(e.amount)} {t("so'm")}</strong></div>)}</div>
+    <div className="divide-y">{filtered.map(e => <div key={e.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><strong>{t(e.category)}</strong> · {e.note ? tServer(e.note) : t('Izohsiz')}<p className="text-stone-500">{e.staffName} · {t(e.method)} · {new Date(e.createdAt).toLocaleTimeString('uz-UZ')}</p></div><strong>{fmt(e.amount)} {t("so'm")}</strong></div>)}</div>
     {filtered.length === 0 && <p className="text-sm text-stone-500">{t('Bu kunda chiqim yo‘q.')}</p>}
     <p className="text-xs text-stone-500">{t('Naqd chiqim ochiq smenadan ayriladi. Bu xarajat ombor qoldig‘ini avtomatik oshirmaydi.')}</p>
   </section>

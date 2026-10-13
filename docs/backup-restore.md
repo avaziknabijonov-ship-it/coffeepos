@@ -13,6 +13,18 @@ bash scripts/backup-postgres.sh /safe-location/coffee-backups
 
 Script `db` servisiga `pg_dump -Fc` yuboradi, yangi .dump faylini `pg_restore --list` orqali tasdiqlaydi va faqat shundan so'ng yakuniy nom beradi. Eski backup ustiga yozmaydi. Natijani imkon qadar boshqa disk/joyga ko'chiring. Nusxa olinayotgan baza foydalanuvchilari va kompaniya ma'lumotlarini o'z ichiga oladi: **maxfiy ma'lumot sifatida saqlang**.
 
+## SQLite (Windowsdagi lokal CoffeePOS)
+
+SQLite uchun alohida skript source bazani **faqat o'qish rejimida** ochadi va `sqlite3.Connection.backup()` yordamida yangi snapshot yaratadi; uning yaxlitligi tekshiriladi. Masalan TEST loyihangizdagi baza bilan:
+
+```cmd
+py -3.12 scripts\backup-sqlite.py "C:\\path\\to\\TEST-coffeepos.db" "D:\\test-coffee-backups"
+```
+
+**Bu faqat misol:** yo'llarni tekshirib, aynan qaysi bazaga tegishli ekanini aniqlang. Script ishlab turgan bazani o'chirmaydi, yangilamaydi yoki ustiga yozmaydi. Kompyuterdagi `C:\\CoffeePoss\\yangi-versiya\\coffeepos.db` haqiqiy MasterCoffee bazasi; undan faqat ruxsat va alohida saqlash reja bo'lganda zaxira oling, hech qachon sinov bazasi bilan almashtirmang.
+
+`backend/tests/test_sqlite_backup.py` faqat vaqtinchalik sinov bazasida bu skriptni test qiladi.
+
 ## Test bazasida tiklash (production emas)
 
 To'liq tiklashni **bo'sh, alohida test PostgreSQL bazasiga**, aynan mos server/DB versiyasida qiling. Masalan CI sinovida `coffeepos` manba test bazasidan `coffeepos_restored` nomli bo'sh test bazaga tiklanadi va kompaniya, xodim, mahsulot, obuna satrlari tekshiriladi.

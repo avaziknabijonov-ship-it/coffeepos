@@ -17,8 +17,9 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <body><header><div class="wrap"><h1>☕ CoffeePOS Super Admin</h1><small>Platforma boshqaruvi — dastlabki versiya</small></div></header>
 <main class="wrap">
 <section class="card"><h2>Administrator kirishi</h2>
-<p><small>PLATFORM_ADMIN_KEY serverda sozlangan bo‘lishi kerak. Kalit faqat shu sahifa xotirasida saqlanadi.</small></p>
+<p><small>Admin kaliti va sozlangan bo‘lsa autentifikator ilovasidagi 6 xonali kodni kiriting. Kalit serverga bir marta yuboriladi; bu sahifa faqat 15 daqiqalik sessiyani xotirada saqlaydi.</small></p>
 <div class="row"><input id="key" type="password" autocomplete="off" placeholder="Platform administrator kaliti" style="min-width:280px;flex:1">
+<input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6 xonali MFA kodi (agar sozlangan bo‘lsa)">
 <button id="login">Kirish</button><button id="logout" type="button">Chiqish</button></div>
 <p id="msg" role="status"></p></section>
 <section class="card"><div class="row"><h2 style="flex:1">Coffee barlar</h2><button id="reload">Yangilash</button></div>
@@ -57,7 +58,7 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 </section>
 </main>
 <script>
-let key = '';
+let sessionToken = '';
 let cafeList = [];
 let pendingGrant = null;
 const $ = id => document.getElementById(id);
@@ -76,7 +77,7 @@ const label = value => ({
 const planName = period => ({monthly:'Oylik',yearly:'Yillik'})[period] || '—';
 async function api(path,options={}) {
  const response = await fetch('/api/platform'+path,{
-  ...options, headers:{'X-Platform-Key':key,...(options.headers||{})},cache:'no-store'
+  ...options, headers:{'X-Platform-Session':sessionToken,...(options.headers||{})},cache:'no-store'
  });
  if(!response.ok) {
   let detail = 'Server javobi: '+response.status;
@@ -145,17 +146,34 @@ async function refresh(){
 }
 $('company').onchange=()=>chooseCafe($('company').value);
 $('login').onclick=async()=>{
- key=$('key').value;$('key').value='';
- try {await refresh()}catch(e){key='';show('msg',e.message,true)}
+ const key=$('key').value,code=$('otp').value.trim();
+ $('key').value='';$('otp').value='';
+ sessionToken='';
+ try{
+  const response=await fetch('/api/platform/session',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({key,code}),cache:'no-store'
+  });
+  if(!response.ok){
+   let message='Server javobi: '+response.status;
+   try { const data=await response.json();if(typeof data.detail==='string')message=data.detail; }catch{}
+   throw new Error(message);
+  }
+  const result=await response.json();
+  sessionToken=result.token;
+  await refresh();
+  show('msg','Super Admin sessiyasi ochildi. 15 daqiqadan so‘ng qayta kiring.');
+ }catch(e){sessionToken='';show('msg',e.message,true)}
 };
 $('logout').onclick=()=>{
- key='';cafeList=[];$('rows').replaceChildren();$('company').replaceChildren();
- $('history').replaceChildren();show('msg','Chiqildi');
+ sessionToken='';pendingGrant=null;cafeList=[];$('rows').replaceChildren();$('company').replaceChildren();
+ $('history').replaceChildren();$('monthlyPrice').value='';$('yearlyPrice').value='';
+ show('msg','Chiqildi');
 };
-$('reload').onclick=async()=>{if(!key){show('msg','Avval kiring',true);return}try{await refresh()}catch(e){show('msg',e.message,true)}};
+$('reload').onclick=async()=>{if(!sessionToken){show('msg','Avval kiring',true);return}try{await refresh()}catch(e){show('msg',e.message,true)}};
 $('pricingForm').onsubmit=async e=>{
  e.preventDefault();
- if(!key){show('priceMsg','Avval kiring',true);return}
+ if(!sessionToken){show('priceMsg','Avval kiring',true);return}
  const parsePrice=id=>{
   const raw=$(id).value.trim();
   return raw==='' ? null : Number(raw);
@@ -174,7 +192,7 @@ $('pricingForm').onsubmit=async e=>{
 };
 $('form').onsubmit=async e=>{
  e.preventDefault();
- if(!key){show('saveMsg','Avval kiring',true);return}
+ if(!sessionToken){show('saveMsg','Avval kiring',true);return}
  const status=$('status').value,ends=endOfDay($('until').value);
  if(['trial','active','grace'].includes(status)&&(!ends||ends<=Date.now())){
   show('saveMsg','Kelajakdagi tugash sanasini tanlang',true);return;
@@ -193,7 +211,7 @@ $('form').onsubmit=async e=>{
  }catch(err){show('saveMsg',err.message,true)}
 };
 $('extend').onclick=async()=>{
- if(!key){show('extendMsg','Avval kiring',true);return}
+ if(!sessionToken){show('extendMsg','Avval kiring',true);return}
  const cafe=currentCafe(),period=$('period').value;
  if(!cafe || !['monthly','yearly'].includes(period)) return;
  if(!confirm(cafe.name+' uchun '+planName(period)+' obunani faollashtirasizmi? To‘lov tashqarida tasdiqlangan bo‘lishi kerak.')) return;
@@ -219,7 +237,7 @@ $('extend').onclick=async()=>{
 };
 $('newCompany').onsubmit=async e=>{
  e.preventDefault();
- if(!key){show('newMsg','Avval administrator sifatida kiring',true);return}
+ if(!sessionToken){show('newMsg','Avval administrator sifatida kiring',true);return}
  const body={name:$('newName').value.trim(),slug:$('newSlug').value.trim(),ownerName:$('newOwner').value.trim(),ownerPin:$('newPin').value};
  try{
   const result=await api('/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

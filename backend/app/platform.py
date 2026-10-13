@@ -4,13 +4,10 @@ Temporary bootstrap authentication: a long random PLATFORM_ADMIN_KEY environment
 secret, distinct from all tenant PINs/tokens. Replace with dedicated admin identities
 and MFA before production.
 """
-import os
-import secrets
-import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -18,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .db import Company, LicenseAudit, LicenseOperation, PlatformAudit, Setting, Subscription, now_ms
 from .licensing import add_calendar_period, subscription_payload
-from .security import hash_pin
+from .platform_security import PlatformLogin, create_platform_session, platform_auth
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 page_router = APIRouter()
@@ -29,12 +26,6 @@ def platform_admin_page() -> HTMLResponse:
     page = Path(__file__).with_name("platform_admin.html")
     return HTMLResponse(page.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff"})
 
-
-
-def platform_auth(x_platform_key: str = Header(default="")) -> None:
-    configured = os.environ.get("PLATFORM_ADMIN_KEY", "")
-    if len(configured) < 32 or not x_platform_key or not secrets.compare_digest(configured, x_platform_key):
-        raise HTTPException(401, "Platform administrator access required")
 
 
 def get_db():
@@ -62,6 +53,11 @@ def pricing_out(db: Session) -> dict:
         "currency": "UZS",
         **{period: int(settings[key]) if key in settings else None for period, key in PRICING_KEYS.items()},
     }
+
+
+@router.post("/session")
+def platform_session(body: PlatformLogin, request: Request) -> dict:
+    return create_platform_session(body, request)
 
 
 @router.get("/pricing", dependencies=[Depends(platform_auth)])

@@ -73,6 +73,14 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             expired = client.get("/api/license/status", headers=first).json()
             assert expired["status"] == "expired"
             assert expired["canWrite"] is False
+            assert expired["enforcementEnabled"] is True
+            # Updating the software alone must not lock legacy cafes.
+            with monkeypatch.context() as rollout:
+                rollout.setenv("LICENSE_ENFORCEMENT", "0")
+                legacy = client.get("/api/license/status", headers=first).json()
+                assert legacy["enforcementEnabled"] is False
+                assert legacy["canWrite"] is True
+                assert client.post("/api/orders", headers=first, json={}).status_code == 422
             assert client.get("/api/sync", headers=first).status_code == 200
             assert client.get("/api/shifts/current", headers=first).status_code == 200
             assert client.post("/api/orders", headers=first, json={}).status_code == 403

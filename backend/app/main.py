@@ -14,7 +14,7 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
-from .platform import router as platform_router, page_router as platform_page_router
+from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
     Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
@@ -291,7 +291,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 def license_status(ctx: Ctx = Depends(auth)) -> dict:
     """Effective subscription state; read access remains after expiry."""
     sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
-    return subscription_payload(sub)
+    return {**subscription_payload(sub), "pricing": pricing_out(ctx.db)}
 
 
 @app.get("/api/me")

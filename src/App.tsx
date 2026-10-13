@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
-import { Coffee, LayoutDashboard, LogOut, Settings, Store, ClipboardList, WifiOff } from 'lucide-react'
+import { Coffee, LayoutDashboard, LogOut, Settings, Store, ClipboardList, WifiOff, KeyRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
 import OrdersScreen from './OrdersScreen'
@@ -9,18 +9,20 @@ import Admin from './Admin'
 import { ExpensesView } from './Finance'
 import Login from './Login'
 import LicenseBanner from './LicenseBanner'
+import LicensePage from './LicensePage'
 import { CloseShiftModal } from './Shift'
 import { ROLE_LABEL } from './data'
 import type { Role } from './data'
 import { bootstrap, logout, useAppState } from './store'
 
-type Tab = 'kassa' | 'orders' | 'dashboard' | 'admin' | 'expenses'
+type Tab = 'kassa' | 'orders' | 'dashboard' | 'admin' | 'expenses' | 'license'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'orders', label: 'Buyurtmalar', icon: ClipboardList, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'expenses', label: 'Kunlik chiqimlar', icon: Store, roles: ['kassir'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'admin'] },
   { id: 'admin', label: 'Admin', icon: Settings, roles: ['owner', 'admin'] },
+  { id: 'license', label: 'Litsenziya', icon: KeyRound, roles: ['owner', 'admin'] },
 ]
 const fromHash = (): Tab | null => {
   const h = window.location.hash.slice(1)
@@ -85,6 +87,7 @@ function Main({ role }: { role: Role }) {
         {tab === 'expenses' && <div className="mx-auto max-w-5xl p-4"><ExpensesView /></div>}
         {tab === 'dashboard' && <Admin key="dashboard" initialView="dashboard" />}
         {tab === 'admin' && <Admin key="admin" initialView="stock" />}
+        {tab === 'license' && <LicensePage />}
       </div>
       {shiftOpen && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
     </div>

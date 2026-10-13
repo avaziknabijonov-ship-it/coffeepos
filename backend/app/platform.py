@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .db import Company, LicenseAudit, Subscription, now_ms
+from .db import Company, LicenseAudit, LicenseOperation, PlatformAudit, Setting, Subscription, now_ms
 from .licensing import add_calendar_period, subscription_payload
 from .security import hash_pin
 
@@ -41,6 +41,57 @@ def get_db():
     from .db import SessionLocal
     with SessionLocal() as db:
         yield db
+
+
+# Pricing is optional. NULL means no approved tariff price has been set.
+# Prices are informational until an actual verified billing integration exists.
+PRICING_KEYS = {"monthly": "license_price_monthly_uzs", "yearly": "license_price_yearly_uzs"}
+
+
+class PricingUpdate(BaseModel):
+    monthly: int | None = Field(default=None, gt=0, le=10_000_000_000)
+    yearly: int | None = Field(default=None, gt=0, le=10_000_000_000)
+
+
+def pricing_out(db: Session) -> dict:
+    settings = {
+        setting.key: setting.value
+        for setting in db.scalars(select(Setting).where(Setting.key.in_(list(PRICING_KEYS.values()))))
+    }
+    return {
+        "currency": "UZS",
+        **{period: int(settings[key]) if key in settings else None for period, key in PRICING_KEYS.items()},
+    }
+
+
+@router.get("/pricing", dependencies=[Depends(platform_auth)])
+def pricing(db: Session = Depends(get_db)) -> dict:
+    return pricing_out(db)
+
+
+@router.put("/pricing", dependencies=[Depends(platform_auth)])
+def update_pricing(body: PricingUpdate, db: Session = Depends(get_db)) -> dict:
+    before = pricing_out(db)
+    changes = body.model_dump()
+    for period, key in PRICING_KEYS.items():
+        existing = db.get(Setting, key)
+        value = changes[period]
+        if value is None:
+            if existing:
+                db.delete(existing)
+        elif existing:
+            existing.value = str(value)
+        else:
+            db.add(Setting(key=key, value=str(value)))
+    db.add(PlatformAudit(action="pricing_update", details={"before": before, "after": {"currency": "UZS", **changes}}))
+    db.commit()
+    return pricing_out(db)
+
+
+@router.get("/platform-history", dependencies=[Depends(platform_auth)])
+def platform_history(db: Session = Depends(get_db)) -> list[dict]:
+    events = db.scalars(select(PlatformAudit).order_by(PlatformAudit.id.desc()).limit(50)).all()
+    return [{"action": event.action, "details": event.details, "createdAt": event.created_at} for event in events]
 
 
 @router.get("/companies", dependencies=[Depends(platform_auth)])
@@ -128,24 +179,45 @@ def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) 
 
 
 class SubscriptionExtend(BaseModel):
-    # Calendar subscription plans. Legacy days accepted only for compatibility.
+    # Calendar subscription plans require an idempotency operation ID.
+    # Legacy days remain supported for older integrations only.
     period: Literal["monthly", "yearly"] | None = None
     days: int | None = Field(default=None, ge=1, le=3650)
+    operationId: str | None = Field(default=None, min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 @router.post("/companies/{company_id}/subscription/extend", dependencies=[Depends(platform_auth)])
 def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session = Depends(get_db)) -> dict:
     """Manual extension. This is NOT payment processing or receipt verification."""
-    if db.get(Company, company_id) is None:
+    # Serialize grants per cafe on PostgreSQL; the unique operation ID is an
+    # additional DB-level safeguard for simultaneous/retried requests.
+    company = db.scalar(select(Company).where(Company.id == company_id).with_for_update())
+    if company is None:
         raise HTTPException(404, "Coffee bar not found")
+    if (body.period is None) == (body.days is None):
+        raise HTTPException(422, "Specify exactly one of period or days")
+    if body.period is not None and not body.operationId:
+        raise HTTPException(422, "A unique operationId is required for monthly/yearly grants")
     sub = db.scalar(select(Subscription).where(Subscription.company_id == company_id))
+    if body.operationId:
+        prior = db.scalar(select(LicenseOperation).where(
+            LicenseOperation.company_id == company_id,
+            LicenseOperation.operation_id == body.operationId,
+        ))
+        if prior:
+            requested_period = body.period if body.period else f"days:{body.days}"
+            if prior.period != requested_period:
+                raise HTTPException(409, "This operationId was already used for a different grant")
+            # Idempotent retries return the original grant date, not a new period.
+            return {
+                "companyId": company_id, "replayed": True,
+                "grantedUntil": prior.new_end_at,
+                "subscription": subscription_out(sub),
+            }
     previous = sub.status if sub else None
     if sub is None:
         sub = Subscription(company_id=company_id)
         db.add(sub)
-    # Require exactly one explicit duration; never assume or silently charge a plan.
-    if (body.period is None) == (body.days is None):
-        raise HTTPException(422, "Specify exactly one of period or days")
     now = now_ms()
     # Preserve the remaining paid period; an expired or trial account starts today.
     base = max(now, sub.current_period_ends_at or 0) if sub.status == "active" else now
@@ -158,6 +230,14 @@ def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session =
     )
     sub.grace_ends_at = None
     sub.updated_at = now
+    if body.operationId:
+        db.add(LicenseOperation(
+            company_id=company_id,
+            operation_id=body.operationId,
+            period=body.period if body.period else f"days:{body.days}",
+            previous_end_at=base,
+            new_end_at=sub.current_period_ends_at,
+        ))
     db.add(LicenseAudit(
         company_id=company_id,
         action="extend_monthly" if body.period == "monthly"
@@ -165,7 +245,7 @@ def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session =
         old_status=previous, new_status="active",
     ))
     db.commit()
-    return {"companyId": company_id, "subscription": subscription_out(sub)}
+    return {"companyId": company_id, "replayed": False, "grantedUntil": sub.current_period_ends_at, "subscription": subscription_out(sub)}
 
 
 @router.get("/companies/{company_id}/license-history", dependencies=[Depends(platform_auth)])

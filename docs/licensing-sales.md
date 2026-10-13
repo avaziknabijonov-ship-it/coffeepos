@@ -41,7 +41,7 @@ Agar local `npm run dev` ishlatilsa, **demo/test** uchun `ALLOW_PUBLIC_REGISTRAT
 - `GET /api/platform/companies`
 - `POST /api/platform/companies`
 - `PUT /api/platform/companies/{id}/subscription`
-- `POST /api/platform/companies/{id}/subscription/extend` — JSON `{"period":"monthly"}` yoki `{"period":"yearly"}`. Eski integratsiyalar uchun `{"days":30}` vaqtincha qo'llanadi, yangi panel faqat ikki tarifni ko'rsatadi.
+- `POST /api/platform/companies/{id}/subscription/extend` — JSON `{"period":"monthly","operationId":"new-unique-operation-id"}` yoki `{"period":"yearly","operationId":"another-unique-operation-id"}`. Eski integratsiyalar uchun `{"days":30}` vaqtincha qo'llanadi; yangi panel faqat ikki tarifni ko'rsatadi.
 - `GET /api/platform/companies/{id}/license-history`
 - Oddiy kafe loginiga tegishli: `GET /api/license/status` (status, canWrite, expiresAt, serverTime).
 
@@ -67,7 +67,7 @@ Testlar faqat alohida vaqtinchalik bazalarda ishlashi kerak. Import manzili ishl
 
 `subscriptions.plan` nomli nullable ustun qo'shiladi: `monthly` yoki `yearly`. Eski obunalar o'zgarmaydi; avvalgi qo'lda berilgan sanalar va eski `days` uzaytirish yozuvlarida tarif `null` bo'lishi mumkin. `backend/app/main.py` dagi ishga tushish migratsiyasi bu ustunni bazani tozalamasdan qo'shadi. Avval **TEST** ma'lumotlari nusxasida tekshiring.
 
-Obunani uzaytirish takror bosilganda muddat qayta qo'shilishi mumkin. To'lov avtomatlashtirilishidan oldin idempotency/transaction va to'lov qaydi talab qilinadi. Mijozga sotuv boshlashdan oldin platforma Super Admin uchun MFA ham kerak.
+Yangi oylik/yillik uzaytirishda `operationId` qayta ishlatilsa muddat takror qo'shilmaydi. Eski `days` API bilan `operationId` yubormaydigan integratsiyalar bu himoyaga kirmaydi. To'lov avtomatlashtirilishidan oldin payment idempotency, to'lov kvitansiyasi va to'lov provayderi bilan real tasdiqlash talab qilinadi.
 
 
 ## Super Admin — MFA va xavfsiz kirish

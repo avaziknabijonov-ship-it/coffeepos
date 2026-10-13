@@ -1,6 +1,6 @@
 # PostgreSQL zaxira va tiklash — CoffeePOS
 
-**Production MasterCoffee bazasiga sinov ma'lumotlarini hech qachon yozmang.**
+**Production MasterCoffee bazasiga sinov ma'lumotlarini hech qachon yozmang.**\n\nAdministrator MFA seedlari bazada shifrlangan. Ma'lumotlarni tiklash uchun `PLATFORM_MFA_ENCRYPTION_KEY` ham **alohida maxfiy joyda** saqlangan bo'lishi kerak; faqat bazaning backup nusxasini tiklash MFA ni ochish uchun yetarli emas.
 Har qanday yangilashdan oldin alohida backup yarating; backup'ning o'zi o'chirilmaydigan, shifrlangan, alohida saqlanadigan joyga nusxalansin.
 
 ## Zaxira nusxasi (mavjud bazani faqat o'qiydi)

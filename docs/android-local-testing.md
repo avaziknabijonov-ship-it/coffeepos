@@ -39,6 +39,12 @@ Run `npx cap add android` only the first time, when the `android` directory does
 
 The source file `capacitor.config.ts` is in the repository root. Android native project files may be generated locally and are not necessarily included in the repository.
 
+## Litsenziya modulining yangi sinov versiyasi
+
+Oylik/yillik obunani va Super Admin'ni TEST COFFEE'da tekshirish uchun telefon APK bilan serverdagi **backend ham** `feature/platform-subscriptions-20261013` sinov tarmog'idan bo'lishi kerak. Eski backend telefonning yangi `Litsenziya` sahifasini to'liq qo'llamasligi mumkin.
+
+Test bazaning backup nusxasini olishdan oldin branch almashmang. Eski ishlab turgan `C:\\CoffeePoss\\yangi-versiya\\coffeepos.db` bazasiga tegmang. TEST serverdagi yangi obuna cheklovini tekshirish uchungina `LICENSE_ENFORCEMENT=1` qilib ishga tushiring. Standart 0 da litsenziya cheklovi bloklamaydi.
+
 ## Login setup on new APK
 
 1. Install and open the **CoffeePOS TEST** APK, leaving the existing CoffeePOS app installed.

@@ -15,6 +15,18 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'Server sozlamalari': 'Настройки сервера',
+  'CoffeePOS server manzili': 'Адрес сервера CoffeePOS',
+  'Telefon va kompyuter bir Wi-Fi tarmog‘ida bo‘lishi kerak. Internetdagi server uchun HTTPS ishlating.': 'Телефон и компьютер должны быть в одной сети Wi-Fi. Для сервера в интернете используйте HTTPS.',
+  'Tekshirilmoqda…': 'Проверка…',
+  'Serverni tekshirish va saqlash': 'Проверить и сохранить сервер',
+  'Server ulandi. Endi login va PIN-kodni kiriting.': 'Сервер подключён. Теперь введите логин и PIN.',
+  'Server manzilini to‘g‘ri kiriting. Masalan: http://192.168.1.26:8000': 'Введите адрес сервера, например: http://192.168.1.26:8000',
+  'Server manzili xato. Internetdagi server uchun HTTPS ishlating.': 'Неверный адрес сервера. Для внешнего сервера используйте HTTPS.',
+  'Serverga ulanib bo‘lmadi. Telefon va server tarmog‘ini tekshiring.': 'Не удалось подключиться к серверу. Проверьте сеть телефона и сервера.',
+  'Bu manzilda CoffeePOS serveri topilmadi.': 'По этому адресу сервер CoffeePOS не найден.',
+  'Avval Server sozlamalarida manzilni kiriting.': 'Сначала введите адрес в настройках сервера.',
+  "Server bilan aloqa yo'q. Server manzili va tarmoqni tekshiring": 'Нет соединения с сервером. Проверьте адрес и сеть.',
   'Oylik oluvchi:': 'Сотрудник на окладе:',
   'Kunlik ish haqi:': 'Поденная оплата:',
   'Kunlik oluvchi:': 'Поденный сотрудник:',
@@ -110,7 +122,7 @@ const RU: Record<string, string> = {
   Orqaga: 'Назад',
   "Kassadagi boshlang'ich naqd pul": 'Начальная наличность в кассе', 'Smenani ochish': 'Открыть смену', 'Smenani kassir yoki administrator ochadi.': 'Смену открывает кассир или администратор.',
   Ochilgan: 'Открыта', Buyurtmalar: 'Заказы', Tushum: 'Выручка', "Boshlang'ich naqd": 'Начальная наличность', "Kassada bo'lishi kerak": 'Должно быть в кассе',
-  '{n} ta': '{n} шт', 'Smena yopilsinmi?': 'Закрыть смену?', 'Smena yopildi': 'Смена закрыта', 'Smena (X-hisobot)': 'Смена (X-отчёт)', Yopish: 'Закрыть',
+  '{n} ta': '{n} шт', 'Smena yopilsinmi?': 'Закрыть смену?', 'Smena yopildi': 'Смена закрыта', 'Smena (X-hisobot)': 'Смена (X-отчёт)',
   "Ochiq smena yo'q.": 'Нет открытой смены.', Sanalgan: 'Пересчитано', Farq: 'Разница', 'Kassada sanalgan naqd pul': 'Пересчитанная наличность в кассе',
   'Smenani yopish (Z-hisobot)': 'Закрыть смену (Z-отчёт)',
   "Buyurtma yo'q": 'Заказов нет', 'Tayyor — olib keting': 'Готово — заберите',

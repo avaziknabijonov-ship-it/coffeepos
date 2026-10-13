@@ -24,6 +24,73 @@ jobs:
           PYTHONPATH: .
         run: python -m pytest tests -q
 
+  postgres_backup_restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: coffeepos
+          POSTGRES_USER: coffeepos
+          POSTGRES_PASSWORD: coffeepos-ci-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U coffeepos -d coffeepos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test backend into isolated runner
+        working-directory: backend
+        run: python -m pip install -e '.[dev]'
+      - name: Seed isolated PostgreSQL test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos
+          SEED_DEMO: '0'
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from sqlalchemy import select
+          from app.main import init_db, create_company
+          from app.db import SessionLocal, Company
+          init_db()
+          with SessionLocal() as db:
+              create_company(db, "backup-pilot", "Backup Pilot", "Test Owner", "9988")
+              db.commit()
+              assert db.scalar(select(Company).where(Company.slug == "backup-pilot"))
+          PY
+      - name: Back up and restore into separate CI database
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" pg_dump -U coffeepos --format=custom -f /tmp/coffeepos-ci.dump coffeepos
+          docker exec "$PG_CONTAINER" createdb -U coffeepos coffeepos_restored
+          docker exec "$PG_CONTAINER" pg_restore -U coffeepos -d coffeepos_restored /tmp/coffeepos-ci.dump
+      - name: Verify restored cafe and subscription data
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos_restored
+          SEED_DEMO: '0'
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from sqlalchemy import select
+          from app.db import SessionLocal, Company, Subscription, Staff, Product
+          with SessionLocal() as db:
+              company = db.scalar(select(Company).where(Company.slug == "backup-pilot"))
+              assert company is not None and company.name == "Backup Pilot"
+              sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+              assert sub is not None and sub.status == "trial"
+              assert db.scalar(select(Staff).where(Staff.company_id == company.id))
+              assert db.scalar(select(Product).where(Product.company_id == company.id))
+          print("PostgreSQL isolated backup and restore: OK")
+          PY
+
   frontend:
     runs-on: ubuntu-latest
     steps:

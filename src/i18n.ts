@@ -122,7 +122,7 @@ const RU: Record<string, string> = {
   Orqaga: 'Назад',
   "Kassadagi boshlang'ich naqd pul": 'Начальная наличность в кассе', 'Smenani ochish': 'Открыть смену', 'Smenani kassir yoki administrator ochadi.': 'Смену открывает кассир или администратор.',
   Ochilgan: 'Открыта', Buyurtmalar: 'Заказы', Tushum: 'Выручка', "Boshlang'ich naqd": 'Начальная наличность', "Kassada bo'lishi kerak": 'Должно быть в кассе',
-  '{n} ta': '{n} шт', 'Smena yopilsinmi?': 'Закрыть смену?', 'Smena yopildi': 'Смена закрыта', 'Smena (X-hisobot)': 'Смена (X-отчёт)', Yopish: 'Закрыть',
+  '{n} ta': '{n} шт', 'Smena yopilsinmi?': 'Закрыть смену?', 'Smena yopildi': 'Смена закрыта', 'Smena (X-hisobot)': 'Смена (X-отчёт)',
   "Ochiq smena yo'q.": 'Нет открытой смены.', Sanalgan: 'Пересчитано', Farq: 'Разница', 'Kassada sanalgan naqd pul': 'Пересчитанная наличность в кассе',
   'Smenani yopish (Z-hisobot)': 'Закрыть смену (Z-отчёт)',
   "Buyurtma yo'q": 'Заказов нет', 'Tayyor — olib keting': 'Готово — заберите',

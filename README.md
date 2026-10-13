@@ -58,4 +58,16 @@ curl localhost/healthz  # {"ok":true}
 
 - Konteynerlar: `db` (PostgreSQL 16, ma'lumot `pgdata` volume'da), `api` (FastAPI), `web` (nginx: frontend + `/api` proxy).
 - HTTPS uchun domenni server IP'ga yo'naltiring va oldiga Caddy yoki certbot+nginx qo'ying.
-- Zaxira nusxa: `docker compose exec db pg_dump -U coffeepos coffeepos > backup.sql`.
+- Tekshiriladigan zaxira nusxa: `bash scripts/backup-postgres.sh ./backups`. SQLite uchun `scripts/backup-sqlite.py`. [Yo‘riqnoma](docs/backup-restore.md).
+
+
+## Litsenziya va qahvaxonalarni sotuvga tayyorlash
+
+- **Super Admin paneli:** `/platform-admin` — mijoz qahvaxonalarni yaratish, 14 kunlik sinov, oylik (kalendar oy) va yillik (kalendar yil) obunani qo‘lda uzaytirish, suspend qilish va o‘zgarishlar tarixini ko‘rish.
+- **Qahvaxona egasining Litsenziya bo‘limi:** obunaning holati, tugash sanasi, qolgan kunlar.
+- **Muddati tugagan obuna:** yangi server operatsiyalari bloklanadi, oldingi hisobotlarni ko‘rish mumkin. Uzaytirilgach yangi amallar qayta ishlaydi.
+- **Tijoriy server:** barcha eski kafelarga obuna tayinlangach `LICENSE_ENFORCEMENT=1` ni yoqing (standart `0` — eski MasterCoffee'ni bloklamaslik uchun). `ALLOW_PUBLIC_REGISTRATION=0`, `PLATFORM_ADMIN_KEY` = tasodifiy 32+ belgili maxfiy kalit, `PLATFORM_REQUIRE_MFA=1`, `PLATFORM_ADMIN_TOTP_SECRET` = maxfiy autentifikator kaliti, `SEED_DEMO=0`. Platform Admin sahifasini internetda faqat HTTPS orqali oching.
+
+**Ish tartibi va cheklovlar:** [docs/licensing-sales.md](docs/licensing-sales.md). **Android sinovi:** [docs/android-local-testing.md](docs/android-local-testing.md).
+
+To‘lovlarni avtomatik qabul qilish hali yo‘q; oylik va yillik tarif narxlari avval bo‘sh bo‘ladi, keyinchalik Super Admin orqali o‘zgartiriladi. TOTP MFA va qisqa admin sessiyalari mavjud, lekin shaxsiy administrator hisoblari va real production restore mashqi hali qolgan. PostgreSQL backup/restore va eski licenziya schema migratsiyasi avtomatik CI testlarda sinovdan o‘tadi; real xizmatni avval sinov muhitida tekshiring. Haqiqiy MasterCoffee ma’lumotlarini TEST COFFEE bilan aralashtirmang.

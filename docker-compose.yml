@@ -19,6 +19,12 @@ services:
       DATABASE_URL: postgresql+psycopg://coffeepos:${POSTGRES_PASSWORD}@db:5432/coffeepos
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       SEED_DEMO: ${SEED_DEMO:-0}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-0}
+      # Turn on only after existing cafes are assigned paid/trial licenses.
+      LICENSE_ENFORCEMENT: ${LICENSE_ENFORCEMENT:-0}
+      PLATFORM_ADMIN_KEY: ${PLATFORM_ADMIN_KEY:-}
+      PLATFORM_REQUIRE_MFA: ${PLATFORM_REQUIRE_MFA:-1}
+      PLATFORM_ADMIN_TOTP_SECRET: ${PLATFORM_ADMIN_TOTP_SECRET:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
     depends_on:
       db: { condition: service_healthy }

@@ -51,6 +51,10 @@ def migrate() -> None:
         payment_cols = {c["name"] for c in inspect(engine).get_columns("debt_payments")}
         if "shift_id" not in payment_cols:
             conn.execute(text("ALTER TABLE debt_payments ADD COLUMN shift_id INTEGER"))
+        # Existing customer DBs predate monthly/yearly license plans.
+        license_cols = {col["name"] for col in inspect(engine).get_columns("subscriptions")}
+        if "plan" not in license_cols:
+            conn.execute(text("ALTER TABLE subscriptions ADD COLUMN plan VARCHAR(16)"))
     # Assign old repayments to a shift only when their timestamp matches exactly one shift.
     with SessionLocal() as db:
         old_payments = db.scalars(select(DebtPayment).where(DebtPayment.shift_id.is_(None))).all()

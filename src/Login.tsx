@@ -80,7 +80,9 @@ function PinLogin({ onRegister }: { onRegister: () => void }) {
       {company === 'demo' && (
         <p className="text-center text-xs text-stone-500">{t('Demo PIN: 1111 rahbar · 2222 kassir · 3333 barista')}</p>
       )}
-      <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
+      {import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION !== '0' && (
+        <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
+      )}
     </div>
   )
 }

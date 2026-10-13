@@ -60,7 +60,7 @@ function Main({ role }: { role: Role }) {
           <span className="hidden sm:inline">CoffeePOS</span>
           <span className="hidden max-w-40 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 lg:inline">{session?.company.name}</span>
         </div>
-        <nav className="order-3 flex w-full justify-around gap-1 border-t border-white/10 pt-2 sm:order-none sm:w-auto sm:flex-1 sm:justify-start sm:border-0 sm:pt-0">
+        <nav className="order-3 flex w-full justify-start gap-1 overflow-x-auto border-t border-white/10 pt-2 sm:order-none sm:w-auto sm:flex-1 sm:border-0 sm:pt-0">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

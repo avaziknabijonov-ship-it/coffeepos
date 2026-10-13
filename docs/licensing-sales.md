@@ -18,7 +18,10 @@ Production muhitdagi `.env`:
 ```dotenv
 SEED_DEMO=0
 ALLOW_PUBLIC_REGISTRATION=0
+LICENSE_ENFORCEMENT=0
 PLATFORM_ADMIN_KEY=<kamida-32-belgili-random-unique-secret>
+PLATFORM_REQUIRE_MFA=1
+PLATFORM_ADMIN_TOTP_SECRET=<private-base32-totp-secret>
 ```
 
 Xavfsizlik: `PLATFORM_ADMIN_KEY` ni chatda yubormang, repo ichiga yozmang, boshqalarga bermang. U oddiy xodim PINidan mustaqil. Docker Compose `PLATFORM_ADMIN_KEY`, `PLATFORM_REQUIRE_MFA`, `PLATFORM_ADMIN_TOTP_SECRET` va `ALLOW_PUBLIC_REGISTRATION` ni API konteynerga beradi.
@@ -26,6 +29,18 @@ Xavfsizlik: `PLATFORM_ADMIN_KEY` ni chatda yubormang, repo ichiga yozmang, boshq
 `/platform-admin` sahifasi orqali xizmatni boshqarish mumkin, lekin uni **internetga HTTPS siz chiqarmang**. Kalit va autentifikator kodini tekshiradigan 15 daqiqalik sessiya qo'shildi, kalit almashtirilsa sessiya bekor bo'ladi. Lekin hozirgi yagona umumiy administrator kaliti **to'liq ko'p-administratorli hisob tizimi emas**: real tijoriy tarqatishdan oldin alohida administrator shaxslari, IP/network cheklovlar, xavfsiz kirish tarixi va ehtiyot choralarini baholash kerak.
 
 Agar local `npm run dev` ishlatilsa, **demo/test** uchun `ALLOW_PUBLIC_REGISTRATION=1` qoldirish mumkin. Hosted `Dockerfile` `VITE_ALLOW_PUBLIC_REGISTRATION=0` bilan signup tugmasini yashiradi; bu serverdagi `ALLOW_PUBLIC_REGISTRATION=0` o'rnini bosmaydi.
+
+## Litsenziyani xavfsiz faollashtirish
+
+`LICENSE_ENFORCEMENT=0` — standart xavfsiz rollout rejimi: litsenziya sanalari ko‘rinadi, lekin oldingi mavjud qahvaxonalar faqat dastur yangilandi degani uchun to‘satdan bloklanmaydi. **Yangi savdoni bloklash faqat `LICENSE_ENFORCEMENT=1` qilganda ishga tushadi.** Bu sozlama barcha tenantlar uchun server darajasida.
+
+Server egasi ishga tushirishdan oldin:
+1. TEST bazani backup qilish va yangilash/migratsiya sinovini tugatadi.
+2. Super Admin'da eski qahvaxonalarning hammasiga tegishli `trial` yoki `active` obuna holatini belgilaydi.
+3. TEST serverda `LICENSE_ENFORCEMENT=1` bilan muddat tugashi va tiklanishini tekshiradi.
+4. Production'da xodimlar savdosini to'xtatmaydigan reja bilan ehtiyotkorlik bilan yoqadi.
+
+`LICENSE_ENFORCEMENT=0` holatda **litsenziya tijoriy nazorat uchun faol emas**, shuning uchun haqiqiy mijozlarga pullik obuna sotishda bu sozlamani albatta yoqish kerak. Bu sozlamaning yoqilganini faqat foydalanuvchi tasdiqlashi mumkin.
 
 ## Litsenziya berish tartibi
 

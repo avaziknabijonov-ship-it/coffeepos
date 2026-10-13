@@ -16,7 +16,7 @@ const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Beril
 
 const RU: Record<string, string> = {
   'Tarif': 'Тариф',
-  'Oylik': 'Месячный',
+  'Oylik litsenziya': 'Месячная лицензия',
   'Yillik': 'Годовой',
   'Belgilanmagan': 'Не указан',
   'Litsenziya': 'Лицензия',

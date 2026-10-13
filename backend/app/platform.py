@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import Company, LicenseAudit, Subscription, now_ms
-from .licensing import subscription_payload
+from .licensing import add_calendar_period, subscription_payload
 from .security import hash_pin
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
@@ -91,6 +91,8 @@ def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session =
         sub = Subscription(company_id=company_id)
         db.add(sub)
     sub.status = body.status
+    # Direct manual date changes do not imply a monthly or yearly plan.
+    sub.plan = None
     sub.trial_ends_at = body.trialEndsAt
     sub.current_period_ends_at = body.currentPeriodEndsAt
     sub.grace_ends_at = body.graceEndsAt
@@ -126,7 +128,9 @@ def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) 
 
 
 class SubscriptionExtend(BaseModel):
-    days: int = Field(ge=1, le=3650)
+    # Calendar subscription plans. Legacy days accepted only for compatibility.
+    period: Literal["monthly", "yearly"] | None = None
+    days: int | None = Field(default=None, ge=1, le=3650)
 
 
 @router.post("/companies/{company_id}/subscription/extend", dependencies=[Depends(platform_auth)])
@@ -139,16 +143,26 @@ def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session =
     if sub is None:
         sub = Subscription(company_id=company_id)
         db.add(sub)
+    # Require exactly one explicit duration; never assume or silently charge a plan.
+    if (body.period is None) == (body.days is None):
+        raise HTTPException(422, "Specify exactly one of period or days")
     now = now_ms()
-    # Extend remaining paid days instead of discarding them; for expired trials
-    # a paid period starts now (not from the old trial end).
+    # Preserve the remaining paid period; an expired or trial account starts today.
     base = max(now, sub.current_period_ends_at or 0) if sub.status == "active" else now
     sub.status = "active"
-    sub.current_period_ends_at = base + body.days * 86_400_000
+    sub.plan = body.period  # Legacy day-based records remain without a named plan.
+    sub.current_period_ends_at = (
+        add_calendar_period(base, body.period)
+        if body.period is not None
+        else base + body.days * 86_400_000
+    )
     sub.grace_ends_at = None
     sub.updated_at = now
     db.add(LicenseAudit(
-        company_id=company_id, action="extend", old_status=previous, new_status="active",
+        company_id=company_id,
+        action="extend_monthly" if body.period == "monthly"
+               else "extend_yearly" if body.period == "yearly" else "extend",
+        old_status=previous, new_status="active",
     ))
     db.commit()
     return {"companyId": company_id, "subscription": subscription_out(sub)}

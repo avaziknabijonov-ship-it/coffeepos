@@ -21,9 +21,9 @@ ALLOW_PUBLIC_REGISTRATION=0
 PLATFORM_ADMIN_KEY=<kamida-32-belgili-random-unique-secret>
 ```
 
-Xavfsizlik: `PLATFORM_ADMIN_KEY` ni chatda yubormang, repo ichiga yozmang, boshqalarga bermang. U oddiy xodim PINidan mustaqil. Docker Compose `PLATFORM_ADMIN_KEY` va `ALLOW_PUBLIC_REGISTRATION` ni API konteynerga beradi.
+Xavfsizlik: `PLATFORM_ADMIN_KEY` ni chatda yubormang, repo ichiga yozmang, boshqalarga bermang. U oddiy xodim PINidan mustaqil. Docker Compose `PLATFORM_ADMIN_KEY`, `PLATFORM_REQUIRE_MFA`, `PLATFORM_ADMIN_TOTP_SECRET` va `ALLOW_PUBLIC_REGISTRATION` ni API konteynerga beradi.
 
-`/platform-admin` sahifasi orqali xizmatni boshqarish mumkin, lekin uni **internetga HTTPS siz chiqarmang**. Hozirgi 32+ belgili yagona maxfiy kalit — vaqtinchalik yechim: ko'p mijozli real tijoriy tarqatishdan oldin alohida administrator hisobi, MFA, xavfsiz kirish jurnali, IP cheklov va ehtiyot choralarini qo'shish kerak.
+`/platform-admin` sahifasi orqali xizmatni boshqarish mumkin, lekin uni **internetga HTTPS siz chiqarmang**. Kalit va autentifikator kodini tekshiradigan 15 daqiqalik sessiya qo'shildi, kalit almashtirilsa sessiya bekor bo'ladi. Lekin hozirgi yagona umumiy administrator kaliti **to'liq ko'p-administratorli hisob tizimi emas**: real tijoriy tarqatishdan oldin alohida administrator shaxslari, IP/network cheklovlar, xavfsiz kirish tarixi va ehtiyot choralarini baholash kerak.
 
 Agar local `npm run dev` ishlatilsa, **demo/test** uchun `ALLOW_PUBLIC_REGISTRATION=1` qoldirish mumkin. Hosted `Dockerfile` `VITE_ALLOW_PUBLIC_REGISTRATION=0` bilan signup tugmasini yashiradi; bu serverdagi `ALLOW_PUBLIC_REGISTRATION=0` o'rnini bosmaydi.
 
@@ -49,7 +49,7 @@ Agar local `npm run dev` ishlatilsa, **demo/test** uchun `ALLOW_PUBLIC_REGISTRAT
 
 - Avtomatik Click/Payme/to'lov provayderi yoki fiskal chek bilan bog'lash **yo'q**. To'lov avtomatik tasdiqlanmaydi.
 - **Tariflar**: Oylik va Yillik. **Narxlar hozircha belgilanmagan**; foydalanuvchi oylik/yillik so'm summalarini keyin belgilaydi. Avtomatik debet, chek yoki billing mavjud emas. Chegirmalar, sotuv hujjatlari va mijozga ko'rsatiladigan qo'llab-quvvatlash siyosati hali belgilanmagan.
-- Platform administratorning kuchli MFA tizimi, advanced billing audit va real PostgreSQL backup/restore testlari talab etiladi.
+- Platforma administratorining TOTP MFA sessiyalari mavjud, lekin alohida shaxsiy admin hisoblari va to'liq billing auditi hali yo'q. Vaqtinchalik PostgreSQL CI backup/restore sinovi mavjud; real production tiklash mashqi hali o'tkazilmagan.
 - Migratsiya va ishga tushirishni avval TEST COFFEE da tekshiring, ayniqsa eski tenantlarda `subscriptions` row mavjudligini. **Production MasterCoffee bazasiga hech qanday TEST ma'lumotni nusxalamang**.
 - Android APK build va backend avtomatik testlaridan tashqari real qurilmadagi login, sync, smena va expiry banneri sinovi talab etiladi.
 
@@ -68,3 +68,34 @@ Testlar faqat alohida vaqtinchalik bazalarda ishlashi kerak. Import manzili ishl
 `subscriptions.plan` nomli nullable ustun qo'shiladi: `monthly` yoki `yearly`. Eski obunalar o'zgarmaydi; avvalgi qo'lda berilgan sanalar va eski `days` uzaytirish yozuvlarida tarif `null` bo'lishi mumkin. `backend/app/main.py` dagi ishga tushish migratsiyasi bu ustunni bazani tozalamasdan qo'shadi. Avval **TEST** ma'lumotlari nusxasida tekshiring.
 
 Obunani uzaytirish takror bosilganda muddat qayta qo'shilishi mumkin. To'lov avtomatlashtirilishidan oldin idempotency/transaction va to'lov qaydi talab qilinadi. Mijozga sotuv boshlashdan oldin platforma Super Admin uchun MFA ham kerak.
+
+
+## Super Admin — MFA va xavfsiz kirish
+
+Tijoriy Docker serverda default `PLATFORM_REQUIRE_MFA=1`; TOTP sozlanmagan bo'lsa admin kirishi **bloklanadi** (qahvaxona savdosi emas).
+
+Test/server operatori o'z kompyuterida **maxfiy** TOTP Base32 qiymati ishlab chiqishi mumkin:
+
+```bash
+python -c "import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))"
+```
+
+Bu kodni autentifikator ilovasiga qo'lda qo'shing va .env dagi `PLATFORM_ADMIN_TOTP_SECRET` ga yozing. Maxfiy qiymatni GitHub, xabar, ekran rasmi yoki mijozga yubormang. `PLATFORM_ADMIN_KEY` bilan **bir xil bo'lmasin**.
+
+`https://SERVER-DOMAIN/platform-admin` sahifasida maxfiy kalit va autentifikator ilovasining 6 xonali kodini kiritasiz. Kalit faqat kirishda yuboriladi; boshqa API chaqiruvlar 15 daqiqalik vaqtinchalik token orqali o'tadi. Istalgan vaqtda `PLATFORM_ADMIN_KEY`ni almashtirish eski sessiyalarni bekor qiladi. Login urinishlariga vaqtinchalik cheklov qo'yilgan. HTTP orqali internetga maxfiy admin kalitini yubormang.
+
+## Narxlar va takroriy so'rovdan himoya
+
+Super Admin'dagi Oylik/Yillik narx maydonlari **narx belgilanmaganida bo'sh** turadi. Tasdiqlangan narxlarni istalgan vaqt o'sha panelda kiritish yoki bo'shatish mumkin. Narx `UZS`da musbat butun son sifatida serverda saqlanadi. Mijozning `Litsenziya` bo'limida ko'rinadi; **dastur to'lovni avtomatik olmaydi**. Narxni kiritish yoki o'zgartirish mavjud litsenziyalar muddatiga ta'sir qilmaydi.
+
+`POST /api/platform/companies/{id}/subscription/extend` (oylik/yillik) uchun **takrorlanmas `operationId`** talab qilinadi:
+
+```json
+{"period": "monthly", "operationId": "unique-grant-request-20261013"}
+```
+
+Server bir `operationId`ni o'sha qahvaxonada takror qabul qilsa muddatni yana uzaytirmaydi, avvalgi natijani qaytaradi. Bu foydalanuvchi tasodifan qayta yuborganda himoya qiladi; avtomatik to'lovning idempotent webhook tizimi o'rnini bosmaydi. Hozircha bitta Super Admin kaliti ishlatiladi, to'lov kim tomonidan va qaysi provayderda qabul qilingani bog'lanmagan.
+
+## Backup va migratsiya
+
+PostgreSQL va SQLite uchun alohida read-only zaxira olish vositalari hamda CI sinovlari: [backup-restore.md](backup-restore.md). Production DB uchun rejalashtirilgan recovery hamda deployment oldi backup talablari saqlanib qolgan.

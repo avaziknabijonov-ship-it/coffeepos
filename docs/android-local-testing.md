@@ -26,11 +26,14 @@ In phone Chrome, check `http://<CURRENT-LAN-IP>:8000/healthz`. A firewall rule f
 Requirements: Node.js, Android Studio and Android SDK. From the project root:
 
 ```cmd
-npm install
+npm ci
+set "COFFEEPOS_TEST_APK=1"
 npx cap add android
 npm run android:sync
 npm run android:open
 ```
+
+The `COFFEEPOS_TEST_APK=1` variable gives the Android test build a distinct package ID (`uz.coffeepos.hybrid.test`) and app name **CoffeePOS TEST**, so it can be installed alongside the existing CoffeePOS installation. Never remove the old app to test a new build. The GitHub Actions Android job sets this variable automatically.
 
 Run `npx cap add android` only the first time, when the `android` directory doesn't exist. If it already exists, skip that command. In Android Studio, build and install a debug APK.
 
@@ -38,7 +41,7 @@ The source file `capacitor.config.ts` is in the repository root. Android native 
 
 ## Login setup on new APK
 
-1. Open the new CoffeePOS Hybrid APK.
+1. Install and open the **CoffeePOS TEST** APK, leaving the existing CoffeePOS app installed.
 2. At the bottom of the login screen, open **Server sozlamalari**.
 3. Enter `http://<CURRENT-LAN-IP>:8000` (e.g. `http://192.168.1.26:8000` only while that is the actual IP).
 4. Tap **Serverni tekshirish va saqlash**. It verifies `/healthz`.

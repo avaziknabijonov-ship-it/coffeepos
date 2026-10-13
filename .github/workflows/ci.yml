@@ -64,6 +64,26 @@ jobs:
               db.commit()
               assert db.scalar(select(Company).where(Company.slug == "backup-pilot"))
           PY
+      - name: Rehearse old subscription schema migration in CI only
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos
+          PYTHONPATH: .
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" psql -U coffeepos -d coffeepos -c 'ALTER TABLE subscriptions DROP COLUMN plan'
+          python - <<'PY'
+          from sqlalchemy import inspect, select
+          from app.main import migrate
+          from app.db import Company, Subscription, SessionLocal, engine
+          assert 'plan' not in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
+          migrate()
+          assert 'plan' in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
+          with SessionLocal() as db:
+              c = db.scalar(select(Company).where(Company.slug == 'backup-pilot'))
+              assert c is not None and db.scalar(select(Subscription).where(Subscription.company_id == c.id))
+          print('Non-destructive legacy license migration: OK')
+          PY
       - name: Back up and restore into separate CI database
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}

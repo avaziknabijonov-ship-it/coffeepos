@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import Company, LicenseAudit, Subscription, now_ms
+from .licensing import subscription_payload
 from .security import hash_pin
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
@@ -58,9 +59,9 @@ def subscription_out(sub: Subscription | None) -> dict | None:
     if sub is None:
         return None
     return {
-        "status": sub.status, "trialEndsAt": sub.trial_ends_at,
-        "currentPeriodEndsAt": sub.current_period_ends_at,
-        "graceEndsAt": sub.grace_ends_at, "updatedAt": sub.updated_at,
+        **subscription_payload(sub),
+        "storedStatus": sub.status,
+        "updatedAt": sub.updated_at,
     }
 
 
@@ -75,10 +76,15 @@ class SubscriptionUpdate(BaseModel):
 def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session = Depends(get_db)) -> dict:
     if db.get(Company, company_id) is None:
         raise HTTPException(404, "Coffee bar not found")
-    if body.status == "trial" and (body.trialEndsAt is None or body.trialEndsAt <= now_ms()):
+    now = now_ms()
+    if body.status == "trial" and (body.trialEndsAt is None or body.trialEndsAt <= now):
         raise HTTPException(422, "Trial needs a future trialEndsAt")
-    if body.status == "active" and (body.currentPeriodEndsAt is None or body.currentPeriodEndsAt <= now_ms()):
+    if body.status == "active" and (body.currentPeriodEndsAt is None or body.currentPeriodEndsAt <= now):
         raise HTTPException(422, "Active subscription needs a future currentPeriodEndsAt")
+    if body.status == "grace" and (body.graceEndsAt is None or body.graceEndsAt <= now):
+        raise HTTPException(422, "Grace needs a future graceEndsAt")
+    if body.status == "active" and body.graceEndsAt is not None and body.graceEndsAt <= body.currentPeriodEndsAt:
+        raise HTTPException(422, "Grace date must be after active subscription expiry")
     sub = db.scalar(select(Subscription).where(Subscription.company_id == company_id))
     previous = sub.status if sub else None
     if sub is None:
@@ -98,7 +104,7 @@ class CompanyCreate(BaseModel):
     slug: str = Field(min_length=3, max_length=40, pattern=r"^[a-z][a-z0-9-]*$")
     name: str = Field(min_length=2, max_length=128)
     ownerName: str = Field(min_length=2, max_length=64)
-    ownerPin: str = Field(min_length=6, max_length=12, pattern=r"^[0-9]+$")
+    ownerPin: str = Field(min_length=4, max_length=6, pattern=r"^[0-9]+$")
 
 
 @router.post("/companies", status_code=201, dependencies=[Depends(platform_auth)])
@@ -117,3 +123,48 @@ def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) 
     except Exception:
         db.rollback()
         raise
+
+
+class SubscriptionExtend(BaseModel):
+    days: int = Field(ge=1, le=3650)
+
+
+@router.post("/companies/{company_id}/subscription/extend", dependencies=[Depends(platform_auth)])
+def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session = Depends(get_db)) -> dict:
+    """Manual extension. This is NOT payment processing or receipt verification."""
+    if db.get(Company, company_id) is None:
+        raise HTTPException(404, "Coffee bar not found")
+    sub = db.scalar(select(Subscription).where(Subscription.company_id == company_id))
+    previous = sub.status if sub else None
+    if sub is None:
+        sub = Subscription(company_id=company_id)
+        db.add(sub)
+    now = now_ms()
+    # Extend remaining paid days instead of discarding them; for expired trials
+    # a paid period starts now (not from the old trial end).
+    base = max(now, sub.current_period_ends_at or 0) if sub.status == "active" else now
+    sub.status = "active"
+    sub.current_period_ends_at = base + body.days * 86_400_000
+    sub.grace_ends_at = None
+    sub.updated_at = now
+    db.add(LicenseAudit(
+        company_id=company_id, action="extend", old_status=previous, new_status="active",
+    ))
+    db.commit()
+    return {"companyId": company_id, "subscription": subscription_out(sub)}
+
+
+@router.get("/companies/{company_id}/license-history", dependencies=[Depends(platform_auth)])
+def license_history(company_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    if db.get(Company, company_id) is None:
+        raise HTTPException(404, "Coffee bar not found")
+    events = db.scalars(select(LicenseAudit).where(
+        LicenseAudit.company_id == company_id
+    ).order_by(LicenseAudit.id.desc()).limit(100)).all()
+    return [{
+        "id": event.id,
+        "action": event.action,
+        "oldStatus": event.old_status,
+        "newStatus": event.new_status,
+        "createdAt": event.created_at,
+    } for event in events]

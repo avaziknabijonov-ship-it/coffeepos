@@ -28,54 +28,152 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <label>Nomi <input id="newName" required minlength="2" maxlength="128"></label>
 <label>Login <input id="newSlug" required pattern="[a-z][a-z0-9-]*" minlength="3" maxlength="40"></label>
 <label>Rahbar <input id="newOwner" required minlength="2" maxlength="64"></label>
-<label>PIN <input id="newPin" type="password" required minlength="6" maxlength="12" pattern="[0-9]+" autocomplete="new-password"></label>
+<label>PIN <input id="newPin" type="password" required minlength="4" maxlength="6" pattern="[0-9]+" autocomplete="new-password"></label>
 <button type="submit">Coffee bar yaratish</button>
 </form><p id="newMsg" role="status"></p></section>
-<section class="card"><h2>Obunani boshqarish</h2><p><small>To‘lov integratsiyasi hali yo‘q. Obuna holati qo‘lda o‘zgartiriladi.</small></p>
+<section class="card"><h2>Litsenziya va obunalar</h2><p><small>Faollashtirish qo‘lda boshqariladi. To‘lov qabul qilish yoki avtomatik tekshirish ulanmagan. Sinov va faol obuna tugagach yangi savdo amallari serverda bloklanadi; oldingi ma’lumotlar ko‘rinadi.</small></p>
 <form id="form" class="row">
 <label>Coffee bar <select id="company" required></select></label>
 <label>Holat <select id="status"><option value="trial">Sinov</option><option value="active">Faol</option><option value="grace">Imtiyozli muddat</option><option value="expired">Tugagan</option><option value="suspended">To‘xtatilgan</option></select></label>
 <label>Muddat tugashi <input id="until" type="date"></label>
 <button type="submit">Saqlash</button>
-</form><p id="saveMsg" role="status"></p></section>
+</form><p id="saveMsg" role="status"></p>
+  <h3>Obunani uzaytirish</h3>
+  <p><small>Tanlangan coffee bar uchun yangi muddat qo‘shiladi. Muddat hali tugamagan bo‘lsa, qolgan kunlar saqlanadi.</small></p>
+  <div class="row"><label>Davomiylik <select id="days">
+    <option value="30">30 kun</option><option value="90">90 kun</option><option value="365">365 kun</option>
+  </select></label><button id="extend" type="button">Obunani faollashtirish / uzaytirish</button></div>
+  <p id="extendMsg" role="status"></p>
+  <h3>Oxirgi litsenziya o‘zgarishlari</h3>
+  <div style="overflow-x:auto"><table><thead><tr><th>Sana</th><th>Amal</th><th>Oldingi holat</th><th>Yangi holat</th></tr></thead><tbody id="history"><tr><td colspan="4">Coffee barni tanlang.</td></tr></tbody></table></div>
+</section>
 </main>
 <script>
 let key = '';
+let cafeList = [];
 const $ = id => document.getElementById(id);
 const show = (id, message, error=false) => { $(id).textContent=message; $(id).className=error?'error':''; };
 const dateText = ms => ms ? new Date(ms).toLocaleDateString('uz-UZ') : '—';
-async function api(path, options={}) {
- const response = await fetch('/api/platform'+path, {...options, headers:{'X-Platform-Key':key,...(options.headers||{})}, cache:'no-store'});
- if(!response.ok) throw new Error('Server javobi: '+response.status);
+const dateValue = ms => {
+ if(!ms) return '';
+ const d = new Date(ms);
+ return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+};
+const endOfDay = date => date ? new Date(date+'T23:59:59').getTime() : null;
+const label = value => ({
+ trial:'Sinov',active:'Faol',grace:'Imtiyozli muddat',
+ expired:'Tugagan',suspended:'To‘xtatilgan',unconfigured:'Sozlanmagan'
+})[value] || value;
+async function api(path,options={}) {
+ const response = await fetch('/api/platform'+path,{
+  ...options, headers:{'X-Platform-Key':key,...(options.headers||{})},cache:'no-store'
+ });
+ if(!response.ok) {
+  let detail = 'Server javobi: '+response.status;
+  try {
+   const body = await response.json();
+   if(typeof body.detail==='string') detail=body.detail;
+  } catch {}
+  throw new Error(detail);
+ }
  return response.json();
 }
-async function refresh(){
- const companies = await api('/companies');
- $('rows').replaceChildren(); $('company').replaceChildren();
- for(const c of companies){
+function currentCafe(){
+ return cafeList.find(x=>String(x.id)===$('company').value);
+}
+function chooseCafe(id){
+ $('company').value=String(id);
+ const sub=currentCafe()?.subscription;
+ $('status').value=sub?.storedStatus||'trial';
+ let date=null;
+ if(sub?.storedStatus==='trial') date=sub.trialEndsAt;
+ if(sub?.storedStatus==='active') date=sub.currentPeriodEndsAt;
+ if(sub?.storedStatus==='grace') date=sub.graceEndsAt;
+ $('until').value=dateValue(date);
+ void refreshHistory();
+}
+async function refreshHistory() {
+ const id=$('company').value;
+ $('history').replaceChildren();
+ if(!id||!key) return;
+ try {
+  const items=await api('/companies/'+encodeURIComponent(id)+'/license-history');
+  if(!items.length) {
+   const tr=document.createElement('tr'),td=document.createElement('td');
+   td.colSpan=4;td.textContent='O‘zgarishlar mavjud emas.';tr.appendChild(td);$('history').appendChild(tr);
+  }
+  for(const item of items){
    const tr=document.createElement('tr');
-   for(const value of [c.id,c.name,c.slug,(c.subscription?.status||'unconfigured')+' · '+dateText(c.subscription?.currentPeriodEndsAt||c.subscription?.trialEndsAt)]){
-     const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);
+   for(const value of [new Date(item.createdAt).toLocaleString('uz-UZ'),item.action,label(item.oldStatus||'—'),label(item.newStatus)]) {
+    const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);
    }
-   const td=document.createElement('td'),btn=document.createElement('button');btn.textContent='Tanlash';
-   btn.onclick=()=>{$('company').value=String(c.id);$('status').value=c.subscription?.status==='unconfigured'?'trial':c.subscription?.status||'trial'};
-   td.appendChild(btn);tr.appendChild(td);$('rows').appendChild(tr);
-   const option=document.createElement('option');option.value=String(c.id);option.textContent=c.name;$('company').appendChild(option);
+   $('history').appendChild(tr);
+  }
+ }catch(e){show('saveMsg',e.message,true)}
+}
+async function refresh(){
+ const selected=$('company').value;
+ const companies=await api('/companies');
+ cafeList=companies;
+ $('rows').replaceChildren();$('company').replaceChildren();
+ for(const c of companies){
+  const tr=document.createElement('tr');
+  const sub=c.subscription;
+  for(const value of [c.id,c.name,c.slug,label(sub?.status||'unconfigured')+' · '+dateText(sub?.expiresAt)]){
+   const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);
+  }
+  const td=document.createElement('td'),btn=document.createElement('button');btn.textContent='Tanlash';
+  btn.onclick=()=>chooseCafe(c.id);
+  td.appendChild(btn);tr.appendChild(td);$('rows').appendChild(tr);
+  const option=document.createElement('option');option.value=String(c.id);option.textContent=c.name;$('company').appendChild(option);
  }
+ if(companies.length) chooseCafe(companies.some(x=>String(x.id)===selected)?selected:companies[0].id);
+ else $('history').replaceChildren();
  show('msg',companies.length+' ta coffee bar topildi');
 }
-$('login').onclick=async()=>{key=$('key').value;$('key').value='';try{await refresh()}catch(e){key='';show('msg',e.message,true)}};
-$('logout').onclick=()=>{key='';$('rows').replaceChildren();$('company').replaceChildren();show('msg','Chiqildi')};
-$('reload').onclick=async()=>{try{await refresh()}catch(e){show('msg',e.message,true)}};
-$('form').onsubmit=async(e)=>{
+$('company').onchange=()=>chooseCafe($('company').value);
+$('login').onclick=async()=>{
+ key=$('key').value;$('key').value='';
+ try {await refresh()}catch(e){key='';show('msg',e.message,true)}
+};
+$('logout').onclick=()=>{
+ key='';cafeList=[];$('rows').replaceChildren();$('company').replaceChildren();
+ $('history').replaceChildren();show('msg','Chiqildi');
+};
+$('reload').onclick=async()=>{if(!key){show('msg','Avval kiring',true);return}try{await refresh()}catch(e){show('msg',e.message,true)}};
+$('form').onsubmit=async e=>{
  e.preventDefault();
  if(!key){show('saveMsg','Avval kiring',true);return}
- const status=$('status').value,raw=$('until').value;
- const ends=raw?new Date(raw+'T23:59:59').getTime():null;
- if((status==='trial'||status==='active')&&(!ends||ends<=Date.now())){show('saveMsg','Kelajakdagi tugash sanasini tanlang',true);return}
- const body={status,trialEndsAt:status==='trial'?ends:null,currentPeriodEndsAt:status==='active'?ends:null,graceEndsAt:status==='grace'?ends:null};
- try{await api('/companies/'+encodeURIComponent($('company').value)+'/subscription',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});show('saveMsg','Saqlandi');await refresh()}
- catch(err){show('saveMsg',err.message,true)}
+ const status=$('status').value,ends=endOfDay($('until').value);
+ if(['trial','active','grace'].includes(status)&&(!ends||ends<=Date.now())){
+  show('saveMsg','Kelajakdagi tugash sanasini tanlang',true);return;
+ }
+ const body={
+  status,trialEndsAt:status==='trial'?ends:null,
+  currentPeriodEndsAt:status==='active'?ends:null,
+  graceEndsAt:status==='grace'?ends:null
+ };
+ if(!confirm('Obuna holatini '+label(status)+' holatiga o‘zgartirasizmi?')) return;
+ try{
+  await api('/companies/'+encodeURIComponent($('company').value)+'/subscription',{
+   method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+  });
+  show('saveMsg','Saqlandi');await refresh();
+ }catch(err){show('saveMsg',err.message,true)}
+};
+$('extend').onclick=async()=>{
+ if(!key){show('extendMsg','Avval kiring',true);return}
+ const cafe=currentCafe(),days=Number($('days').value);
+ if(!cafe) return;
+ if(!confirm(cafe.name+' uchun obunani '+days+' kunga uzaytirasizmi?')) return;
+ try{
+  const result=await api('/companies/'+cafe.id+'/subscription/extend',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({days})
+  });
+  show('extendMsg',cafe.name+' obunasi '+dateText(result.subscription.currentPeriodEndsAt)+' gacha faol.');
+  await refresh();
+ }catch(err){show('extendMsg',err.message,true)}
 };
 $('newCompany').onsubmit=async e=>{
  e.preventDefault();
@@ -88,8 +186,7 @@ $('newCompany').onsubmit=async e=>{
   $('newCompany').reset();
   await refresh();
  }catch(error){
-  $('newPin').value='';
-  show('newMsg',error.message,true);
+  $('newPin').value='';show('newMsg',error.message,true);
  }
 };
 </script></body></html>

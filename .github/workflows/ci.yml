@@ -72,6 +72,7 @@ jobs:
           PG_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           docker exec "$PG_CONTAINER" psql -U coffeepos -d coffeepos -c 'ALTER TABLE subscriptions DROP COLUMN plan'
+          docker exec "$PG_CONTAINER" psql -U coffeepos -d coffeepos -c 'ALTER TABLE license_audit DROP COLUMN actor_username; ALTER TABLE license_audit DROP COLUMN details'
           python - <<'PY'
           from sqlalchemy import inspect, select
           from app.main import migrate
@@ -79,6 +80,9 @@ jobs:
           assert 'plan' not in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
           migrate()
           assert 'plan' in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
+          assert {'actor_username', 'details'}.issubset(
+              {c['name'] for c in inspect(engine).get_columns('license_audit')})
+
           with SessionLocal() as db:
               c = db.scalar(select(Company).where(Company.slug == 'backup-pilot'))
               assert c is not None and db.scalar(select(Subscription).where(Subscription.company_id == c.id))

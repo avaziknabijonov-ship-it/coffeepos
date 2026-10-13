@@ -129,7 +129,8 @@ def pricing(db: Session = Depends(get_db)) -> dict:
 
 
 @router.put("/pricing", dependencies=[Depends(auth_platform)])
-def update_pricing(body: PricingUpdate, db: Session = Depends(get_db)) -> dict:
+def update_pricing(body: PricingUpdate, request: Request, db: Session = Depends(get_db),
+                   actor: PlatformActor = Depends(superadmin)) -> dict:
     before = pricing_out(db)
     changes = body.model_dump()
     for period, key in PRICING_KEYS.items():
@@ -142,7 +143,8 @@ def update_pricing(body: PricingUpdate, db: Session = Depends(get_db)) -> dict:
             existing.value = str(value)
         else:
             db.add(Setting(key=key, value=str(value)))
-    db.add(PlatformAudit(action="pricing_update", details={"before": before, "after": {"currency": "UZS", **changes}}))
+    audit(db, "pricing_update", actor.username, request,
+          before=before, after={"currency": "UZS", **changes})
     db.commit()
     return pricing_out(db)
 
@@ -183,7 +185,9 @@ class SubscriptionUpdate(BaseModel):
 
 
 @router.put("/companies/{company_id}/subscription", dependencies=[Depends(auth_platform)])
-def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session = Depends(get_db)) -> dict:
+def update_subscription(company_id: int, body: SubscriptionUpdate, request: Request,
+                        db: Session = Depends(get_db),
+                        actor: PlatformActor = Depends(can_manage)) -> dict:
     if db.get(Company, company_id) is None:
         raise HTTPException(404, "Coffee bar not found")
     now = now_ms()
@@ -197,6 +201,7 @@ def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session =
         raise HTTPException(422, "Grace date must be after active subscription expiry")
     sub = db.scalar(select(Subscription).where(Subscription.company_id == company_id))
     previous = sub.status if sub else None
+    before = subscription_out(sub)
     if sub is None:
         sub = Subscription(company_id=company_id)
         db.add(sub)
@@ -207,7 +212,8 @@ def update_subscription(company_id: int, body: SubscriptionUpdate, db: Session =
     sub.current_period_ends_at = body.currentPeriodEndsAt
     sub.grace_ends_at = body.graceEndsAt
     sub.updated_at = now_ms()
-    db.add(LicenseAudit(company_id=company_id, action="manual_update", old_status=previous, new_status=body.status))
+    license_audit(db, actor, request, company_id, "manual_update", before,
+                  subscription_out(sub), previous, body.status)
     db.commit()
     return {"companyId": company_id, "subscription": subscription_out(sub)}
 
@@ -220,7 +226,9 @@ class CompanyCreate(BaseModel):
 
 
 @router.post("/companies", status_code=201, dependencies=[Depends(auth_platform)])
-def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) -> dict:
+def create_platform_company(body: CompanyCreate, request: Request,
+                            db: Session = Depends(get_db),
+                            actor: PlatformActor = Depends(can_manage)) -> dict:
     """Create a new isolated tenant with the standard starter menu and 14-day trial."""
     if db.scalar(select(Company).where(Company.slug == body.slug)):
         raise HTTPException(409, "Coffee bar login already exists")
@@ -229,7 +237,9 @@ def create_platform_company(body: CompanyCreate, db: Session = Depends(get_db)) 
     try:
         company = create_company(db, body.slug, body.name.strip(), body.ownerName.strip(), body.ownerPin)
         db.flush()
-        db.add(LicenseAudit(company_id=company.id, action="company_created", old_status=None, new_status="trial"))
+        sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+        license_audit(db, actor, request, company.id, "company_created",
+                      None, subscription_out(sub), None, "trial")
         db.commit()
         return {"id": company.id, "slug": company.slug, "name": company.name, "status": "trial"}
     except Exception:
@@ -246,7 +256,9 @@ class SubscriptionExtend(BaseModel):
 
 
 @router.post("/companies/{company_id}/subscription/extend", dependencies=[Depends(auth_platform)])
-def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session = Depends(get_db)) -> dict:
+def extend_subscription(company_id: int, body: SubscriptionExtend, request: Request,
+                        db: Session = Depends(get_db),
+                        actor: PlatformActor = Depends(can_manage)) -> dict:
     """Manual extension. This is NOT payment processing or receipt verification."""
     # Serialize grants per cafe on PostgreSQL; the unique operation ID is an
     # additional DB-level safeguard for simultaneous/retried requests.
@@ -274,6 +286,7 @@ def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session =
                 "subscription": subscription_out(sub),
             }
     previous = sub.status if sub else None
+    before = subscription_out(sub)
     if sub is None:
         sub = Subscription(company_id=company_id)
         db.add(sub)
@@ -297,12 +310,10 @@ def extend_subscription(company_id: int, body: SubscriptionExtend, db: Session =
             previous_end_at=base,
             new_end_at=sub.current_period_ends_at,
         ))
-    db.add(LicenseAudit(
-        company_id=company_id,
-        action="extend_monthly" if body.period == "monthly"
-               else "extend_yearly" if body.period == "yearly" else "extend",
-        old_status=previous, new_status="active",
-    ))
+    action = ("extend_monthly" if body.period == "monthly"
+              else "extend_yearly" if body.period == "yearly" else "extend")
+    license_audit(db, actor, request, company_id, action, before,
+                  subscription_out(sub), previous, "active")
     db.commit()
     return {"companyId": company_id, "replayed": False, "grantedUntil": sub.current_period_ends_at, "subscription": subscription_out(sub)}
 
@@ -319,5 +330,7 @@ def license_history(company_id: int, db: Session = Depends(get_db)) -> list[dict
         "action": event.action,
         "oldStatus": event.old_status,
         "newStatus": event.new_status,
+        "actor": event.actor_username or "legacy-unknown",
+        "details": event.details or {},
         "createdAt": event.created_at,
     } for event in events]

@@ -4,7 +4,7 @@ import secrets
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -89,22 +89,30 @@ def pricing_out(db: Session) -> dict:
 
 
 @router.post("/session")
-def platform_session(body: PlatformLogin, request: Request, db: Session = Depends(get_db)) -> dict:
+def platform_session(body: PlatformLogin, request: Request, response: Response,
+                     db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return create_platform_session(body, request, db)
 
 
 @router.post("/bootstrap")
-def platform_bootstrap(body: BootstrapAdmin, request: Request, db: Session = Depends(get_db)) -> dict:
+def platform_bootstrap(body: BootstrapAdmin, request: Request, response: Response,
+                       db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return bootstrap_admin(db, body, request)
 
 
 @router.post("/enroll/start")
-def enroll_start(body: EnrollRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+def enroll_start(body: EnrollRequest, request: Request, response: Response,
+                 db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return start_enrollment(db, body, request)
 
 
 @router.post("/enroll/complete")
-def enroll_complete(body: FinishEnrollment, request: Request, db: Session = Depends(get_db)) -> dict:
+def enroll_complete(body: FinishEnrollment, request: Request, response: Response,
+                    db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return finish_enrollment(db, body, request)
 
 
@@ -138,8 +146,10 @@ def admins(db: Session = Depends(get_db),
 
 
 @router.post("/admins", status_code=201)
-def invite_admin(body: CreateAdmin, request: Request, db: Session = Depends(get_db),
+def invite_admin(body: CreateAdmin, request: Request, response: Response,
+                 db: Session = Depends(get_db),
                  actor: PlatformActor = Depends(superadmin)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return new_admin(db, body.username, body.role, actor, request)
 
 
@@ -172,8 +182,10 @@ def edit_admin(admin_id: int, body: EditAdmin, request: Request,
 
 
 @router.post("/admins/{admin_id}/reset")
-def reset_admin(admin_id: int, request: Request, db: Session = Depends(get_db),
+def reset_admin(admin_id: int, request: Request, response: Response,
+                db: Session = Depends(get_db),
                 actor: PlatformActor = Depends(superadmin)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     admin = db.scalar(select(PlatformAdmin).where(PlatformAdmin.id == admin_id).with_for_update())
     if admin is None:
         raise HTTPException(404, "Administrator not found")

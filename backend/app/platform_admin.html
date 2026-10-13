@@ -22,7 +22,7 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <button id="login">Kirish</button><button id="logout" type="button">Chiqish</button></div>
 <p id="msg" role="status"></p></section>
 <section class="card"><div class="row"><h2 style="flex:1">Coffee barlar</h2><button id="reload">Yangilash</button></div>
-<div style="overflow-x:auto"><table><thead><tr><th>№</th><th>Coffee bar</th><th>Login</th><th>Holat</th><th>Amal</th></tr></thead><tbody id="rows"><tr><td colspan="5">Avval administrator sifatida kiring.</td></tr></tbody></table></div></section>
+<div style="overflow-x:auto"><table><thead><tr><th>№</th><th>Coffee bar</th><th>Login</th><th>Holat va tarif</th><th>Amal</th></tr></thead><tbody id="rows"><tr><td colspan="5">Avval administrator sifatida kiring.</td></tr></tbody></table></div></section>
 <section class="card"><h2>Yangi coffee bar qo‘shish</h2>
 <form id="newCompany" class="row" autocomplete="off">
 <label>Nomi <input id="newName" required minlength="2" maxlength="128"></label>
@@ -38,11 +38,11 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <label>Muddat tugashi <input id="until" type="date"></label>
 <button type="submit">Saqlash</button>
 </form><p id="saveMsg" role="status"></p>
-  <h3>Obunani uzaytirish</h3>
-  <p><small>Tanlangan coffee bar uchun yangi muddat qo‘shiladi. Muddat hali tugamagan bo‘lsa, qolgan kunlar saqlanadi.</small></p>
-  <div class="row"><label>Davomiylik <select id="days">
-    <option value="30">30 kun</option><option value="90">90 kun</option><option value="365">365 kun</option>
-  </select></label><button id="extend" type="button">Obunani faollashtirish / uzaytirish</button></div>
+  <h3>Oylik va yillik litsenziyalar</h3>
+  <p><small>To‘lovni tashqarida tekshirgandan keyin muddatni qo‘lda faollashtiring. 1 oy — bitta kalendar oy, 1 yil — bitta kalendar yil. Mavjud faol muddat saqlanadi.</small></p>
+  <div class="row"><label>Tarif <select id="period">
+    <option value="monthly">Oylik (1 oy)</option><option value="yearly">Yillik (1 yil)</option>
+  </select></label><button id="extend" type="button">Litsenziyani faollashtirish / uzaytirish</button></div>
   <p id="extendMsg" role="status"></p>
   <h3>Oxirgi litsenziya o‘zgarishlari</h3>
   <div style="overflow-x:auto"><table><thead><tr><th>Sana</th><th>Amal</th><th>Oldingi holat</th><th>Yangi holat</th></tr></thead><tbody id="history"><tr><td colspan="4">Coffee barni tanlang.</td></tr></tbody></table></div>
@@ -64,6 +64,7 @@ const label = value => ({
  trial:'Sinov',active:'Faol',grace:'Imtiyozli muddat',
  expired:'Tugagan',suspended:'To‘xtatilgan',unconfigured:'Sozlanmagan'
 })[value] || value;
+const planName = period => ({monthly:'Oylik',yearly:'Yillik'})[period] || '—';
 async function api(path,options={}) {
  const response = await fetch('/api/platform'+path,{
   ...options, headers:{'X-Platform-Key':key,...(options.headers||{})},cache:'no-store'
@@ -119,7 +120,7 @@ async function refresh(){
  for(const c of companies){
   const tr=document.createElement('tr');
   const sub=c.subscription;
-  for(const value of [c.id,c.name,c.slug,label(sub?.status||'unconfigured')+' · '+dateText(sub?.expiresAt)]){
+  for(const value of [c.id,c.name,c.slug,label(sub?.status||'unconfigured')+' · '+planName(sub?.plan)+' · '+dateText(sub?.expiresAt)]){
    const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);
   }
   const td=document.createElement('td'),btn=document.createElement('button');btn.textContent='Tanlash';
@@ -163,17 +164,19 @@ $('form').onsubmit=async e=>{
 };
 $('extend').onclick=async()=>{
  if(!key){show('extendMsg','Avval kiring',true);return}
- const cafe=currentCafe(),days=Number($('days').value);
- if(!cafe) return;
- if(!confirm(cafe.name+' uchun obunani '+days+' kunga uzaytirasizmi?')) return;
+ const cafe=currentCafe(),period=$('period').value;
+ if(!cafe || !['monthly','yearly'].includes(period)) return;
+ if(!confirm(cafe.name+' uchun '+planName(period)+' obunani faollashtirasizmi? To‘lov tashqarida tasdiqlangan bo‘lishi kerak.')) return;
+ $('extend').disabled=true;
  try{
   const result=await api('/companies/'+cafe.id+'/subscription/extend',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({days})
+   body:JSON.stringify({period})
   });
-  show('extendMsg',cafe.name+' obunasi '+dateText(result.subscription.currentPeriodEndsAt)+' gacha faol.');
+  show('extendMsg',cafe.name+' · '+planName(result.subscription.plan)+' · '+dateText(result.subscription.currentPeriodEndsAt)+' gacha faol.');
   await refresh();
  }catch(err){show('extendMsg',err.message,true)}
+ finally{$('extend').disabled=false}
 };
 $('newCompany').onsubmit=async e=>{
  e.preventDefault();

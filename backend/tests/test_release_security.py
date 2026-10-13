@@ -4,9 +4,14 @@ All records are created in the isolated pytest SQLite database, never in the
 live MasterCoffee database.
 """
 
-from fastapi.testclient import TestClient
+import os
+import tempfile
 
-from app.main import app
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{tempfile.mkdtemp()}/test.db")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import app  # noqa: E402
 
 
 def register(client: TestClient, slug: str, pin: str = "1234") -> dict:

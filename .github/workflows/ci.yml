@@ -41,6 +41,9 @@ jobs:
   android_debug:
     runs-on: ubuntu-latest
     needs: frontend
+    env:
+      # Install side-by-side with existing CoffeePOS; never replace the cafe app.
+      COFFEEPOS_TEST_APK: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

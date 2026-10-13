@@ -6,6 +6,7 @@ import type { Role } from './data'
 type License = {
   status: 'trial' | 'active' | 'grace' | 'expired' | 'suspended' | 'unconfigured'
   canWrite: boolean
+  enforcementEnabled?: boolean
   expiresAt: number | null
   serverTime: number
 }
@@ -25,7 +26,7 @@ export default function LicenseBanner({ role }: { role: Role }) {
     return () => { mounted = false; clearInterval(interval) }
   }, [])
 
-  if (!license) return null
+  if (!license || license.enforcementEnabled === false) return null
 
   const days = license.expiresAt == null ? null
     : Math.max(0, Math.ceil((license.expiresAt - license.serverTime) / 86_400_000))

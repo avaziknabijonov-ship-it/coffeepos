@@ -59,3 +59,15 @@ curl localhost/healthz  # {"ok":true}
 - Konteynerlar: `db` (PostgreSQL 16, ma'lumot `pgdata` volume'da), `api` (FastAPI), `web` (nginx: frontend + `/api` proxy).
 - HTTPS uchun domenni server IP'ga yo'naltiring va oldiga Caddy yoki certbot+nginx qo'ying.
 - Zaxira nusxa: `docker compose exec db pg_dump -U coffeepos coffeepos > backup.sql`.
+
+
+## Litsenziya va qahvaxonalarni sotuvga tayyorlash
+
+- **Super Admin paneli:** `/platform-admin` — mijoz qahvaxonalarni yaratish, 14 kunlik sinov, 30/90/365 kunlik obunani qo‘lda uzaytirish, suspend qilish va o‘zgarishlar tarixini ko‘rish.
+- **Qahvaxona egasining Litsenziya bo‘limi:** obunaning holati, tugash sanasi, qolgan kunlar.
+- **Muddati tugagan obuna:** yangi server operatsiyalari bloklanadi, oldingi hisobotlarni ko‘rish mumkin. Uzaytirilgach yangi amallar qayta ishlaydi.
+- **Tijoriy server:** `ALLOW_PUBLIC_REGISTRATION=0`, `PLATFORM_ADMIN_KEY` = tasodifiy 32+ belgili maxfiy kalit, `SEED_DEMO=0`. Platform Admin sahifasini internetda faqat HTTPS orqali oching.
+
+**Ish tartibi va cheklovlar:** [docs/licensing-sales.md](docs/licensing-sales.md). **Android sinovi:** [docs/android-local-testing.md](docs/android-local-testing.md).
+
+To‘lovlarni avtomatik qabul qilish, tarif narxlari va shaxsiy MFA hali joriy etilmagan. Platformani real mijozlarga sotishdan oldin bu cheklovlarni hamda backup/restore va PostgreSQL migratsiyasini tekshiring. Haqiqiy MasterCoffee ma’lumotlarini TEST COFFEE bilan aralashtirmang.

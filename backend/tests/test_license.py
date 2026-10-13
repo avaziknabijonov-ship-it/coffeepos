@@ -42,6 +42,23 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             second = register(client, "license-b", "2345")
             assert client.get("/api/license/status", headers=first).json()["status"] == "trial"
             assert client.get("/api/license/status", headers=second).json()["canWrite"] is True
+            # Prices are unset until the business owner approves them.
+            pricing = client.get("/api/platform/pricing", headers=platform_headers)
+            assert pricing.json() == {"currency": "UZS", "monthly": None, "yearly": None}
+            assert client.get("/api/platform/pricing").status_code == 401
+            assert client.put("/api/platform/pricing", headers=platform_headers, json={
+                "monthly": -1, "yearly": 1,
+            }).status_code == 422
+            changed = client.put("/api/platform/pricing", headers=platform_headers, json={
+                "monthly": 300000, "yearly": None,
+            })
+            assert changed.status_code == 200, changed.text
+            assert changed.json()["monthly"] == 300000 and changed.json()["yearly"] is None
+            assert client.put("/api/platform/pricing", headers=platform_headers, json={
+                "monthly": None, "yearly": None,
+            }).json()["monthly"] is None
+            audit = client.get("/api/platform/platform-history", headers=platform_headers)
+            assert audit.status_code == 200 and len(audit.json()) >= 2
             companies = client.get("/api/platform/companies", headers=platform_headers).json()
             a_id = next(row["id"] for row in companies if row["slug"] == "license-a")
             b_id = next(row["id"] for row in companies if row["slug"] == "license-b")
@@ -89,17 +106,27 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             assert extended.json()["subscription"]["currentPeriodEndsAt"] == before + 30 * 86_400_000
 
             url = f"/api/platform/companies/{a_id}/subscription/extend"
-            for invalid in ({}, {"period": "weekly"}, {"days": 30, "period": "monthly"}):
+            for invalid in ({}, {"period": "weekly"}, {"days": 30, "period": "monthly", "operationId": "monthly-invalid-012345"}):
                 bad = client.post(url, headers=platform_headers, json=invalid)
                 assert bad.status_code == 422, bad.text
             paid_base = extended.json()["subscription"]["currentPeriodEndsAt"]
-            monthly = client.post(url, headers=platform_headers, json={"period": "monthly"})
+            assert client.post(url, headers=platform_headers, json={"period": "monthly"}).status_code == 422
+            monthly_grant = {"period": "monthly", "operationId": "monthly-grant-0123456789"}
+            monthly = client.post(url, headers=platform_headers, json=monthly_grant)
             assert monthly.status_code == 200, monthly.text
             month_end = monthly.json()["subscription"]["currentPeriodEndsAt"]
             assert monthly.json()["subscription"]["plan"] == "monthly"
             assert month_end == add_calendar_period(paid_base, "monthly")
+            replay = client.post(url, headers=platform_headers, json=monthly_grant)
+            assert replay.status_code == 200 and replay.json()["replayed"] is True
+            assert replay.json()["grantedUntil"] == month_end
+            assert client.post(url, headers=platform_headers, json={
+                "period": "yearly", "operationId": monthly_grant["operationId"]
+            }).status_code == 409
             assert client.get("/api/license/status", headers=first).json()["plan"] == "monthly"
-            yearly = client.post(url, headers=platform_headers, json={"period": "yearly"})
+            yearly = client.post(url, headers=platform_headers, json={
+                "period": "yearly", "operationId": "yearly-grant-01234567890"
+            })
             assert yearly.status_code == 200, yearly.text
             assert yearly.json()["subscription"]["plan"] == "yearly"
             assert yearly.json()["subscription"]["currentPeriodEndsAt"] == add_calendar_period(month_end, "yearly")

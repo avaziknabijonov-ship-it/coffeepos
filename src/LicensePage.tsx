@@ -39,7 +39,7 @@ export default function LicensePage() {
   useEffect(() => { refresh() }, [])
 
   const rows = license ? [
-    [t('Tarif'), license.plan === 'monthly' ? t('Oylik') : license.plan === 'yearly' ? t('Yillik') : t('Belgilanmagan')],
+    [t('Tarif'), license.plan === 'monthly' ? t('Oylik litsenziya') : license.plan === 'yearly' ? t('Yillik') : t('Belgilanmagan')],
     [t('Sinov muddati tugaydi'), format(license.trialEndsAt)],
     [t('Faol obuna tugaydi'), format(license.currentPeriodEndsAt)],
     [t('Imtiyozli muddat tugaydi'), format(license.graceEndsAt)],

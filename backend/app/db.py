@@ -188,6 +188,30 @@ class Subscription(Base):
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
 
 
+class LicenseOperation(Base):
+    """Deduplicate manual subscription grants by a unique client operation ID."""
+
+    __tablename__ = "license_operations"
+    __table_args__ = (UniqueConstraint("company_id", "operation_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    operation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    period: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_end_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    new_end_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
+class PlatformAudit(Base):
+    """Non-tenant administrative configuration audit."""
+
+    __tablename__ = "platform_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action: Mapped[str] = mapped_column(String(48), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
 class LicenseAudit(Base):
     """Append-only record of platform subscription administration."""
 

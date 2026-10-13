@@ -16,9 +16,10 @@ import jwt
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .db import PlatformAdmin, PlatformAudit, now_ms
+from .db import PlatformAdmin, PlatformAudit, Setting, now_ms
 from .security import LoginLimiter
 
 ADMIN_SESSION_TTL = 15 * 60
@@ -195,6 +196,14 @@ def bootstrap_admin(db: Session, body: BootstrapAdmin, request: Request) -> dict
     if has_admins(db):
         raise HTTPException(409, "Initial Super Admin has already been created")
     _bootstrap_allowed(body.key, body.code, request)
+    # An independent unique DB setting makes two simultaneous bootstrap
+    # requests unable to create two initial Super Admin accounts.
+    db.add(Setting(key="platform_admin_initialized", value=body.username))
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Initial Super Admin has already been created") from exc
     admin, token = _issue_invitation(db, body.username, "superadmin")
     audit(db, "admin_bootstrap", "bootstrap", request, username=body.username)
     db.commit()
@@ -256,6 +265,8 @@ def create_platform_session(body: PlatformLogin, request: Request, db: Session |
         otp_ok = bool(admin and admin.active and password_ok and _totp_valid(body.code, _read_totp(admin)))
         if not otp_ok:
             _login_limiter.fail(rate_id)
+            audit(db, "admin_login_denied", "unverified-user", request, attemptedUsername=username)
+            db.commit()
             raise HTTPException(401, "Invalid administrator credentials")
         if len(key) < 32:
             raise HTTPException(503, "Platform session signing key is not configured")
@@ -275,7 +286,13 @@ def create_platform_session(body: PlatformLogin, request: Request, db: Session |
                 "mfaEnabled": True, "actor": {"username": admin.username, "role": admin.role}}
     if _account_required():
         raise HTTPException(403, "Create the initial administrator account first")
-    _bootstrap_allowed(body.key, body.code, request)
+    try:
+        _bootstrap_allowed(body.key, body.code, request)
+    except HTTPException:
+        if db is not None:
+            audit(db, "bootstrap_login_denied", "unverified-user", request)
+            db.commit()
+        raise
     now = int(time.time())
     token = jwt.encode({
         "sub": "platform-admin", "scope": "coffeepos:platform", "iat": now,

@@ -44,13 +44,27 @@ def auth_platform(
     return platform_auth(db, x_platform_session=x_platform_session, x_platform_key=x_platform_key)
 
 
-def superadmin(actor: PlatformActor = Depends(auth_platform)) -> PlatformActor:
-    require_role(actor, ("superadmin",))
+def superadmin(request: Request, db: Session = Depends(get_db),
+               actor: PlatformActor = Depends(auth_platform)) -> PlatformActor:
+    try:
+        require_role(actor, ("superadmin",))
+    except HTTPException:
+        audit(db, "access_denied", actor.username, request,
+              path=request.url.path, method=request.method, required="superadmin")
+        db.commit()
+        raise
     return actor
 
 
-def can_manage(actor: PlatformActor = Depends(auth_platform)) -> PlatformActor:
-    require_role(actor, ("superadmin", "manager"))
+def can_manage(request: Request, db: Session = Depends(get_db),
+               actor: PlatformActor = Depends(auth_platform)) -> PlatformActor:
+    try:
+        require_role(actor, ("superadmin", "manager"))
+    except HTTPException:
+        audit(db, "access_denied", actor.username, request,
+              path=request.url.path, method=request.method, required="manager")
+        db.commit()
+        raise
     return actor
 
 

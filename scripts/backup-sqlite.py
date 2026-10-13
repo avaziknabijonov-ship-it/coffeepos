@@ -7,6 +7,7 @@ Never closes, replaces, migrates, or changes the source database.
 The output is a NEW independent snapshot; restore is intentionally manual.
 """
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -29,8 +30,8 @@ def back_up_sqlite(source: Path, destination_dir: Path) -> Path:
     os.close(fd)
     temp = Path(temp_name)
     try:
-        with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=30) as src:
-            with sqlite3.connect(str(temp), timeout=30) as dst:
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=30)) as src:
+            with closing(sqlite3.connect(str(temp), timeout=30)) as dst:
                 src.backup(dst, pages=200, sleep=0.1)
                 verdict = dst.execute("PRAGMA integrity_check").fetchone()[0]
                 if verdict != "ok":

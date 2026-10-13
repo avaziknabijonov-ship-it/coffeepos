@@ -8,6 +8,7 @@ import OrdersScreen from './OrdersScreen'
 import Admin from './Admin'
 import { ExpensesView } from './Finance'
 import Login from './Login'
+import LicenseBanner from './LicenseBanner'
 import { CloseShiftModal } from './Shift'
 import { ROLE_LABEL } from './data'
 import type { Role } from './data'
@@ -77,6 +78,7 @@ function Main({ role }: { role: Role }) {
         <LangSwitch />
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
+      <LicenseBanner role={role} />
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'orders' && <OrdersScreen />}

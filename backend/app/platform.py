@@ -1,8 +1,10 @@
 """Platform management with individual administrator attribution and least privilege."""
+import hashlib
+import secrets
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -14,7 +16,7 @@ from .platform_security import (
     BootstrapAdmin, CreateAdmin, EditAdmin, EnrollRequest, FinishEnrollment,
     PlatformActor, PlatformLogin, audit, bootstrap_admin, create_platform_session,
     ensure_last_superadmin, finish_enrollment, has_admins, new_admin,
-    platform_auth, require_role, start_enrollment, _issue_invitation,
+    platform_auth, require_role, start_enrollment, _cipher, _totp_seed, ENROLLMENT_TTL_MS,
 )
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
@@ -121,6 +123,96 @@ def platform_logout(request: Request, db: Session = Depends(get_db),
 def platform_me(actor: PlatformActor = Depends(auth_platform)) -> dict:
     return {"username": actor.username, "role": actor.role, "individual": actor.id is not None}
 
+
+
+@router.get("/admins")
+def admins(db: Session = Depends(get_db),
+           actor: PlatformActor = Depends(superadmin)) -> list[dict]:
+    records = db.scalars(select(PlatformAdmin).order_by(PlatformAdmin.id)).all()
+    return [
+        {"id": admin.id, "username": admin.username, "role": admin.role,
+         "active": admin.active, "enrollmentPending": bool(admin.invite_hash),
+         "createdAt": admin.created_at, "lastLoginAt": admin.last_login_at}
+        for admin in records
+    ]
+
+
+@router.post("/admins", status_code=201)
+def invite_admin(body: CreateAdmin, request: Request, db: Session = Depends(get_db),
+                 actor: PlatformActor = Depends(superadmin)) -> dict:
+    return new_admin(db, body.username, body.role, actor, request)
+
+
+@router.patch("/admins/{admin_id}")
+def edit_admin(admin_id: int, body: EditAdmin, request: Request,
+               db: Session = Depends(get_db),
+               actor: PlatformActor = Depends(superadmin)) -> dict:
+    admin = db.scalar(select(PlatformAdmin).where(PlatformAdmin.id == admin_id).with_for_update())
+    if admin is None:
+        raise HTTPException(404, "Administrator not found")
+    if body.role is None and body.active is None:
+        raise HTTPException(422, "Specify role or active")
+    if admin.id == actor.id and (body.active is False or (body.role is not None and body.role != admin.role)):
+        raise HTTPException(409, "You cannot disable or demote your own account")
+    role = body.role if body.role is not None else admin.role
+    active = body.active if body.active is not None else admin.active
+    if (admin.role == "superadmin" and admin.active and
+            (role != "superadmin" or not active)):
+        ensure_last_superadmin(db, admin)
+    if active and not admin.password_hash:
+        raise HTTPException(422, "Pending administrator must finish MFA enrollment first")
+    before = {"role": admin.role, "active": admin.active}
+    admin.role = role
+    admin.active = active
+    admin.session_version += 1  # revoke previous sessions on ANY role/status change
+    audit(db, "admin_updated", actor.username, request, username=admin.username, before=before,
+          after={"role": admin.role, "active": admin.active})
+    db.commit()
+    return {"id": admin.id, "username": admin.username, "role": admin.role, "active": admin.active}
+
+
+@router.post("/admins/{admin_id}/reset")
+def reset_admin(admin_id: int, request: Request, db: Session = Depends(get_db),
+                actor: PlatformActor = Depends(superadmin)) -> dict:
+    admin = db.scalar(select(PlatformAdmin).where(PlatformAdmin.id == admin_id).with_for_update())
+    if admin is None:
+        raise HTTPException(404, "Administrator not found")
+    if admin.id == actor.id:
+        raise HTTPException(409, "Cannot reset your own MFA through this session")
+    if admin.role == "superadmin" and admin.active:
+        ensure_last_superadmin(db, admin)
+    token = secrets.token_urlsafe(36)
+    admin.totp_encrypted = _cipher().encrypt(_totp_seed().encode("ascii")).decode("ascii")
+    admin.invite_hash = hashlib.sha256(token.encode()).hexdigest()
+    admin.invite_expires_at = now_ms() + ENROLLMENT_TTL_MS
+    admin.password_hash = None
+    admin.active = False
+    admin.session_version += 1
+    audit(db, "admin_enrollment_reset", actor.username, request, username=admin.username)
+    db.commit()
+    return {"username": admin.username, "enrollmentToken": token, "expiresAt": admin.invite_expires_at}
+
+
+@router.get("/audit")
+def audit_history(
+    limit: int = Query(default=100, ge=1, le=200),
+    beforeId: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    actor: PlatformActor = Depends(superadmin),
+) -> dict:
+    query = select(PlatformAudit)
+    if beforeId is not None:
+        query = query.where(PlatformAudit.id < beforeId)
+    rows = db.scalars(query.order_by(PlatformAudit.id.desc()).limit(limit + 1)).all()
+    return {
+        "events": [
+            {"id": event.id, "action": event.action,
+             "actor": (event.details or {}).get("actor", "legacy-unknown"),
+             "details": event.details or {}, "createdAt": event.created_at}
+            for event in rows[:limit]
+        ],
+        "nextBeforeId": rows[limit - 1].id if len(rows) > limit else None,
+    }
 
 
 @router.get("/pricing", dependencies=[Depends(auth_platform)])

@@ -90,6 +90,7 @@ def create_platform_session(body: PlatformLogin, request: Request) -> dict:
         "iat": now,
         "exp": now + ADMIN_SESSION_TTL,
         "nonce": secrets.token_urlsafe(12),
+        "mfa": _mfa_enabled(),
     }, _session_secret(key), algorithm="HS256")
     return {"token": token, "expiresAt": (now + ADMIN_SESSION_TTL) * 1000, "mfaEnabled": _mfa_enabled()}
 
@@ -104,7 +105,9 @@ def platform_auth(
     if x_platform_session:
         try:
             claims = jwt.decode(x_platform_session, _session_secret(key), algorithms=["HS256"])
-            if claims.get("sub") == "platform-admin" and claims.get("scope") == "coffeepos:platform":
+            if (claims.get("sub") == "platform-admin"
+                    and claims.get("scope") == "coffeepos:platform"
+                    and (not _mfa_enabled() or claims.get("mfa") is True)):
                 return
         except jwt.PyJWTError:
             pass

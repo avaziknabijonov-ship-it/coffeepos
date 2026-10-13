@@ -7,7 +7,7 @@ type License = {
   status: 'trial' | 'active' | 'grace' | 'expired' | 'suspended' | 'unconfigured'
   plan: 'monthly' | 'yearly' | null
   canWrite: boolean
-  pricing: {currency: 'UZS'; monthly: number | null; yearly: number | null}
+  pricing?: {currency: 'UZS'; monthly: number | null; yearly: number | null}
   expiresAt: number | null
   trialEndsAt: number | null
   currentPeriodEndsAt: number | null
@@ -78,8 +78,8 @@ export default function LicensePage() {
     </div>
     <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
       <p className="font-semibold">{t('Litsenziya tariflari')}</p>
-      <p className="mt-2">{t('Oylik litsenziya')}: {license?.pricing.monthly == null ? t('Narx belgilanmagan') : license.pricing.monthly.toLocaleString('ru-RU') + " so‘m"}</p>
-      <p className="mt-1">{t('Yillik')}: {license?.pricing.yearly == null ? t('Narx belgilanmagan') : license.pricing.yearly.toLocaleString('ru-RU') + " so‘m"}</p>
+      <p className="mt-2">{t('Oylik litsenziya')}: {license?.pricing?.monthly == null ? t('Narx belgilanmagan') : license.pricing?.monthly?.toLocaleString('ru-RU') + " so‘m"}</p>
+      <p className="mt-1">{t('Yillik')}: {license?.pricing?.yearly == null ? t('Narx belgilanmagan') : license.pricing?.yearly?.toLocaleString('ru-RU') + " so‘m"}</p>
       <p className="mt-2 text-stone-500">{t('Tarif narxlari ma’lumot uchun. Ilova to‘lovni avtomatik qabul qilmaydi.')}</p>
     </div>
     <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">

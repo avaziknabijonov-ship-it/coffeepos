@@ -15,6 +15,13 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'Sinov litsenziyasi. Qolgan kunlar: {n}': 'Пробная лицензия. Осталось дней: {n}',
+  'Litsenziya tugashiga {n} kun qoldi': 'До окончания лицензии осталось дней: {n}',
+  'Obuna muddati tugagan. Imtiyozli muddat: {n} kun': 'Срок подписки истёк. Льготный период: {n} дн.',
+  'Litsenziya administrator tomonidan to‘xtatilgan. Yangi amallarga ruxsat yo‘q.': 'Лицензия приостановлена администратором. Новые операции запрещены.',
+  'Litsenziya sozlanmagan. Yangi amallarga ruxsat yo‘q.': 'Лицензия не настроена. Новые операции запрещены.',
+  'Litsenziya muddati tugagan. Ma’lumotlarni ko‘rish mumkin, savdo va o‘zgartirishlar bloklangan.': 'Лицензия истекла. Данные доступны для просмотра, продажи и изменения заблокированы.',
+  "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.": 'Лицензия истекла или приостановлена. Просмотр данных доступен, продлите подписку для новых операций.',
   'Server sozlamalari': 'Настройки сервера',
   'CoffeePOS server manzili': 'Адрес сервера CoffeePOS',
   'Telefon va kompyuter bir Wi-Fi tarmog‘ida bo‘lishi kerak. Internetdagi server uchun HTTPS ishlating.': 'Телефон и компьютер должны быть в одной сети Wi-Fi. Для сервера в интернете используйте HTTPS.',

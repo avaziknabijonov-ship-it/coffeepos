@@ -24,6 +24,7 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
 
     monkeypatch.setenv("PLATFORM_ADMIN_KEY", "z" * 40)
     monkeypatch.setenv("ALLOW_PUBLIC_REGISTRATION", "1")
+    monkeypatch.setenv("LICENSE_ENFORCEMENT", "1")
     app.dependency_overrides[tenant_get_db] = db_override
     app.dependency_overrides[platform_get_db] = db_override
     platform_headers = {"X-Platform-Key": "z" * 40}
@@ -166,6 +167,7 @@ def test_license_grace_status_and_platform_company_pin(monkeypatch):
     app.dependency_overrides[platform_get_db] = db_override
     monkeypatch.setenv("PLATFORM_ADMIN_KEY", "y" * 40)
     monkeypatch.setenv("ALLOW_PUBLIC_REGISTRATION", "0")
+    monkeypatch.setenv("LICENSE_ENFORCEMENT", "1")
     headers = {"X-Platform-Key": "y" * 40}
     create_body = {"slug": "lic-grace", "name": "Grace Coffee", "ownerName": "Rahbar", "ownerPin": "1234"}
     try:

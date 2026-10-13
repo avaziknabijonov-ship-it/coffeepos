@@ -22,6 +22,7 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             yield db
 
     monkeypatch.setenv("PLATFORM_ADMIN_KEY", "z" * 40)
+    monkeypatch.setenv("ALLOW_PUBLIC_REGISTRATION", "1")
     app.dependency_overrides[tenant_get_db] = db_override
     app.dependency_overrides[platform_get_db] = db_override
     platform_headers = {"X-Platform-Key": "z" * 40}
@@ -117,10 +118,16 @@ def test_license_grace_status_and_platform_company_pin(monkeypatch):
     app.dependency_overrides[tenant_get_db] = db_override
     app.dependency_overrides[platform_get_db] = db_override
     monkeypatch.setenv("PLATFORM_ADMIN_KEY", "y" * 40)
+    monkeypatch.setenv("ALLOW_PUBLIC_REGISTRATION", "0")
     headers = {"X-Platform-Key": "y" * 40}
     create_body = {"slug": "lic-grace", "name": "Grace Coffee", "ownerName": "Rahbar", "ownerPin": "1234"}
     try:
         with TestClient(app) as client:
+            # Hosted mode rejects anonymous self-registration, but platform provisioning works.
+            assert client.post("/api/auth/register", json={
+                "companyName": "Not Allowed", "slug": "no-self-signup",
+                "ownerName": "Owner", "ownerPin": "1234",
+            }).status_code == 403
             created = client.post("/api/platform/companies", json=create_body, headers=headers)
             assert created.status_code == 201, created.text
             cid = created.json()["id"]

@@ -5,7 +5,10 @@ const config: CapacitorConfig = {
   appName: 'CoffeePOS Hybrid',
   webDir: 'dist',
   server: {
-    androidScheme: 'https',
+    // Permit reaching a development backend on the cafe's private Wi-Fi.
+    // Production deployments must use HTTPS when hosted outside the LAN.
+    androidScheme: 'http',
+    cleartext: true,
   },
 }
 

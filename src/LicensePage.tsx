@@ -5,6 +5,7 @@ import { t } from './i18n'
 
 type License = {
   status: 'trial' | 'active' | 'grace' | 'expired' | 'suspended' | 'unconfigured'
+  plan: 'monthly' | 'yearly' | null
   canWrite: boolean
   expiresAt: number | null
   trialEndsAt: number | null
@@ -38,6 +39,7 @@ export default function LicensePage() {
   useEffect(() => { refresh() }, [])
 
   const rows = license ? [
+    [t('Tarif'), license.plan === 'monthly' ? t('Oylik') : license.plan === 'yearly' ? t('Yillik') : t('Belgilanmagan')],
     [t('Sinov muddati tugaydi'), format(license.trialEndsAt)],
     [t('Faol obuna tugaydi'), format(license.currentPeriodEndsAt)],
     [t('Imtiyozli muddat tugaydi'), format(license.graceEndsAt)],

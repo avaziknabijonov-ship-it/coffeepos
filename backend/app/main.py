@@ -19,6 +19,7 @@ from .db import (
     Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
+from .licensing import may_write, subscription_payload, subscription_status
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
@@ -113,14 +114,24 @@ class Ctx:
         return self.company.id
 
 
-def auth(db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
+def auth(request: Request, db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
     claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
     if not claims:
         raise HTTPException(401, "Qaytadan kiring")
     staff = db.get(Staff, int(claims["sub"]))
     if not staff or not staff.active or staff.company_id != claims["cid"]:
         raise HTTPException(401, "Qaytadan kiring")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
+    company = db.get(Company, staff.company_id)
+    if company is None:
+        raise HTTPException(401, "Qaytadan kiring")
+    # Every tenant mutation goes through auth(), including orders, stock, debt,
+    # salary and shift operations. Platform-only license changes use a separate key.
+    # When a license ends, leave GET reports available to the cafe owner.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+        if not may_write(subscription_status(sub)):
+            raise HTTPException(403, "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.")
+    return Ctx(db, staff, company)
 
 
 def require(*roles: str):
@@ -270,31 +281,9 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 
 @app.get("/api/license/status")
 def license_status(ctx: Ctx = Depends(auth)) -> dict:
-    """Read-only subscription status. Does not block sales or verify payments."""
+    """Effective subscription state; read access remains after expiry."""
     sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
-    if sub is None:
-        return {
-            "status": "unconfigured",
-            "trialEndsAt": None,
-            "currentPeriodEndsAt": None,
-            "graceEndsAt": None,
-            "serverTime": now_ms(),
-        }
-    now = now_ms()
-    status = sub.status
-    if status == "trial" and sub.trial_ends_at is not None and now >= sub.trial_ends_at:
-        status = "expired"
-    elif status == "active" and sub.current_period_ends_at is not None and now >= sub.current_period_ends_at:
-        status = "grace" if sub.grace_ends_at is not None and now < sub.grace_ends_at else "expired"
-    elif status == "grace" and sub.grace_ends_at is not None and now >= sub.grace_ends_at:
-        status = "expired"
-    return {
-        "status": status,
-        "trialEndsAt": sub.trial_ends_at,
-        "currentPeriodEndsAt": sub.current_period_ends_at,
-        "graceEndsAt": sub.grace_ends_at,
-        "serverTime": now,
-    }
+    return subscription_payload(sub)
 
 
 @app.get("/api/me")

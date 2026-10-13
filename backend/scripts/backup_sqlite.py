@@ -30,7 +30,7 @@ def backup_sqlite(source: Path, target: Path) -> None:
     os.close(fd)
     try:
         # mode=ro prevents an accidental write to the live source database.
-        with sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True) as live:
+        with sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True) as live:
             with sqlite3.connect(str(target)) as backup:
                 live.backup(backup)
                 check = backup.execute("PRAGMA integrity_check").fetchone()

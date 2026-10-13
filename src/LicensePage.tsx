@@ -7,6 +7,7 @@ type License = {
   status: 'trial' | 'active' | 'grace' | 'expired' | 'suspended' | 'unconfigured'
   plan: 'monthly' | 'yearly' | null
   canWrite: boolean
+  enforcementEnabled?: boolean
   pricing?: {currency: 'UZS'; monthly: number | null; yearly: number | null}
   expiresAt: number | null
   trialEndsAt: number | null
@@ -58,6 +59,7 @@ export default function LicensePage() {
       {error && <p role="alert" className="text-red-700">{error}</p>}
       {!license && !error && <p>{t('Yuklanmoqda…')}</p>}
       {license && <>
+        {license.enforcementEnabled === false && <p role="status" className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{t('Litsenziya nazorati hali yoqilmagan. Dastur sinov rejimida ishlayapti.')}</p>}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-sm font-semibold ${license.canWrite ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
             {t(statusName[license.status])}

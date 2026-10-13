@@ -202,6 +202,23 @@ class LicenseOperation(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
 
 
+class PlatformAdmin(Base):
+    """Individual Super Admin/operator account; never shared with cafe staff."""
+
+    __tablename__ = "platform_admins"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="viewer")
+    password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    totp_encrypted: Mapped[str] = mapped_column(String(512), nullable=False)
+    invite_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    invite_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+    last_login_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
 class PlatformAudit(Base):
     """Non-tenant administrative configuration audit."""
 
@@ -221,6 +238,8 @@ class LicenseAudit(Base):
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
 
 

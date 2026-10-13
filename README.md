@@ -63,7 +63,7 @@ curl localhost/healthz  # {"ok":true}
 
 ## Litsenziya va qahvaxonalarni sotuvga tayyorlash
 
-- **Super Admin paneli:** `/platform-admin` — mijoz qahvaxonalarni yaratish, 14 kunlik sinov, 30/90/365 kunlik obunani qo‘lda uzaytirish, suspend qilish va o‘zgarishlar tarixini ko‘rish.
+- **Super Admin paneli:** `/platform-admin` — mijoz qahvaxonalarni yaratish, 14 kunlik sinov, oylik (kalendar oy) va yillik (kalendar yil) obunani qo‘lda uzaytirish, suspend qilish va o‘zgarishlar tarixini ko‘rish.
 - **Qahvaxona egasining Litsenziya bo‘limi:** obunaning holati, tugash sanasi, qolgan kunlar.
 - **Muddati tugagan obuna:** yangi server operatsiyalari bloklanadi, oldingi hisobotlarni ko‘rish mumkin. Uzaytirilgach yangi amallar qayta ishlaydi.
 - **Tijoriy server:** `ALLOW_PUBLIC_REGISTRATION=0`, `PLATFORM_ADMIN_KEY` = tasodifiy 32+ belgili maxfiy kalit, `SEED_DEMO=0`. Platform Admin sahifasini internetda faqat HTTPS orqali oching.

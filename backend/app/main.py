@@ -14,11 +14,12 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
-from .platform import router as platform_router, page_router as platform_page_router
+from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
     Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
+from .licensing import may_write, subscription_payload, subscription_status
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
@@ -50,6 +51,15 @@ def migrate() -> None:
         payment_cols = {c["name"] for c in inspect(engine).get_columns("debt_payments")}
         if "shift_id" not in payment_cols:
             conn.execute(text("ALTER TABLE debt_payments ADD COLUMN shift_id INTEGER"))
+        # Existing customer DBs predate monthly/yearly license plans.
+        license_cols = {col["name"] for col in inspect(engine).get_columns("subscriptions")}
+        if "plan" not in license_cols:
+            conn.execute(text("ALTER TABLE subscriptions ADD COLUMN plan VARCHAR(16)"))
+        old_audit_cols = {col["name"] for col in inspect(engine).get_columns("license_audit")}
+        if "actor_username" not in old_audit_cols:
+            conn.execute(text("ALTER TABLE license_audit ADD COLUMN actor_username VARCHAR(64)"))
+        if "details" not in old_audit_cols:
+            conn.execute(text("ALTER TABLE license_audit ADD COLUMN details JSON"))
     # Assign old repayments to a shift only when their timestamp matches exactly one shift.
     with SessionLocal() as db:
         old_payments = db.scalars(select(DebtPayment).where(DebtPayment.shift_id.is_(None))).all()
@@ -113,14 +123,26 @@ class Ctx:
         return self.company.id
 
 
-def auth(db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
+def auth(request: Request, db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
     claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
     if not claims:
         raise HTTPException(401, "Qaytadan kiring")
     staff = db.get(Staff, int(claims["sub"]))
     if not staff or not staff.active or staff.company_id != claims["cid"]:
         raise HTTPException(401, "Qaytadan kiring")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
+    company = db.get(Company, staff.company_id)
+    if company is None:
+        raise HTTPException(401, "Qaytadan kiring")
+    # Every tenant mutation goes through auth(), including orders, stock, debt,
+    # salary and shift operations. Platform-only license changes use a separate key.
+    # When a license ends, leave GET reports available to the cafe owner.
+    # A legacy cafe must not be locked out by merely installing a software update.
+    # Enable enforcement only AFTER each existing tenant has an approved license.
+    if os.environ.get("LICENSE_ENFORCEMENT", "0") == "1" and request.method not in ("GET", "HEAD", "OPTIONS"):
+        sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+        if not may_write(subscription_status(sub)):
+            raise HTTPException(403, "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.")
+    return Ctx(db, staff, company)
 
 
 def require(*roles: str):
@@ -261,6 +283,10 @@ class RegisterIn(BaseModel):
 
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    # Paid deployments provision customers through the platform administrator.
+    # Keep public registration available only when explicitly enabled.
+    if os.environ.get("ALLOW_PUBLIC_REGISTRATION", "1") != "1":
+        raise HTTPException(403, "Yangi kofe barni faqat platforma administratori yarata oladi")
     if db.scalar(select(Company).where(Company.slug == body.slug)):
         raise HTTPException(409, "Bu login band, boshqasini tanlang")
     create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)
@@ -270,31 +296,14 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 
 @app.get("/api/license/status")
 def license_status(ctx: Ctx = Depends(auth)) -> dict:
-    """Read-only subscription status. Does not block sales or verify payments."""
+    """Effective subscription state; read access remains after expiry."""
     sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
-    if sub is None:
-        return {
-            "status": "unconfigured",
-            "trialEndsAt": None,
-            "currentPeriodEndsAt": None,
-            "graceEndsAt": None,
-            "serverTime": now_ms(),
-        }
-    now = now_ms()
-    status = sub.status
-    if status == "trial" and sub.trial_ends_at is not None and now >= sub.trial_ends_at:
-        status = "expired"
-    elif status == "active" and sub.current_period_ends_at is not None and now >= sub.current_period_ends_at:
-        status = "grace" if sub.grace_ends_at is not None and now < sub.grace_ends_at else "expired"
-    elif status == "grace" and sub.grace_ends_at is not None and now >= sub.grace_ends_at:
-        status = "expired"
-    return {
-        "status": status,
-        "trialEndsAt": sub.trial_ends_at,
-        "currentPeriodEndsAt": sub.current_period_ends_at,
-        "graceEndsAt": sub.grace_ends_at,
-        "serverTime": now,
-    }
+    payload = subscription_payload(sub)
+    enforcement = os.environ.get("LICENSE_ENFORCEMENT", "0") == "1"
+    payload["enforcementEnabled"] = enforcement
+    if not enforcement:
+        payload["canWrite"] = True
+    return {**payload, "pricing": pricing_out(ctx.db)}
 
 
 @app.get("/api/me")

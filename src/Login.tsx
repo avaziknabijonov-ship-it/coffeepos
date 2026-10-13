@@ -3,6 +3,7 @@ import { t } from './i18n'
 import LangSwitch from './LangSwitch'
 import { Coffee, Delete } from 'lucide-react'
 import { login, register } from './store'
+import { checkServerUrl, getServerUrl, isNativeApp, saveServerUrl } from './api'
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -15,6 +16,7 @@ export default function Login() {
           <span className="ml-auto"><LangSwitch light /></span>
         </div>
         {mode === 'login' ? <PinLogin onRegister={() => setMode('register')} /> : <Register onBack={() => setMode('login')} />}
+        {isNativeApp() && <ServerSettings />}
       </div>
     </div>
   )
@@ -78,7 +80,9 @@ function PinLogin({ onRegister }: { onRegister: () => void }) {
       {company === 'demo' && (
         <p className="text-center text-xs text-stone-500">{t('Demo PIN: 1111 rahbar · 2222 kassir · 3333 barista')}</p>
       )}
-      <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
+      {import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION !== '0' && (
+        <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
+      )}
     </div>
   )
 }
@@ -122,5 +126,59 @@ function Register({ onBack }: { onBack: () => void }) {
       <p className="text-xs text-stone-500">{t("Standart kofe menyusi, texkartalar va ombor avtomatik qo'shiladi, keyin Admin bo'limida o'zgartirasiz.")}</p>
       <button type="button" onClick={onBack} className="w-full text-sm font-medium text-stone-600">{t('Orqaga')}</button>
     </form>
+  )
+}
+
+function ServerSettings() {
+  const [expanded, setExpanded] = useState(() => !getServerUrl())
+  const [address, setAddress] = useState(() => getServerUrl())
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState(false)
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    setMessage('')
+    setError(false)
+    try {
+      const base = await checkServerUrl(address)
+      saveServerUrl(base)
+      setAddress(base)
+      setExpanded(false)
+      setMessage(t('Server ulandi. Endi login va PIN-kodni kiriting.'))
+    } catch (e) {
+      setError(true)
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="mt-5 border-t border-stone-200 pt-4">
+      <button type="button" onClick={() => { setExpanded((v) => !v); setMessage('') }}
+        className="w-full text-left text-sm font-medium text-amber-700">
+        {t('Server sozlamalari')} {expanded ? '−' : '+'}
+      </button>
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          <label className="block text-xs font-medium text-stone-600">
+            {t('CoffeePOS server manzili')}
+            <input type="url" inputMode="url" autoCapitalize="none" autoCorrect="off"
+              spellCheck={false} value={address} onChange={(e) => setAddress(e.target.value)}
+              placeholder="http://192.168.1.26:8000" className={`${input} mt-1 text-sm`} />
+          </label>
+          <p className="text-xs text-stone-500">
+            {t('Telefon va kompyuter bir Wi-Fi tarmog‘ida bo‘lishi kerak. Internetdagi server uchun HTTPS ishlating.')}
+          </p>
+          <button type="button" disabled={busy || !address.trim()} onClick={() => void save()}
+            className="w-full rounded-xl bg-stone-900 px-3 py-3 text-sm font-semibold text-white disabled:opacity-40">
+            {busy ? t('Tekshirilmoqda…') : t('Serverni tekshirish va saqlash')}
+          </button>
+        </div>
+      )}
+      {message && <p role="status" className={`mt-2 rounded-lg px-3 py-2 text-xs ${error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</p>}
+    </section>
   )
 }

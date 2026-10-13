@@ -179,11 +179,54 @@ class Subscription(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(16), default="trial", nullable=False)
+    # Monthly/yearly paid period; NULL for trials, manual dates and legacy extensions.
+    plan: Mapped[str | None] = mapped_column(String(16), nullable=True)
     trial_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     current_period_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     grace_ends_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
+class LicenseOperation(Base):
+    """Deduplicate manual subscription grants by a unique client operation ID."""
+
+    __tablename__ = "license_operations"
+    __table_args__ = (UniqueConstraint("company_id", "operation_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    operation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    period: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_end_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    new_end_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+
+
+class PlatformAdmin(Base):
+    """Individual Super Admin/operator account; never shared with cafe staff."""
+
+    __tablename__ = "platform_admins"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="viewer")
+    password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    totp_encrypted: Mapped[str] = mapped_column(String(512), nullable=False)
+    invite_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    invite_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
+    last_login_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class PlatformAudit(Base):
+    """Non-tenant administrative configuration audit."""
+
+    __tablename__ = "platform_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action: Mapped[str] = mapped_column(String(48), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
 
 
 class LicenseAudit(Base):
@@ -195,6 +238,8 @@ class LicenseAudit(Base):
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, nullable=False)
 
 

@@ -1,25 +1,28 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
-import { Coffee, LayoutDashboard, LogOut, Settings, Store, ClipboardList, WifiOff } from 'lucide-react'
+import { Coffee, LayoutDashboard, LogOut, Settings, Store, ClipboardList, WifiOff, KeyRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
 import OrdersScreen from './OrdersScreen'
 import Admin from './Admin'
 import { ExpensesView } from './Finance'
 import Login from './Login'
+import LicenseBanner from './LicenseBanner'
+import LicensePage from './LicensePage'
 import { CloseShiftModal } from './Shift'
 import { ROLE_LABEL } from './data'
 import type { Role } from './data'
 import { bootstrap, logout, useAppState } from './store'
 
-type Tab = 'kassa' | 'orders' | 'dashboard' | 'admin' | 'expenses'
+type Tab = 'kassa' | 'orders' | 'dashboard' | 'admin' | 'expenses' | 'license'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'orders', label: 'Buyurtmalar', icon: ClipboardList, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'expenses', label: 'Kunlik chiqimlar', icon: Store, roles: ['kassir'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'admin'] },
   { id: 'admin', label: 'Admin', icon: Settings, roles: ['owner', 'admin'] },
+  { id: 'license', label: 'Litsenziya', icon: KeyRound, roles: ['owner', 'admin'] },
 ]
 const fromHash = (): Tab | null => {
   const h = window.location.hash.slice(1)
@@ -57,7 +60,7 @@ function Main({ role }: { role: Role }) {
           <span className="hidden sm:inline">CoffeePOS</span>
           <span className="hidden max-w-40 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 lg:inline">{session?.company.name}</span>
         </div>
-        <nav className="order-3 flex w-full justify-around gap-1 border-t border-white/10 pt-2 sm:order-none sm:w-auto sm:flex-1 sm:justify-start sm:border-0 sm:pt-0">
+        <nav className="order-3 flex w-full justify-start gap-1 overflow-x-auto border-t border-white/10 pt-2 sm:order-none sm:w-auto sm:flex-1 sm:border-0 sm:pt-0">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -77,12 +80,14 @@ function Main({ role }: { role: Role }) {
         <LangSwitch />
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
+      <LicenseBanner role={role} />
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'orders' && <OrdersScreen />}
         {tab === 'expenses' && <div className="mx-auto max-w-5xl p-4"><ExpensesView /></div>}
         {tab === 'dashboard' && <Admin key="dashboard" initialView="dashboard" />}
         {tab === 'admin' && <Admin key="admin" initialView="stock" />}
+        {tab === 'license' && <LicensePage />}
       </div>
       {shiftOpen && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
     </div>

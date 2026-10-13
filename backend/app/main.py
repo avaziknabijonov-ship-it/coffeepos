@@ -131,7 +131,9 @@ def auth(request: Request, db: Session = Depends(get_db), authorization: str = H
     # Every tenant mutation goes through auth(), including orders, stock, debt,
     # salary and shift operations. Platform-only license changes use a separate key.
     # When a license ends, leave GET reports available to the cafe owner.
-    if request.method not in ("GET", "HEAD", "OPTIONS"):
+    # A legacy cafe must not be locked out by merely installing a software update.
+    # Enable enforcement only AFTER each existing tenant has an approved license.
+    if os.environ.get("LICENSE_ENFORCEMENT", "0") == "1" and request.method not in ("GET", "HEAD", "OPTIONS"):
         sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
         if not may_write(subscription_status(sub)):
             raise HTTPException(403, "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.")
@@ -291,7 +293,12 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 def license_status(ctx: Ctx = Depends(auth)) -> dict:
     """Effective subscription state; read access remains after expiry."""
     sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
-    return {**subscription_payload(sub), "pricing": pricing_out(ctx.db)}
+    payload = subscription_payload(sub)
+    enforcement = os.environ.get("LICENSE_ENFORCEMENT", "0") == "1"
+    payload["enforcementEnabled"] = enforcement
+    if not enforcement:
+        payload["canWrite"] = True
+    return {**payload, "pricing": pricing_out(ctx.db)}
 
 
 @app.get("/api/me")

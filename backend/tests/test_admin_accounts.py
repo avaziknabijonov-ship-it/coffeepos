@@ -169,3 +169,43 @@ def test_individual_admin_mfa_roles_history_and_revocation(monkeypatch):
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
+
+
+def test_offline_recovery_requires_operator_and_revokes_sessions(monkeypatch, capsys):
+    import sys
+    from app import recover_platform_admin as recovery
+    from app.db import PlatformAdmin
+    from app.platform_security import _password_hash
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(recovery, "SessionLocal", factory)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./TEST_ONLY_DB")
+    monkeypatch.setenv("PLATFORM_MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    with factory() as db:
+        db.add(PlatformAdmin(
+            username="lost-superadmin", role="superadmin", active=True,
+            password_hash=_password_hash("old-long-password"),
+            totp_encrypted="encrypted-test-seed", session_version=3,
+        ))
+        db.commit()
+
+    monkeypatch.setattr(sys, "argv", ["recover", "--username", "lost-superadmin",
+                                      "--confirm", "RECOVER-PLATFORM-ADMIN"])
+    monkeypatch.delenv("PLATFORM_RECOVERY_MODE", raising=False)
+    try:
+        recovery.main()
+        raise AssertionError("Recovery should require explicit server consent")
+    except SystemExit as exc:
+        assert exc.code == 2
+    monkeypatch.setenv("PLATFORM_RECOVERY_MODE", "1")
+    assert recovery.main() == 0
+    token = capsys.readouterr().out.strip()
+    assert len(token) >= 40
+    with factory() as db:
+        admin = db.scalar(select(PlatformAdmin).where(PlatformAdmin.username == "lost-superadmin"))
+        assert admin.active is False
+        assert admin.session_version == 4
+        assert admin.password_hash is None
+        assert admin.invite_hash == hashlib.sha256(token.encode()).hexdigest()
+    engine.dispose()

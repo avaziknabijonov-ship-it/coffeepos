@@ -188,7 +188,11 @@ def _issue_invitation(db: Session, username: str, role: str) -> tuple[PlatformAd
         active=False, password_hash=None,
     )
     db.add(admin)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Administrator username already exists") from exc
     return admin, token
 
 
@@ -221,7 +225,9 @@ def new_admin(db: Session, username: str, role: str, actor: PlatformActor, reque
 
 
 def _invited_admin(db: Session, body: EnrollRequest) -> PlatformAdmin:
-    admin = db.scalar(select(PlatformAdmin).where(PlatformAdmin.username == body.username))
+    admin = db.scalar(select(PlatformAdmin).where(
+        PlatformAdmin.username == body.username
+    ).with_for_update())
     expected = hashlib.sha256(body.enrollmentToken.encode()).hexdigest()
     if (not admin or not admin.invite_hash or not secrets.compare_digest(admin.invite_hash, expected)
             or not admin.invite_expires_at or admin.invite_expires_at < now_ms()):

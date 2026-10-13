@@ -1,0 +1,41 @@
+name: CoffeePOS checks
+
+on:
+  pull_request:
+    branches: [coffeepos-development]
+  push:
+    branches: [coffeepos-development]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend with test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Run backend tests from isolated checkout
+        env:
+          PYTHONPATH: .
+        run: python -m pytest tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The existing package-lock is older than package.json's Capacitor deps.
+      # npm install resolves those additions; sync the lockfile before switching to npm ci.
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and build web bundle
+        run: npm run build
+      - name: Frontend lint
+        run: npm run lint

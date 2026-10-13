@@ -31,15 +31,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # The existing package-lock is older than package.json's Capacitor deps.
-      # npm install resolves those additions; sync the lockfile before switching to npm ci.
-      - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
-      - name: Temporary lockfile export for synchronization
-        run: |
-          echo COFFEEPOS_LOCK_BEGIN
-          base64 -w80 package-lock.json
-          echo COFFEEPOS_LOCK_END
+      - name: Install frontend dependencies from locked versions
+        run: npm ci --no-audit --no-fund
       - name: Typecheck and build web bundle
         run: npm run build
       - name: Frontend lint
@@ -57,8 +50,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install locked Android build dependencies
+        run: npm ci --no-audit --no-fund
       - name: Create Android project and sync bundled frontend
         run: |
           npx cap add android

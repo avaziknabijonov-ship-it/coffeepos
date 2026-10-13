@@ -35,6 +35,11 @@ jobs:
       # npm install resolves those additions; sync the lockfile before switching to npm ci.
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
+      - name: Temporary lockfile export for synchronization
+        run: |
+          echo COFFEEPOS_LOCK_BEGIN
+          base64 -w80 package-lock.json
+          echo COFFEEPOS_LOCK_END
       - name: Typecheck and build web bundle
         run: npm run build
       - name: Frontend lint

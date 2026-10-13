@@ -56,8 +56,15 @@ def pricing_out(db: Session) -> dict:
 
 
 @router.post("/session")
-def platform_session(body: PlatformLogin, request: Request) -> dict:
-    return create_platform_session(body, request)
+def platform_session(body: PlatformLogin, request: Request, db: Session = Depends(get_db)) -> dict:
+    result = create_platform_session(body, request)
+    # Store no keys, OTP codes or session tokens in the audit.
+    db.add(PlatformAudit(action="admin_login", details={
+        "ip": request.client.host if request.client else "unknown",
+        "mfa": result["mfaEnabled"],
+    }))
+    db.commit()
+    return result
 
 
 @router.get("/pricing", dependencies=[Depends(platform_auth)])

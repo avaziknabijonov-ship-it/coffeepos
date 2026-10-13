@@ -31,6 +31,14 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <label>PIN <input id="newPin" type="password" required minlength="4" maxlength="6" pattern="[0-9]+" autocomplete="new-password"></label>
 <button type="submit">Coffee bar yaratish</button>
 </form><p id="newMsg" role="status"></p></section>
+<section class="card"><h2>Litsenziya narxlari (UZS)</h2>
+<p><small>Narxlar hali tasdiqlanmagan bo‘lsa maydonlarni bo‘sh qoldiring. Hech qanday to‘lov avtomatik yechilmaydi. Narxlarni kodni o‘zgartirmasdan keyin belgilash mumkin.</small></p>
+<form id="pricingForm" class="row">
+  <label>Oylik (so‘m) <input id="monthlyPrice" type="number" min="1" max="10000000000" step="1" placeholder="Belgilanmagan"></label>
+  <label>Yillik (so‘m) <input id="yearlyPrice" type="number" min="1" max="10000000000" step="1" placeholder="Belgilanmagan"></label>
+  <button type="submit">Narxlarni saqlash</button>
+</form><p id="priceMsg" role="status"></p>
+</section>
 <section class="card"><h2>Litsenziya va obunalar</h2><p><small>Faollashtirish qo‘lda boshqariladi. To‘lov qabul qilish yoki avtomatik tekshirish ulanmagan. Sinov va faol obuna tugagach yangi savdo amallari serverda bloklanadi; oldingi ma’lumotlar ko‘rinadi.</small></p>
 <form id="form" class="row">
 <label>Coffee bar <select id="company" required></select></label>
@@ -51,6 +59,7 @@ th{font-size:13px;color:#78716c}small{color:#78716c}.error{color:#b91c1c}
 <script>
 let key = '';
 let cafeList = [];
+let pendingGrant = null;
 const $ = id => document.getElementById(id);
 const show = (id, message, error=false) => { $(id).textContent=message; $(id).className=error?'error':''; };
 const dateText = ms => ms ? new Date(ms).toLocaleDateString('uz-UZ') : '—';
@@ -114,7 +123,9 @@ async function refreshHistory() {
 }
 async function refresh(){
  const selected=$('company').value;
- const companies=await api('/companies');
+ const [companies, pricing] = await Promise.all([api('/companies'), api('/pricing')]);
+ $('monthlyPrice').value=pricing.monthly ?? '';
+ $('yearlyPrice').value=pricing.yearly ?? '';
  cafeList=companies;
  $('rows').replaceChildren();$('company').replaceChildren();
  for(const c of companies){
@@ -142,6 +153,25 @@ $('logout').onclick=()=>{
  $('history').replaceChildren();show('msg','Chiqildi');
 };
 $('reload').onclick=async()=>{if(!key){show('msg','Avval kiring',true);return}try{await refresh()}catch(e){show('msg',e.message,true)}};
+$('pricingForm').onsubmit=async e=>{
+ e.preventDefault();
+ if(!key){show('priceMsg','Avval kiring',true);return}
+ const parsePrice=id=>{
+  const raw=$(id).value.trim();
+  return raw==='' ? null : Number(raw);
+ };
+ const monthly=parsePrice('monthlyPrice'),yearly=parsePrice('yearlyPrice');
+ if([monthly,yearly].some(v=>v!==null&&(!Number.isSafeInteger(v)||v<=0||v>10000000000))){
+  show('priceMsg','Narxlar musbat butun so‘mda bo‘lishi kerak',true);return;
+ }
+ if(!confirm('Oylik va yillik tarif narxlarini saqlaysizmi?')) return;
+ try{
+  await api('/pricing',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({monthly,yearly})});
+  show('priceMsg','Narxlar saqlandi. To‘lov avtomatik yechilmaydi.');
+  await refresh();
+ }catch(err){show('priceMsg',err.message,true)}
+};
 $('form').onsubmit=async e=>{
  e.preventDefault();
  if(!key){show('saveMsg','Avval kiring',true);return}
@@ -167,15 +197,24 @@ $('extend').onclick=async()=>{
  const cafe=currentCafe(),period=$('period').value;
  if(!cafe || !['monthly','yearly'].includes(period)) return;
  if(!confirm(cafe.name+' uchun '+planName(period)+' obunani faollashtirasizmi? To‘lov tashqarida tasdiqlangan bo‘lishi kerak.')) return;
+ // Preserve the same ID when a network error leaves grant status unknown.
+ const selection=cafe.id+':'+period;
+ if(!pendingGrant || pendingGrant.selection!==selection){
+  const id=(typeof crypto!=='undefined' && typeof crypto.randomUUID==='function')
+   ? crypto.randomUUID()
+   : 'grant-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);
+  pendingGrant={selection,operationId:id};
+ }
  $('extend').disabled=true;
  try{
   const result=await api('/companies/'+cafe.id+'/subscription/extend',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({period})
+   body:JSON.stringify({period,operationId:pendingGrant.operationId})
   });
-  show('extendMsg',cafe.name+' · '+planName(result.subscription.plan)+' · '+dateText(result.subscription.currentPeriodEndsAt)+' gacha faol.');
+  pendingGrant=null;
+  show('extendMsg',cafe.name+' · '+planName(result.subscription.plan)+' · '+dateText(result.grantedUntil)+' gacha faol.'+(result.replayed?' (takroriy so‘rov, muddat qo‘shilmadi)':''));
   await refresh();
- }catch(err){show('extendMsg',err.message,true)}
+ }catch(err){show('extendMsg',err.message+' — qayta urinishda shu so‘rov takrorlanadi.',true)}
  finally{$('extend').disabled=false}
 };
 $('newCompany').onsubmit=async e=>{

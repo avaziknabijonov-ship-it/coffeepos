@@ -91,7 +91,7 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             assert client.put(f"/api/platform/companies/{a_id}/subscription",
                 headers=platform_headers, json={"status": "suspended"}).status_code == 200
             assert client.get("/api/license/status", headers=first).json()["status"] == "suspended"
-            assert client.get("/api/orders", headers=first).status_code == 200
+            assert client.get("/api/sync", headers=first).status_code == 200
             assert client.post("/api/orders", headers=first, json={}).status_code == 403
 
             history = client.get(f"/api/platform/companies/{a_id}/license-history", headers=platform_headers)

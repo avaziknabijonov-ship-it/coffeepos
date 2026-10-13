@@ -272,6 +272,10 @@ class RegisterIn(BaseModel):
 
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    # Paid deployments provision customers through the platform administrator.
+    # Keep public registration available only when explicitly enabled.
+    if os.environ.get("ALLOW_PUBLIC_REGISTRATION", "1") != "1":
+        raise HTTPException(403, "Yangi kofe barni faqat platforma administratori yarata oladi")
     if db.scalar(select(Company).where(Company.slug == body.slug)):
         raise HTTPException(409, "Bu login band, boshqasini tanlang")
     create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)

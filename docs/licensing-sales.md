@@ -64,7 +64,7 @@ Server egasi ishga tushirishdan oldin:
 
 - Avtomatik Click/Payme/to'lov provayderi yoki fiskal chek bilan bog'lash **yo'q**. To'lov avtomatik tasdiqlanmaydi.
 - **Tariflar**: Oylik va Yillik. **Narxlar hozircha belgilanmagan**; foydalanuvchi oylik/yillik so'm summalarini keyin belgilaydi. Avtomatik debet, chek yoki billing mavjud emas. Chegirmalar, sotuv hujjatlari va mijozga ko'rsatiladigan qo'llab-quvvatlash siyosati hali belgilanmagan.
-- Platforma administratorining TOTP MFA sessiyalari mavjud, lekin alohida shaxsiy admin hisoblari va to'liq billing auditi hali yo'q. Vaqtinchalik PostgreSQL CI backup/restore sinovi mavjud; real production tiklash mashqi hali o'tkazilmagan.
+- **Alohida shaxsiy Super Admin/Menejer/Auditor hisoblari** (MFA, sessiya, RBAC, litsenziya va narx o‘zgarishi bo‘yicha audit) ishlab chiqildi — [to‘liq yo‘riqnoma](platform-admin-accounts.md). Rasmiy to‘lov provayderi/billing auditi hali yo‘q. Vaqtinchalik PostgreSQL CI backup/restore sinovi mavjud; real production tiklash mashqi hali o'tkazilmagan.
 - Migratsiya va ishga tushirishni avval TEST COFFEE da tekshiring, ayniqsa eski tenantlarda `subscriptions` row mavjudligini. **Production MasterCoffee bazasiga hech qanday TEST ma'lumotni nusxalamang**.
 - Android APK build va backend avtomatik testlaridan tashqari real qurilmadagi login, sync, smena va expiry banneri sinovi talab etiladi.
 

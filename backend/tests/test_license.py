@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base, Subscription
+from app.licensing import add_calendar_period
 from app.main import app, get_db as tenant_get_db
 from app.platform import get_db as platform_get_db
 
@@ -87,6 +88,23 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             assert extended.status_code == 200, extended.text
             assert extended.json()["subscription"]["currentPeriodEndsAt"] == before + 30 * 86_400_000
 
+            url = f"/api/platform/companies/{a_id}/subscription/extend"
+            for invalid in ({}, {"period": "weekly"}, {"days": 30, "period": "monthly"}):
+                bad = client.post(url, headers=platform_headers, json=invalid)
+                assert bad.status_code == 422, bad.text
+            paid_base = extended.json()["subscription"]["currentPeriodEndsAt"]
+            monthly = client.post(url, headers=platform_headers, json={"period": "monthly"})
+            assert monthly.status_code == 200, monthly.text
+            month_end = monthly.json()["subscription"]["currentPeriodEndsAt"]
+            assert monthly.json()["subscription"]["plan"] == "monthly"
+            assert month_end == add_calendar_period(paid_base, "monthly")
+            assert client.get("/api/license/status", headers=first).json()["plan"] == "monthly"
+            yearly = client.post(url, headers=platform_headers, json={"period": "yearly"})
+            assert yearly.status_code == 200, yearly.text
+            assert yearly.json()["subscription"]["plan"] == "yearly"
+            assert yearly.json()["subscription"]["currentPeriodEndsAt"] == add_calendar_period(month_end, "yearly")
+            assert client.get("/api/license/status", headers=first).json()["plan"] == "yearly"
+
             assert client.put(f"/api/platform/companies/{a_id}/subscription",
                 headers=platform_headers, json={"status": "grace"}).status_code == 422
             assert client.put(f"/api/platform/companies/{a_id}/subscription",
@@ -99,6 +117,8 @@ def test_license_expiry_blocks_mutations_but_keeps_read_access(monkeypatch):
             assert history.status_code == 200
             assert history.json()[0]["newStatus"] == "suspended"
             assert any(event["action"] == "extend" for event in history.json())
+            assert any(event["action"] == "extend_monthly" for event in history.json())
+            assert any(event["action"] == "extend_yearly" for event in history.json())
             assert client.get(f"/api/platform/companies/{b_id}/license-history", headers=platform_headers).status_code == 200
             assert client.get(f"/api/platform/companies/{b_id}/license-history").status_code == 401
     finally:

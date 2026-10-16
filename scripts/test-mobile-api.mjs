@@ -10,7 +10,7 @@ function load(store) {
   const source = fs.readFileSync('src/api.ts','utf8').replace(/import\.meta\.env/g, 'BUILD_ENV')
   const code = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
   const exports = {}
-  vm.runInNewContext(code, {exports, URL, AbortSignal, BUILD_ENV:{VITE_STORE_BUILD:store?'1':'0'},localStorage,
+  vm.runInNewContext(code, {exports, URL, AbortSignal, AbortController, setTimeout, clearTimeout, BUILD_ENV:{VITE_STORE_BUILD:store?'1':'0'},localStorage,
     require: name => name === '@capacitor/core' ? {Capacitor:{isNativePlatform:()=>true}} : {t:s=>s,tServer:s=>s},
     fetch: async (url,options) => {request={url,options};return respond()} })
   return exports

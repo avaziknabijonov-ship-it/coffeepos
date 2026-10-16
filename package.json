@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/check-build-mode.mjs && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "android:sync": "npm run build && cap sync android && python3 scripts/configure_android.py && python3 scripts/configure_icons.py",

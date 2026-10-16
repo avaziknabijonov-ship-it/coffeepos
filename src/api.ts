@@ -29,11 +29,20 @@ export function normalizeServerUrl(input: string): string {
   return url.origin
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number) {
+  // AbortSignal.timeout is unavailable on older supported iPhones/iPads.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally { clearTimeout(timer) }
+}
+
 export async function checkServerUrl(input: string): Promise<string> {
   const base = normalizeServerUrl(input)
   let response: Response
   try {
-    response = await fetch(`${base}/healthz`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
+    response = await fetchWithTimeout(`${base}/healthz`, { cache: 'no-store' }, 15_000)
   } catch {
     throw new Error(t('Serverga ulanib bo‘lmadi. Telefon va server tarmog‘ini tekshiring.'))
   }
@@ -78,15 +87,14 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   const token = init.authToken === undefined ? getToken() : init.authToken
   let res: Response
   try {
-    res = await fetch(`${base}${path}`, {
-      signal: AbortSignal.timeout(20_000),
+    res = await fetchWithTimeout(`${base}${path}`, {
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
       headers: {
         ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    })
+    }, 20_000)
   } catch {
     throw new ApiError(0, t("Server bilan aloqa yo'q. Server manzili va tarmoqni tekshiring"))
   }

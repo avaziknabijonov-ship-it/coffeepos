@@ -7,7 +7,7 @@ if (process.env.VITE_ALLOW_PUBLIC_REGISTRATION !== '0') errors.push('Store build
 try {
   const url = new URL(process.env.VITE_API_URL)
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash
-    || url.hostname === 'localhost' || url.hostname.endsWith('.local') || /^[\d.]+$/.test(url.hostname)) throw Error()
+    || ['example.com','example.org','example.net','localhost'].includes(url.hostname) || /\.(invalid|test|example)$/.test(url.hostname) || url.hostname.endsWith('.local') || /^[\d.]+$/.test(url.hostname)) throw Error()
 } catch { errors.push('Set VITE_API_URL to the real public HTTPS API origin.') }
 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(process.env.VITE_SUPPORT_EMAIL || '')) errors.push('Set VITE_SUPPORT_EMAIL to the actual support address.')
 const days = Number(process.env.VITE_PRIVACY_BACKUP_DAYS)

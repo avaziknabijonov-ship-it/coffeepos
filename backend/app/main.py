@@ -33,6 +33,8 @@ def migrate() -> None:
     """Add columns introduced after a table was first created (no Alembic yet)."""
     have = {c["name"] for c in inspect(engine).get_columns("stock_moves")}
     with engine.begin() as conn:
+        if 'category' not in {c['name'] for c in inspect(engine).get_columns('ingredients')}:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN category VARCHAR(64) NOT NULL DEFAULT ''"))
         if "note" not in have:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
         if "inventory_id" not in have:
@@ -170,7 +172,7 @@ def order_out(o: Order) -> dict:
 
 
 def ingredient_out(i: Ingredient) -> dict:
-    return {"id": i.key, "name": i.name, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
+    return {"id": i.key, "name": i.name, "category": i.category, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
 
 
 def product_out(p: Product) -> dict:
@@ -471,6 +473,7 @@ def update_modifier(key: str, body: ModifierIn, ctx: Ctx = Depends(require(*MANA
 
 class IngredientIn(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    category: str = Field(default='', max_length=64)
     unit: Literal["g", "ml", "dona"]
     cost: float = Field(ge=0)
     min: float = Field(ge=0)
@@ -487,7 +490,7 @@ def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -
 @app.put("/api/ingredients/{key}")
 def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     i = get_row(ctx.db, Ingredient, ctx.cid, key)
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude_unset=True).items():
         setattr(i, k, v)
     ctx.db.commit()
     return ingredient_out(i)

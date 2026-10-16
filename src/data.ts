@@ -1,7 +1,7 @@
 import { t } from './i18n'
 
 export type Unit = 'g' | 'ml' | 'dona'
-export interface Ingredient { id: string; name: string; unit: Unit; cost: number; stock: number; min: number }
+export interface Ingredient { category?: string; id: string; name: string; unit: Unit; cost: number; stock: number; min: number }
 export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'

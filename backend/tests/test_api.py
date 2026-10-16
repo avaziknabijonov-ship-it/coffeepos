@@ -207,3 +207,18 @@ def test_daily_rate_change_preserves_old_accrual():
         record = next(item for item in report if item["staffId"] == sid)
         assert record["earned"] == 350000
         assert record["remaining"] == 300000
+
+
+def test_ingredient_categories_persist_and_survive_cost_edits():
+    with TestClient(app) as c:
+        owner, cashier = login(c, '1111'), login(c, '2222')
+        ingredient = c.get('/api/menu', headers=owner).json()['ingredients'][0]
+        payload = {k: ingredient[k] for k in ('name', 'unit', 'cost', 'min')}
+        path = '/api/ingredients/' + ingredient['id']
+        assert c.put(path, headers=cashier, json={**payload, 'category': 'Siroplar'}).status_code == 403
+        assert c.put(path, headers=owner, json={**payload, 'category': 'Siroplar'}).json()['category'] == 'Siroplar'
+        assert c.put(path, headers=owner, json={**payload, 'cost': payload['cost'] + 1}).json()['category'] == 'Siroplar'
+        saved = next(i for i in c.get('/api/menu', headers=owner).json()['ingredients'] if i['id'] == ingredient['id'])
+        assert saved['category'] == 'Siroplar'
+        assert c.put(path, headers=owner, json={**payload, 'category': 'x' * 65}).status_code == 422
+        assert c.put(path, headers=owner, json={**payload, 'category': ''}).status_code == 200

@@ -75,6 +75,7 @@ class Ingredient(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(64), default='')
     unit: Mapped[str] = mapped_column(String(8))
     cost: Mapped[float] = mapped_column(default=0)
     stock: Mapped[float] = mapped_column(default=0)

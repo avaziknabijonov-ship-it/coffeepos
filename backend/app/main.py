@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import secrets
@@ -10,7 +11,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, select, text
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
@@ -130,7 +131,7 @@ def auth(request: Request, db: Session = Depends(get_db), authorization: str = H
     if not claims:
         raise HTTPException(401, "Qaytadan kiring")
     staff = db.get(Staff, int(claims["sub"]))
-    if not staff or not staff.active or staff.company_id != claims["cid"]:
+    if not staff or not staff.active or staff.company_id != claims["cid"] or claims.get("sv") != hashlib.sha256(staff.pin_hash.encode()).hexdigest():
         raise HTTPException(401, "Qaytadan kiring")
     company = db.get(Company, staff.company_id)
     if company is None:
@@ -140,7 +141,7 @@ def auth(request: Request, db: Session = Depends(get_db), authorization: str = H
     # When a license ends, leave GET reports available to the cafe owner.
     # A legacy cafe must not be locked out by merely installing a software update.
     # Enable enforcement only AFTER each existing tenant has an approved license.
-    if os.environ.get("LICENSE_ENFORCEMENT", "0") == "1" and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if os.environ.get("LICENSE_ENFORCEMENT", "0") == "1" and request.method not in ("GET", "HEAD", "OPTIONS") and not (request.method == "DELETE" and request.url.path == "/api/account"):
         sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
         if not may_write(subscription_status(sub)):
             raise HTTPException(403, "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.")
@@ -311,6 +312,32 @@ def license_status(ctx: Ctx = Depends(auth)) -> dict:
 @app.get("/api/me")
 def me(ctx: Ctx = Depends(auth)) -> dict:
     return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name}}
+
+
+class DeleteAccountIn(BaseModel):
+    company: str = Field(min_length=1, max_length=64)
+    pin: str = Field(pattern=PIN_RE)
+
+
+@app.delete("/api/account")
+def delete_account(body: DeleteAccountIn, ctx: Ctx = Depends(require("owner"))) -> dict:
+    # Privacy rights must remain available after subscription expiry. The owner
+    # must authenticate again and explicitly name the company to be erased.
+    key = f"delete|{ctx.cid}|{ctx.staff.id}"
+    if limiter.blocked(key):
+        raise HTTPException(429, "Ko'p urinish. 5 daqiqadan keyin qayta urining")
+    if body.company != ctx.company.slug or not check_pin(body.pin, ctx.staff.pin_hash):
+        limiter.fail(key)
+        raise HTTPException(403, "Rahbar PIN-kodi yoki qahvaxona logini noto'g'ri")
+    # Reverse dependency order works with PostgreSQL and SQLite foreign keys.
+    # Scope every child deletion to this tenant. Never touch platform accounts.
+    for table in reversed(Base.metadata.sorted_tables):
+        if "company_id" in table.c:
+            ctx.db.execute(delete(table).where(table.c.company_id == ctx.cid))
+    ctx.db.execute(delete(Company).where(Company.id == ctx.cid))
+    ctx.db.commit()
+    limiter.reset(key)
+    return {"ok": True}
 
 
 # ---------- menu ----------

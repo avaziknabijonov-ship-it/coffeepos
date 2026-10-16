@@ -71,3 +71,7 @@ curl localhost/healthz  # {"ok":true}
 **Ish tartibi va cheklovlar:** [docs/licensing-sales.md](docs/licensing-sales.md). **Android sinovi:** [docs/android-local-testing.md](docs/android-local-testing.md).
 
 To‘lovlarni avtomatik qabul qilish hali yo‘q; oylik va yillik tarif narxlari avval bo‘sh bo‘ladi, keyinchalik Super Admin orqali o‘zgartiriladi. Har bir Super Admin/Menejer/Auditor uchun alohida login/parol/TOTP hisoblar, hisobni bloklash, MFA tiklash va kim nimani o'zgartirganini qayd etish joriy etilgan. Real production muhitidagi operator sinovi va restore mashqi hali qolgan. [Admin hisoblari yo'riqnomasi](docs/platform-admin-accounts.md). PostgreSQL backup/restore va eski licenziya schema migratsiyasi avtomatik CI testlarda sinovdan o‘tadi; real xizmatni avval sinov muhitida tekshiring. Haqiqiy MasterCoffee ma’lumotlarini TEST COFFEE bilan aralashtirmang.
+
+## Google Play va App Store tayyorligi
+
+Tekshiruv, tuzatishlar va qolgan nashr talablari: [docs/store-readiness.md](docs/store-readiness.md). Imzolangan nashr va do‘kon tasdig‘i hali yo‘q.

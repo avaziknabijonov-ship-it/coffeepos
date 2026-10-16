@@ -8,10 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "android:sync": "npm run build && cap sync android",
+    "android:sync": "npm run build && cap sync android && python3 scripts/configure_android.py && python3 scripts/configure_icons.py",
     "android:open": "cap open android",
-    "ios:sync": "npm run build && cap sync ios && python3 scripts/configure_ios.py",
-    "ios:open": "cap open ios"
+    "ios:sync": "npm run build && cap sync ios && python3 scripts/configure_ios.py && python3 scripts/configure_icons.py",
+    "ios:open": "cap open ios",
+    "store:check": "node scripts/check-store-release.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",

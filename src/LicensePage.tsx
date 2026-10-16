@@ -78,16 +78,16 @@ export default function LicensePage() {
         </dl>
       </>}
     </div>
-    <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+    {import.meta.env.VITE_STORE_BUILD !== '1' && <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
       <p className="font-semibold">{t('Litsenziya tariflari')}</p>
       <p className="mt-2">{t('Oylik litsenziya')}: {license?.pricing?.monthly == null ? t('Narx belgilanmagan') : license.pricing?.monthly?.toLocaleString('ru-RU') + " so‘m"}</p>
       <p className="mt-1">{t('Yillik')}: {license?.pricing?.yearly == null ? t('Narx belgilanmagan') : license.pricing?.yearly?.toLocaleString('ru-RU') + " so‘m"}</p>
       <p className="mt-2 text-stone-500">{t('Tarif narxlari ma’lumot uchun. Ilova to‘lovni avtomatik qabul qilmaydi.')}</p>
-    </div>
-    <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+    </div>}
+    {import.meta.env.VITE_STORE_BUILD !== '1' && <div className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
       <p className="font-semibold">{t('Obunani uzaytirish')}</p>
       <p className="mt-2">{t('Litsenziyani uzaytirish uchun CoffeePOS platforma administratoriga qahvaxona loginini yuboring. To‘lovni tasdiqlash va muddat berish administrator tomonidan amalga oshiriladi.')}</p>
       <p className="mt-2 text-stone-500">{t('To‘lov hali ilova orqali avtomatik qabul qilinmaydi.')}</p>
-    </div>
+    </div>}
   </div>
 }

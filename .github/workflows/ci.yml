@@ -2,9 +2,9 @@ name: CoffeePOS checks
 
 on:
   pull_request:
-    branches: [coffeepos-development]
+    branches: [coffeepos-development, feature/floor-map-20261016, release/store-readiness-20261017]
   push:
-    branches: [coffeepos-development]
+    branches: [coffeepos-development, feature/floor-map-20261016, release/store-readiness-20261017]
 
 jobs:
   backend:
@@ -128,6 +128,8 @@ jobs:
         run: node scripts/check-platform-admin.mjs
       - name: Typecheck and build web bundle
         run: npm run build
+      - name: Mobile API regression tests
+        run: node scripts/test-mobile-api.mjs
       - name: Frontend lint
         run: npm run lint
 
@@ -159,7 +161,7 @@ jobs:
       - name: Build unsigned debug APK (test use only)
         run: |
           chmod +x android/gradlew
-          cd android && ./gradlew assembleDebug --no-daemon
+          cd android && ./gradlew assembleDebug bundleRelease --no-daemon
       - name: Publish test APK for manual device verification
         uses: actions/upload-artifact@v4
         with:
@@ -169,6 +171,7 @@ jobs:
 
   ios_simulator:
     runs-on: macos-15
+    # Xcode 26 SDK is mandatory for App Store submissions since April 2026.
     needs: frontend
     timeout-minutes: 30
     env:
@@ -178,6 +181,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Generate iPhone and iPad project

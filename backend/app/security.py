@@ -7,7 +7,7 @@ import time
 import jwt
 from sqlalchemy.orm import Session
 
-from .db import Setting
+from .db import Setting, Staff
 
 TOKEN_TTL = 16 * 3600
 _ITER = 120_000
@@ -38,7 +38,8 @@ def secret_key(db: Session) -> str:
 
 
 def make_token(db: Session, staff_id: int, company_id: int) -> str:
-    payload = {"sub": str(staff_id), "cid": company_id, "exp": int(time.time()) + TOKEN_TTL}
+    staff = db.get(Staff, staff_id)
+    payload = {"sub": str(staff_id), "cid": company_id, "exp": int(time.time()) + TOKEN_TTL, "sv": hashlib.sha256(staff.pin_hash.encode()).hexdigest() if staff else ""}
     return jwt.encode(payload, secret_key(db), algorithm="HS256")
 
 

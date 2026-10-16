@@ -31,7 +31,7 @@ jobs:
         run: |
           node -e "const u = new URL(process.env.API_URL); if (u.protocol !== 'https:' || u.username || u.password) process.exit(1);"
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Build web application
         env:
           VITE_API_URL: ${{ inputs.api_url }}
@@ -39,7 +39,7 @@ jobs:
       - name: Create Android project
         run: npx cap add android
       - name: Sync web assets
-        run: npx cap sync android
+        run: npx cap sync android && python3 scripts/configure_android.py && python3 scripts/configure_icons.py
       - name: Build debug APK
         working-directory: android
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon

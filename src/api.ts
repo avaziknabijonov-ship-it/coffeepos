@@ -22,7 +22,7 @@ export function normalizeServerUrl(input: string): string {
     || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)
     || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
     || /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)
-  if (!['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !privateHost)
+  if (!['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && (import.meta.env.VITE_STORE_BUILD === '1' || !privateHost))
     || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error(t('Server manzili xato. Internetdagi server uchun HTTPS ishlating.'))
   }
@@ -33,7 +33,7 @@ export async function checkServerUrl(input: string): Promise<string> {
   const base = normalizeServerUrl(input)
   let response: Response
   try {
-    response = await fetch(`${base}/healthz`, { cache: 'no-store' })
+    response = await fetch(`${base}/healthz`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
   } catch {
     throw new Error(t('Serverga ulanib bo‘lmadi. Telefon va server tarmog‘ini tekshiring.'))
   }
@@ -67,17 +67,19 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T>(path: string, init: { method?: string; body?: unknown; authToken?: string | null } = {}): Promise<T> {
   // Browsers keep the existing /api Vite/nginx proxy. Android must use an absolute API URL.
   const base = isNativeApp() ? getServerUrl() : ENV_BASE
   if (isNativeApp() && !base) {
     throw new ApiError(0, t('Avval Server sozlamalarida manzilni kiriting.'))
   }
 
-  const token = getToken()
+  if (isNativeApp() && base) normalizeServerUrl(base)
+  const token = init.authToken === undefined ? getToken() : init.authToken
   let res: Response
   try {
     res = await fetch(`${base}${path}`, {
+      signal: AbortSignal.timeout(20_000),
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
       headers: {
         ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),

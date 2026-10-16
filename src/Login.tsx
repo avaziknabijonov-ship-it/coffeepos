@@ -17,6 +17,7 @@ export default function Login() {
         </div>
         {mode === 'login' ? <PinLogin onRegister={() => setMode('register')} /> : <Register onBack={() => setMode('login')} />}
         {isNativeApp() && <ServerSettings />}
+        <a href="#privacy" className="mt-4 block text-center text-sm text-stone-600 underline">{t('Maxfiylik va hisob')}</a>
       </div>
     </div>
   )
@@ -25,7 +26,7 @@ export default function Login() {
 const input = 'w-full rounded-xl border border-stone-200 px-3 py-2.5 outline-none focus:border-amber-500'
 
 function PinLogin({ onRegister }: { onRegister: () => void }) {
-  const [company, setCompany] = useState(() => localStorage.getItem('coffeepos-company') ?? 'demo')
+  const [company, setCompany] = useState(() => localStorage.getItem('coffeepos-company') ?? (import.meta.env.VITE_STORE_BUILD === '1' ? '' : 'demo'))
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,10 +78,10 @@ function PinLogin({ onRegister }: { onRegister: () => void }) {
         className="w-full rounded-xl bg-amber-600 py-3.5 font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">
         {busy ? t('Kirilmoqda…') : t('Kirish')}
       </button>
-      {company === 'demo' && (
+      {import.meta.env.VITE_STORE_BUILD !== '1' && company === 'demo' && (
         <p className="text-center text-xs text-stone-500">{t('Demo PIN: 1111 rahbar · 2222 kassir · 3333 barista')}</p>
       )}
-      {import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION !== '0' && (
+      {import.meta.env.VITE_STORE_BUILD !== '1' && import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION !== '0' && (
         <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
       )}
     </div>

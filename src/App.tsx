@@ -8,6 +8,7 @@ import OrdersScreen from './OrdersScreen'
 import Admin from './Admin'
 import { ExpensesView } from './Finance'
 import Login from './Login'
+import Privacy from './Privacy'
 import LicenseBanner from './LicenseBanner'
 import LicensePage from './LicensePage'
 import { CloseShiftModal } from './Shift'
@@ -32,7 +33,14 @@ const fromHash = (): Tab | null => {
 void bootstrap()
 
 export default function App() {
+  const [privacy, setPrivacy] = useState(() => ['/privacy', '/delete-account'].includes(window.location.pathname) || window.location.hash === '#privacy')
+  useEffect(() => {
+    const changed = () => setPrivacy(window.location.hash === '#privacy')
+    window.addEventListener('hashchange', changed)
+    return () => window.removeEventListener('hashchange', changed)
+  }, [])
   const { phase, session } = useAppState()
+  if (privacy) return <Privacy onClose={() => { setPrivacy(false); window.history.replaceState(null, '', '/'); }} />
   if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">{t('Yuklanmoqda…')}</div>
   if (phase === 'login' || !session) return <Login />
   return <Main role={session.staff.role} />
@@ -101,6 +109,7 @@ function Main({ role }: { role: Role }) {
               { label: 'Buyurtmalar arxivi', color: 'bg-sky-600', action: () => { window.location.hash = 'orders' }, allowed: true },
               { label: 'Kunlik chiqimlar', color: 'bg-amber-500', action: () => { setAdminView('expenses'); window.location.hash = role === 'kassir' ? 'expenses' : 'admin' }, allowed: role !== 'barista' },
               ...(['inventory', 'stock', 'shifts'] as const).map((view, i) => ({ label: ['Inventarizatsiya', 'Ombor', 'Smenalar'][i], color: i === 2 ? 'bg-emerald-600' : 'bg-violet-600', action: () => { setAdminView(view); window.location.hash = 'admin' }, allowed: role === 'owner' || role === 'admin' })),
+              { label: 'Maxfiylik va hisob', color: 'bg-stone-600', action: () => { window.location.hash = 'privacy' }, allowed: true },
               { label: 'Chiqish', color: 'bg-stone-500', action: () => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }, allowed: true },
             ].filter(x => x.allowed).map(item => <button key={item.label} className="flex min-h-24 items-center gap-4 rounded-xl border border-stone-200 p-4 text-left font-medium hover:bg-stone-50" onClick={() => { setFunctionsOpen(false); item.action() }}><span className={`grid size-14 shrink-0 place-items-center rounded-xl text-white ${item.color}`}><Menu /></span>{t(item.label)}</button>)}
           </div>

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import secrets
@@ -10,15 +11,16 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, select, text
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session
 
 from . import seed
-from .platform import router as platform_router, page_router as platform_page_router
+from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
-    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
+    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
+from .licensing import may_write, subscription_payload, subscription_status
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
@@ -32,6 +34,8 @@ def migrate() -> None:
     """Add columns introduced after a table was first created (no Alembic yet)."""
     have = {c["name"] for c in inspect(engine).get_columns("stock_moves")}
     with engine.begin() as conn:
+        if 'category' not in {c['name'] for c in inspect(engine).get_columns('ingredients')}:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN category VARCHAR(64) NOT NULL DEFAULT ''"))
         if "note" not in have:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
         if "inventory_id" not in have:
@@ -50,6 +54,15 @@ def migrate() -> None:
         payment_cols = {c["name"] for c in inspect(engine).get_columns("debt_payments")}
         if "shift_id" not in payment_cols:
             conn.execute(text("ALTER TABLE debt_payments ADD COLUMN shift_id INTEGER"))
+        # Existing customer DBs predate monthly/yearly license plans.
+        license_cols = {col["name"] for col in inspect(engine).get_columns("subscriptions")}
+        if "plan" not in license_cols:
+            conn.execute(text("ALTER TABLE subscriptions ADD COLUMN plan VARCHAR(16)"))
+        old_audit_cols = {col["name"] for col in inspect(engine).get_columns("license_audit")}
+        if "actor_username" not in old_audit_cols:
+            conn.execute(text("ALTER TABLE license_audit ADD COLUMN actor_username VARCHAR(64)"))
+        if "details" not in old_audit_cols:
+            conn.execute(text("ALTER TABLE license_audit ADD COLUMN details JSON"))
     # Assign old repayments to a shift only when their timestamp matches exactly one shift.
     with SessionLocal() as db:
         old_payments = db.scalars(select(DebtPayment).where(DebtPayment.shift_id.is_(None))).all()
@@ -113,14 +126,26 @@ class Ctx:
         return self.company.id
 
 
-def auth(db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
+def auth(request: Request, db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
     claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
     if not claims:
         raise HTTPException(401, "Qaytadan kiring")
     staff = db.get(Staff, int(claims["sub"]))
-    if not staff or not staff.active or staff.company_id != claims["cid"]:
+    if not staff or not staff.active or staff.company_id != claims["cid"] or claims.get("sv") != hashlib.sha256(staff.pin_hash.encode()).hexdigest():
         raise HTTPException(401, "Qaytadan kiring")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
+    company = db.get(Company, staff.company_id)
+    if company is None:
+        raise HTTPException(401, "Qaytadan kiring")
+    # Every tenant mutation goes through auth(), including orders, stock, debt,
+    # salary and shift operations. Platform-only license changes use a separate key.
+    # When a license ends, leave GET reports available to the cafe owner.
+    # A legacy cafe must not be locked out by merely installing a software update.
+    # Enable enforcement only AFTER each existing tenant has an approved license.
+    if os.environ.get("LICENSE_ENFORCEMENT", "0") == "1" and request.method not in ("GET", "HEAD", "OPTIONS") and not (request.method == "DELETE" and request.url.path == "/api/account"):
+        sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+        if not may_write(subscription_status(sub)):
+            raise HTTPException(403, "Litsenziya muddati tugagan yoki to'xtatilgan. Ma'lumotlarni ko'rish mumkin, yangi amallar uchun obunani uzaytiring.")
+    return Ctx(db, staff, company)
 
 
 def require(*roles: str):
@@ -148,7 +173,7 @@ def order_out(o: Order) -> dict:
 
 
 def ingredient_out(i: Ingredient) -> dict:
-    return {"id": i.key, "name": i.name, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
+    return {"id": i.key, "name": i.name, "category": i.category, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
 
 
 def product_out(p: Product) -> dict:
@@ -261,6 +286,10 @@ class RegisterIn(BaseModel):
 
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    # Paid deployments provision customers through the platform administrator.
+    # Keep public registration available only when explicitly enabled.
+    if os.environ.get("ALLOW_PUBLIC_REGISTRATION", "1") != "1":
+        raise HTTPException(403, "Yangi kofe barni faqat platforma administratori yarata oladi")
     if db.scalar(select(Company).where(Company.slug == body.slug)):
         raise HTTPException(409, "Bu login band, boshqasini tanlang")
     create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)
@@ -270,36 +299,45 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 
 @app.get("/api/license/status")
 def license_status(ctx: Ctx = Depends(auth)) -> dict:
-    """Read-only subscription status. Does not block sales or verify payments."""
+    """Effective subscription state; read access remains after expiry."""
     sub = ctx.db.scalar(select(Subscription).where(Subscription.company_id == ctx.cid))
-    if sub is None:
-        return {
-            "status": "unconfigured",
-            "trialEndsAt": None,
-            "currentPeriodEndsAt": None,
-            "graceEndsAt": None,
-            "serverTime": now_ms(),
-        }
-    now = now_ms()
-    status = sub.status
-    if status == "trial" and sub.trial_ends_at is not None and now >= sub.trial_ends_at:
-        status = "expired"
-    elif status == "active" and sub.current_period_ends_at is not None and now >= sub.current_period_ends_at:
-        status = "grace" if sub.grace_ends_at is not None and now < sub.grace_ends_at else "expired"
-    elif status == "grace" and sub.grace_ends_at is not None and now >= sub.grace_ends_at:
-        status = "expired"
-    return {
-        "status": status,
-        "trialEndsAt": sub.trial_ends_at,
-        "currentPeriodEndsAt": sub.current_period_ends_at,
-        "graceEndsAt": sub.grace_ends_at,
-        "serverTime": now,
-    }
+    payload = subscription_payload(sub)
+    enforcement = os.environ.get("LICENSE_ENFORCEMENT", "0") == "1"
+    payload["enforcementEnabled"] = enforcement
+    if not enforcement:
+        payload["canWrite"] = True
+    return {**payload, "pricing": pricing_out(ctx.db)}
 
 
 @app.get("/api/me")
 def me(ctx: Ctx = Depends(auth)) -> dict:
     return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name}}
+
+
+class DeleteAccountIn(BaseModel):
+    company: str = Field(min_length=1, max_length=64)
+    pin: str = Field(pattern=PIN_RE)
+
+
+@app.delete("/api/account")
+def delete_account(body: DeleteAccountIn, ctx: Ctx = Depends(require("owner"))) -> dict:
+    # Privacy rights must remain available after subscription expiry. The owner
+    # must authenticate again and explicitly name the company to be erased.
+    key = f"delete|{ctx.cid}|{ctx.staff.id}"
+    if limiter.blocked(key):
+        raise HTTPException(429, "Ko'p urinish. 5 daqiqadan keyin qayta urining")
+    if body.company != ctx.company.slug or not check_pin(body.pin, ctx.staff.pin_hash):
+        limiter.fail(key)
+        raise HTTPException(403, "Rahbar PIN-kodi yoki qahvaxona logini noto'g'ri")
+    # Reverse dependency order works with PostgreSQL and SQLite foreign keys.
+    # Scope every child deletion to this tenant. Never touch platform accounts.
+    for table in reversed(Base.metadata.sorted_tables):
+        if "company_id" in table.c:
+            ctx.db.execute(delete(table).where(table.c.company_id == ctx.cid))
+    ctx.db.execute(delete(Company).where(Company.id == ctx.cid))
+    ctx.db.commit()
+    limiter.reset(key)
+    return {"ok": True}
 
 
 # ---------- menu ----------
@@ -314,6 +352,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "categories": [{"id": c.key, "name": c.name} for c in cats],
         "products": [product_out(p) for p in prods],
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
+        "stockCategories": [c.name for c in rows(db, StockCategory, cid)],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
     }
 
@@ -460,16 +499,46 @@ def update_modifier(key: str, body: ModifierIn, ctx: Ctx = Depends(require(*MANA
     return {"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect}
 
 
+class StockCategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/stock-categories")
+def add_stock_category(body: StockCategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Kategoriya nomini kiriting")
+    if any(c.name.casefold() == name.casefold() for c in rows(ctx.db, StockCategory, ctx.cid)):
+        raise HTTPException(409, "Kategoriya allaqachon mavjud")
+    ctx.db.add(StockCategory(company_id=ctx.cid, name=name))
+    ctx.db.commit()
+    return {"name": name}
+
+
 class IngredientIn(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    category: str = Field(default='', max_length=64)
     unit: Literal["g", "ml", "dona"]
     cost: float = Field(ge=0)
     min: float = Field(ge=0)
 
 
+class NewIngredientIn(IngredientIn):
+    initialStock: float = Field(default=0, ge=0, allow_inf_nan=False)
+
+
 @app.post("/api/ingredients")
-def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    i = Ingredient(company_id=ctx.cid, key=slugify(body.name), stock=0, **body.model_dump())
+def add_ingredient(body: NewIngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    values = body.model_dump(exclude={"initialStock"})
+    values["name"] = values["name"].strip()
+    if not values["name"]:
+        raise HTTPException(422, "Mahsulot nomini kiriting")
+    key = slugify(values["name"])
+    if any(i.name.strip().casefold() == values["name"].casefold() for i in rows(ctx.db, Ingredient, ctx.cid)):
+        raise HTTPException(409, "Bunday xomashyo allaqachon mavjud")
+    i = Ingredient(company_id=ctx.cid, key=key, stock=body.initialStock, **values)
+    if body.initialStock:
+        ctx.db.add(StockMove(company_id=ctx.cid, ingredient=key, qty=body.initialStock, reason="intake", staff_name=ctx.staff.name))
     ctx.db.add(i)
     ctx.db.commit()
     return ingredient_out(i)
@@ -478,7 +547,7 @@ def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -
 @app.put("/api/ingredients/{key}")
 def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     i = get_row(ctx.db, Ingredient, ctx.cid, key)
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude_unset=True).items():
         setattr(i, k, v)
     ctx.db.commit()
     return ingredient_out(i)

@@ -22,3 +22,6 @@ button:disabled { cursor: not-allowed; }
   #root { min-height: 100dvh; }
   body { overscroll-behavior-y: contain; }
 }
+
+/* Preserve controls under iPhone/iPad sensor housing and home indicator. */
+#root { padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); padding-bottom: env(safe-area-inset-bottom); }

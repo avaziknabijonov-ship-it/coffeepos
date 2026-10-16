@@ -1,0 +1,203 @@
+name: CoffeePOS checks
+
+on:
+  pull_request:
+    branches: [coffeepos-development, feature/floor-map-20261016, release/store-readiness-20261017]
+  push:
+    branches: [coffeepos-development, feature/floor-map-20261016, release/store-readiness-20261017]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend with test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Run backend tests from isolated checkout
+        env:
+          PYTHONPATH: .
+        run: python -m pytest tests -q
+
+  postgres_backup_restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: coffeepos
+          POSTGRES_USER: coffeepos
+          POSTGRES_PASSWORD: coffeepos-ci-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U coffeepos -d coffeepos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test backend into isolated runner
+        working-directory: backend
+        run: python -m pip install -e '.[dev]'
+      - name: Seed isolated PostgreSQL test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos
+          SEED_DEMO: '0'
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from sqlalchemy import select
+          from app.main import init_db, create_company
+          from app.db import SessionLocal, Company
+          init_db()
+          with SessionLocal() as db:
+              create_company(db, "backup-pilot", "Backup Pilot", "Test Owner", "9988")
+              db.commit()
+              assert db.scalar(select(Company).where(Company.slug == "backup-pilot"))
+          PY
+      - name: Rehearse old subscription schema migration in CI only
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos
+          PYTHONPATH: .
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" psql -U coffeepos -d coffeepos -c 'ALTER TABLE subscriptions DROP COLUMN plan'
+          docker exec "$PG_CONTAINER" psql -U coffeepos -d coffeepos -c 'ALTER TABLE license_audit DROP COLUMN actor_username; ALTER TABLE license_audit DROP COLUMN details'
+          python - <<'PY'
+          from sqlalchemy import inspect, select
+          from app.main import migrate
+          from app.db import Company, Subscription, SessionLocal, engine
+          assert 'plan' not in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
+          migrate()
+          assert 'plan' in {c['name'] for c in inspect(engine).get_columns('subscriptions')}
+          assert {'actor_username', 'details'}.issubset(
+              {c['name'] for c in inspect(engine).get_columns('license_audit')})
+
+          with SessionLocal() as db:
+              c = db.scalar(select(Company).where(Company.slug == 'backup-pilot'))
+              assert c is not None and db.scalar(select(Subscription).where(Subscription.company_id == c.id))
+          print('Non-destructive legacy license migration: OK')
+          PY
+      - name: Back up and restore into separate CI database
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" pg_dump -U coffeepos --format=custom -f /tmp/coffeepos-ci.dump coffeepos
+          docker exec "$PG_CONTAINER" createdb -U coffeepos coffeepos_restored
+          docker exec "$PG_CONTAINER" pg_restore -U coffeepos -d coffeepos_restored /tmp/coffeepos-ci.dump
+      - name: Verify restored cafe and subscription data
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos-ci-test-only@127.0.0.1:5432/coffeepos_restored
+          SEED_DEMO: '0'
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from sqlalchemy import select
+          from app.db import SessionLocal, Company, Subscription, Staff, Product
+          with SessionLocal() as db:
+              company = db.scalar(select(Company).where(Company.slug == "backup-pilot"))
+              assert company is not None and company.name == "Backup Pilot"
+              sub = db.scalar(select(Subscription).where(Subscription.company_id == company.id))
+              assert sub is not None and sub.status == "trial"
+              assert db.scalar(select(Staff).where(Staff.company_id == company.id))
+              assert db.scalar(select(Product).where(Product.company_id == company.id))
+          print("PostgreSQL isolated backup and restore: OK")
+          PY
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies from locked versions
+        run: npm ci --no-audit --no-fund
+      - name: Validate platform license admin UI JavaScript
+        run: node scripts/check-platform-admin.mjs
+      - name: Typecheck and build web bundle
+        run: npm run build
+      - name: Mobile API regression tests
+        run: node scripts/test-mobile-api.mjs
+      - name: Frontend lint
+        run: npm run lint
+
+  android_debug:
+    runs-on: ubuntu-latest
+    needs: frontend
+    env:
+      # Install side-by-side with existing CoffeePOS; never replace the cafe app.
+      COFFEEPOS_TEST_APK: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install locked Android build dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Create Android project and sync bundled frontend
+        run: |
+          npx cap add android
+          npm run android:sync
+      - name: Verify test APK identity cannot replace cafe installation
+        run: |
+          grep -q "uz.coffeepos.hybrid.test" android/app/build.gradle
+          grep -q "CoffeePOS TEST" android/app/src/main/res/values/strings.xml
+      - name: Build unsigned debug APK (test use only)
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug bundleRelease --no-daemon
+      - name: Publish test APK for manual device verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: coffeepos-test-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  ios_simulator:
+    runs-on: macos-15
+    # Xcode 26 SDK is mandatory for App Store submissions since April 2026.
+    needs: frontend
+    timeout-minutes: 30
+    env:
+      COFFEEPOS_TEST_APP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Generate iPhone and iPad project
+        run: |
+          npm run build
+          npx cap add ios
+          npm run ios:sync
+      - name: Build simulator app without distribution signing
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Upload simulator app (not an installable iPhone IPA)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coffeepos-ios-simulator
+          path: ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: error
+          retention-days: 7

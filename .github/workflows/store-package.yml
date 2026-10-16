@@ -1,0 +1,97 @@
+name: Store package (unsigned, no publication)
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: Public CoffeePOS HTTPS API origin
+        required: true
+        type: string
+      support_email:
+        description: Actual CoffeePOS operator support email
+        required: true
+        type: string
+      backup_days:
+        description: Implemented backup retention in days
+        required: true
+        type: string
+      build_number:
+        description: New integer build number (higher than previous store upload)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      COFFEEPOS_STORE_BUILD: '1'
+      VITE_STORE_BUILD: '1'
+      VITE_ALLOW_PUBLIC_REGISTRATION: '0'
+      VITE_API_URL: ${{ inputs.api_url }}
+      VITE_SUPPORT_EMAIL: ${{ inputs.support_email }}
+      VITE_PRIVACY_BACKUP_DAYS: ${{ inputs.backup_days }}
+      COFFEEPOS_BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run store:check
+      - name: Check live backend and public policy pages
+        run: |
+          curl --fail --max-time 20 "$VITE_API_URL/healthz"
+          curl --fail --max-time 20 "$VITE_API_URL/privacy" --output /dev/null
+          curl --fail --max-time 20 "$VITE_API_URL/delete-account" --output /dev/null
+      - run: npx cap add android
+      - run: npm run android:sync
+      - name: Compile unsigned AAB
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew bundleRelease lintRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coffeepos-unsigned-store-aab-needs-upload-signing
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      COFFEEPOS_STORE_BUILD: '1'
+      VITE_STORE_BUILD: '1'
+      VITE_ALLOW_PUBLIC_REGISTRATION: '0'
+      VITE_API_URL: ${{ inputs.api_url }}
+      VITE_SUPPORT_EMAIL: ${{ inputs.support_email }}
+      VITE_PRIVACY_BACKUP_DAYS: ${{ inputs.backup_days }}
+      COFFEEPOS_BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run store:check
+      - run: npm run build
+      - run: npx cap add ios
+      - run: npm run ios:sync
+      - name: Compile device archive (not a signed IPA)
+        run: xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath ios/CoffeePOS.xcarchive CODE_SIGNING_ALLOWED=NO archive
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coffeepos-unsigned-ios-archive-needs-apple-signing
+          path: ios/CoffeePOS.xcarchive
+          if-no-files-found: error
+          retention-days: 14

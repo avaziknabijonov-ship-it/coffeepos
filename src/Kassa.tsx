@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, BookOpen, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -6,6 +6,9 @@ import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState } from './store'
 import { OpenShift } from './Shift'
+import FloorMap from './FloorMap'
+import { defaultTables, readSaved } from './floorState'
+import type { Draft, Table } from './floorState'
 
 const CAT_ICON: Record<string, LucideIcon> = { espresso: Coffee, milk: Milk, cold: Snowflake, tea: Leaf, dessert: CakeSlice }
 const CAT_TINT: Record<string, string> = {
@@ -18,17 +21,35 @@ const CAT_TINT: Record<string, string> = {
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
 export default function Kassa({ onShift }: { onShift: () => void }) {
-  const { shift, menuVersion } = useAppState()
+  const { shift, menuVersion, session } = useAppState()
+  const prefix = `coffeepos-floor:${session?.company.slug}`
+  const [tables, setTables] = useState<Table[]>(() => readSaved(`${prefix}:tables`, defaultTables))
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() => readSaved(`${prefix}:drafts`, {}))
+  const [selected, setSelected] = useState('takeaway')
+  const [floor, setFloor] = useState(true)
   const [cat, setCat] = useState(() => CATEGORIES.find((c) => c.id === 'milk')?.id ?? CATEGORIES[0]?.id ?? '')
   const [query, setQuery] = useState('')
-  const [cart, setCart] = useState<OrderItem[]>([])
-  const [customer, setCustomer] = useState('')
-  const [discountPct, setDiscountPct] = useState(0)
+  const [cart, setCart] = useState<OrderItem[]>(() => drafts.takeaway?.cart || [])
+  const [customer, setCustomer] = useState(drafts.takeaway?.customer || '')
+  const [discountPct, setDiscountPct] = useState(drafts.takeaway?.discountPct || 0)
   const [modal, setModal] = useState<Product | null>(null)
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<Order | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
 
+  useEffect(() => {
+    const next = { ...drafts, [selected]: { cart, customer, discountPct } }
+    localStorage.setItem(`${prefix}:drafts`, JSON.stringify(next))
+  }, [cart, customer, discountPct, selected, drafts, prefix])
+  const selectTable = (id: string) => {
+    const next = { ...drafts, [selected]: { cart, customer, discountPct } }
+    setDrafts(next)
+    setSelected(id)
+    setCart(next[id]?.cart || [])
+    setCustomer(next[id]?.customer || '')
+    setDiscountPct(next[id]?.discountPct || 0)
+    setFloor(false)
+  }
   const products = useMemo(() => {
     const q = query.trim().toLowerCase()
     return q ? PRODUCTS.filter((p) => p.name.toLowerCase().includes(q)) : PRODUCTS.filter((p) => p.cat === cat)
@@ -55,7 +76,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
   const confirmPayment = async (payment: Payment, cashGiven?: number, debtPhone?: string, debtNote?: string) => {
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven, debtPhone, debtNote })
+    const order = await placeOrder(cart, { customer: [selected !== 'takeaway' ? `${t('Stol')} ${tables.find(x => x.id === selected)?.name}` : '', customer.trim()].filter(Boolean).join(' · ').slice(0, 64), discountPct, payment, cashGiven, debtPhone, debtNote })
     setPaying(false)
     setCartOpen(false)
     clear()
@@ -71,6 +92,9 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   )
 
   if (!shift) return <OpenShift canOpen />
+
+  if (floor) return <FloorMap tables={tables} drafts={{ ...drafts, [selected]: { cart, customer, discountPct } }} onSelect={selectTable}
+    canEdit={session?.staff.role === 'owner' || session?.staff.role === 'admin'} onTables={next => { localStorage.setItem(`${prefix}:tables`, JSON.stringify(next)); setTables(next) }} />
 
   return (
     <div className="flex h-full min-h-0">
@@ -90,6 +114,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
           <div className="flex gap-2">
+          <button onClick={() => setFloor(true)} className="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white">{t('Zal xaritasi')} · {selected === 'takeaway' ? t('Olib ketish') : tables.find(x => x.id === selected)?.name}</button>
           <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
             <Search className="size-4 text-stone-400" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />

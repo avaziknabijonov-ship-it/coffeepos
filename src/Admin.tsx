@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
 import { TriangleAlert } from 'lucide-react'
-import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
+import { INGREDIENTS, STOCK_CATEGORIES, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
 import { refreshMenu, startOfToday, stockMove, useAppState } from './store'
 import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
+import StockCreate from './StockCreate'
 import { InventoryView } from './Inventory'
 import { SalaryView, DebtsView, ExpensesView } from './Finance'
 
@@ -187,6 +188,30 @@ function perBulk(cost: number, unit: string) {
 }
 
 function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
+  const [category, setCategory] = useState('')
+  const [createMode, setCreateMode] = useState<'category' | 'ingredient' | null>(null)
+  const [search, setSearch] = useState('')
+  const categoryOf = (i: typeof INGREDIENTS[number]) => {
+    if (i.category) return i.category
+    const name = `${i.id} ${i.name}`.toLowerCase()
+    if (/sirop|syrup|сироп/.test(name)) return 'Siroplar'
+    if (/sut|milk|almond|coconut|cream|qaymoq|молок|сливк/.test(name)) return 'Sut mahsulotlari'
+    if (/beans|coffee|kofe|кофе/.test(name)) return 'Qahva'
+    if (/tea|choy|matcha|чай|матча/.test(name)) return 'Choy va matcha'
+    if (/cup|lid|stakan|qopqoq|стакан|крышк/.test(name)) return 'Qadoqlash'
+    if (/cake|dessert|tort|pechen|десерт|торт/.test(name)) return 'Shirinliklar'
+    return 'Boshqa'
+  }
+  const categories = [...new Set(['Qahva', 'Sut mahsulotlari', 'Siroplar', 'Choy va matcha', 'Qadoqlash', 'Shirinliklar', 'Boshqa', ...STOCK_CATEGORIES, ...INGREDIENTS.map(categoryOf)])]
+  const visible = INGREDIENTS.filter(i => (!category || categoryOf(i) === category) && i.name.toLowerCase().includes(search.trim().toLowerCase()))
+  const assignCategory = async (i: typeof INGREDIENTS[number], value: string) => {
+    if (value === '__new') value = prompt(t('Yangi kategoriya nomi'))?.trim() || ''
+    if (!value || value.length > 64) return
+    try {
+      await api(`/api/ingredients/${encodeURIComponent(i.id)}`, { method: 'PUT', body: { name: i.name, unit: i.unit, cost: i.cost, min: i.min, category: value } })
+      await refreshMenu()
+    } catch (e) { alert((e as Error).message) }
+  }
   const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [editingCost, setEditingCost] = useState<string | null>(null)
   const [newCost, setNewCost] = useState('')
@@ -209,20 +234,31 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 
   return (
     <Card title={t('Ombor qoldiqlari')}>
+      {canEditCost && <div className="mb-5 flex flex-wrap gap-2">
+        <button onClick={() => setCreateMode('category')} className="rounded-xl border border-stone-300 bg-white px-4 py-3 font-semibold">+ {t("Yangi bo'lim")}</button>
+        <button onClick={() => setCreateMode('ingredient')} className="rounded-xl bg-amber-600 px-4 py-3 font-semibold text-white">+ {t('Yangi mahsulot')}</button>
+      </div>}
+      {createMode && <StockCreate mode={createMode} selected={category} categories={categories} onClose={() => setCreateMode(null)} onSaved={c => { setCategory(c); setSearch(''); setCreateMode(null) }} />}
+
       <p className="-mt-2 mb-4 text-sm text-stone-500">{t("Har bir sotuvda texkarta bo'yicha avtomatik ayiriladi. Kirim qilish uchun miqdorni yozing.")}</p>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {['', ...categories].map(c => <button key={c} onClick={() => setCategory(c)} className={`rounded-xl px-4 py-2 text-sm font-medium ${category === c ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>{t(c || 'Barchasi')} · {INGREDIENTS.filter(i => !c || categoryOf(i) === c).length}</button>)}
+      </div>
+      <input aria-label={t('Xomashyo qidirish')} placeholder={t('Xomashyo qidirish')} value={search} onChange={e => setSearch(e.target.value)} className="mb-4 w-full rounded-xl border border-stone-200 px-4 py-3" />
+      {visible.length === 0 && <p className="py-6 text-stone-500">{t('Hech narsa topilmadi.')}</p>}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-sm">
           <thead className="text-left text-stone-500">
             <tr><th className="pb-2 font-medium">{t('Xomashyo')}</th><th className="pb-2 text-right font-medium">{t('Qoldiq')}</th><th className="pb-2 text-right font-medium">{t('Bugun sarf')}</th><th className="pb-2 text-right font-medium">{t('Tannarx')}</th><th className="pb-2 font-medium pl-4">{t('Holat')}</th><th className="pb-2 font-medium">{t('Kirim')}</th></tr>
           </thead>
           <tbody>
-            {INGREDIENTS.map((i) => {
+            {visible.map((i) => {
               const q = stock[i.id] ?? 0
               const isLow = q < i.min
               const amount = Number(amounts[i.id]) || 0
               return (
                 <tr key={i.id} className="border-t border-stone-100">
-                  <td className="py-2">{i.name}</td>
+                  <td className="py-2">{i.name}{canEditCost && <select aria-label={`${t('Kategoriya')}: ${i.name}`} value={categoryOf(i)} onChange={e => void assignCategory(i, e.target.value)} className="mt-1 block max-w-48 rounded border border-stone-200 p-1 text-xs text-stone-500">{categories.map(c => <option key={c} value={c}>{t(c)}</option>)}<option value="__new">+ {t('Yangi kategoriya nomi')}</option></select>}</td>
                   <td className={`py-2 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>{fmt(q)} {t(UNIT_LABEL[i.unit])}</td>
                   <td className="py-2 text-right tabular-nums text-stone-500">{fmt(used[i.id] ?? 0)}</td>
                   <td className="py-2 text-right text-stone-500">

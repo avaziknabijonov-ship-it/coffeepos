@@ -9,7 +9,7 @@ export interface Product { id: string; cat: string; name: string; sizes: Size[];
 export interface Category { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
-export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
+export interface Menu { stockCategories?: string[]; categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'qarz'
 export type Status = 'new' | 'preparing' | 'ready' | 'done'
@@ -35,6 +35,7 @@ export type Role = 'owner' | 'admin' | 'kassir' | 'barista'
 export const ROLE_LABEL: Record<Role, string> = { owner: 'Rahbar', admin: 'Administrator', kassir: 'Kassir', barista: 'Barista' }
 
 // Menu is loaded from the API; these live bindings are replaced by setMenu().
+export let STOCK_CATEGORIES: string[] = []
 export let INGREDIENTS: Ingredient[] = []
 export let ING: Record<string, Ingredient> = {}
 export let CATEGORIES: Category[] = []
@@ -43,6 +44,7 @@ export let MODIFIERS: Modifier[] = []
 export let MOD: Record<string, Modifier> = {}
 
 export function setMenu(m: Menu) {
+  STOCK_CATEGORIES = m.stockCategories || []
   INGREDIENTS = m.ingredients
   ING = Object.fromEntries(m.ingredients.map((i) => [i.id, i]))
   CATEGORIES = m.categories

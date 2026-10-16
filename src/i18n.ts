@@ -15,6 +15,14 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+"Saqlanmoqda…": "Сохранение…",
+"Barchasi": "Все",
+"Kategoriya allaqachon mavjud": "Категория уже существует",
+"Nomini kiriting": "Введите название",
+"Boshlang'ich qoldiq": "Начальный остаток",
+"Birlik": "Единица измерения",
+"Yangi ombor mahsuloti": "Новый товар на складе",
+"Yangi bo'lim": "Новый раздел",
 "Kategoriya": "Категория",
 "Xomashyo qidirish": "Поиск сырья",
 "Shirinliklar": "Десерты",

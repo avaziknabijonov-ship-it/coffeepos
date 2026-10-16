@@ -222,3 +222,27 @@ def test_ingredient_categories_persist_and_survive_cost_edits():
         assert saved['category'] == 'Siroplar'
         assert c.put(path, headers=owner, json={**payload, 'category': 'x' * 65}).status_code == 422
         assert c.put(path, headers=owner, json={**payload, 'category': ''}).status_code == 200
+
+
+def test_stock_sections_and_initial_inventory():
+    with TestClient(app) as c:
+        owner, cashier = login(c, '1111'), login(c, '2222')
+        section = {'name': 'Warehouse section test'}
+        assert c.post('/api/stock-categories', headers=cashier, json=section).status_code == 403
+        assert c.post('/api/stock-categories', headers=owner, json=section).status_code == 200
+        assert c.post('/api/stock-categories', headers=owner, json=section).status_code == 409
+        assert section['name'] in c.get('/api/menu', headers=owner).json()['stockCategories']
+        payload = {'name': 'Warehouse new ingredient test', 'unit': 'g', 'cost': 20, 'min': 5,
+                   'category': section['name'], 'initialStock': 250}
+        assert c.post('/api/ingredients', headers=cashier, json=payload).status_code == 403
+        r = c.post('/api/ingredients', headers=owner, json=payload)
+        assert r.status_code == 200, r.text
+        item = r.json()
+        assert item['stock'] == 250 and item['category'] == section['name']
+        assert c.post('/api/ingredients', headers=owner, json=payload).status_code == 409
+        assert c.post('/api/ingredients', headers=owner, json={**payload, 'name': 'Bad negative', 'initialStock': -1}).status_code == 422
+        assert c.post('/api/stock-categories', headers=owner, json={'name': '  '}).status_code == 422
+        other = c.post('/api/auth/register', json={'companyName': 'Other warehouse', 'slug': 'other-warehouse', 'ownerName': 'Other', 'ownerPin': '9876'}).json()
+        other_menu = c.get('/api/menu', headers={'Authorization': 'Bearer ' + other['token']}).json()
+        assert section['name'] not in other_menu['stockCategories']
+        assert not any(i['id'] == item['id'] for i in other_menu['ingredients'])

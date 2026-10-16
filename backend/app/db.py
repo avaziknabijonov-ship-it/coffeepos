@@ -68,6 +68,14 @@ class Category(Base):
     sort: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class StockCategory(Base):
+    __tablename__ = "stock_categories"
+    __table_args__ = (UniqueConstraint("company_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+
+
 class Ingredient(Base):
     __tablename__ = "ingredients"
     __table_args__ = (UniqueConstraint("company_id", "key"),)

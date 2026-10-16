@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from . import seed
 from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
-    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockMove, Subscription, engine, now_ms,
+    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .licensing import may_write, subscription_payload, subscription_status
@@ -325,6 +325,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "categories": [{"id": c.key, "name": c.name} for c in cats],
         "products": [product_out(p) for p in prods],
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
+        "stockCategories": [c.name for c in rows(db, StockCategory, cid)],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
     }
 
@@ -471,6 +472,22 @@ def update_modifier(key: str, body: ModifierIn, ctx: Ctx = Depends(require(*MANA
     return {"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect}
 
 
+class StockCategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/stock-categories")
+def add_stock_category(body: StockCategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Kategoriya nomini kiriting")
+    if any(c.name.casefold() == name.casefold() for c in rows(ctx.db, StockCategory, ctx.cid)):
+        raise HTTPException(409, "Kategoriya allaqachon mavjud")
+    ctx.db.add(StockCategory(company_id=ctx.cid, name=name))
+    ctx.db.commit()
+    return {"name": name}
+
+
 class IngredientIn(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     category: str = Field(default='', max_length=64)
@@ -479,9 +496,22 @@ class IngredientIn(BaseModel):
     min: float = Field(ge=0)
 
 
+class NewIngredientIn(IngredientIn):
+    initialStock: float = Field(default=0, ge=0, allow_inf_nan=False)
+
+
 @app.post("/api/ingredients")
-def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    i = Ingredient(company_id=ctx.cid, key=slugify(body.name), stock=0, **body.model_dump())
+def add_ingredient(body: NewIngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    values = body.model_dump(exclude={"initialStock"})
+    values["name"] = values["name"].strip()
+    if not values["name"]:
+        raise HTTPException(422, "Mahsulot nomini kiriting")
+    key = slugify(values["name"])
+    if any(i.name.strip().casefold() == values["name"].casefold() for i in rows(ctx.db, Ingredient, ctx.cid)):
+        raise HTTPException(409, "Bunday xomashyo allaqachon mavjud")
+    i = Ingredient(company_id=ctx.cid, key=key, stock=body.initialStock, **values)
+    if body.initialStock:
+        ctx.db.add(StockMove(company_id=ctx.cid, ingredient=key, qty=body.initialStock, reason="intake", staff_name=ctx.staff.name))
     ctx.db.add(i)
     ctx.db.commit()
     return ingredient_out(i)

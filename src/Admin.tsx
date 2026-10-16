@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
 import { TriangleAlert } from 'lucide-react'
-import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
+import { INGREDIENTS, STOCK_CATEGORIES, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
 import { refreshMenu, startOfToday, stockMove, useAppState } from './store'
 import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
+import StockCreate from './StockCreate'
 import { InventoryView } from './Inventory'
 import { SalaryView, DebtsView, ExpensesView } from './Finance'
 
@@ -188,6 +189,7 @@ function perBulk(cost: number, unit: string) {
 
 function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
   const [category, setCategory] = useState('')
+  const [createMode, setCreateMode] = useState<'category' | 'ingredient' | null>(null)
   const [search, setSearch] = useState('')
   const categoryOf = (i: typeof INGREDIENTS[number]) => {
     if (i.category) return i.category
@@ -200,7 +202,7 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
     if (/cake|dessert|tort|pechen|десерт|торт/.test(name)) return 'Shirinliklar'
     return 'Boshqa'
   }
-  const categories = [...new Set(['Qahva', 'Sut mahsulotlari', 'Siroplar', 'Choy va matcha', 'Qadoqlash', 'Shirinliklar', 'Boshqa', ...INGREDIENTS.map(categoryOf)])]
+  const categories = [...new Set(['Qahva', 'Sut mahsulotlari', 'Siroplar', 'Choy va matcha', 'Qadoqlash', 'Shirinliklar', 'Boshqa', ...STOCK_CATEGORIES, ...INGREDIENTS.map(categoryOf)])]
   const visible = INGREDIENTS.filter(i => (!category || categoryOf(i) === category) && i.name.toLowerCase().includes(search.trim().toLowerCase()))
   const assignCategory = async (i: typeof INGREDIENTS[number], value: string) => {
     if (value === '__new') value = prompt(t('Yangi kategoriya nomi'))?.trim() || ''
@@ -232,6 +234,12 @@ function Stock({ stock, today }: { stock: Record<string, number>; today: Orders 
 
   return (
     <Card title={t('Ombor qoldiqlari')}>
+      {canEditCost && <div className="mb-5 flex flex-wrap gap-2">
+        <button onClick={() => setCreateMode('category')} className="rounded-xl border border-stone-300 bg-white px-4 py-3 font-semibold">+ {t("Yangi bo'lim")}</button>
+        <button onClick={() => setCreateMode('ingredient')} className="rounded-xl bg-amber-600 px-4 py-3 font-semibold text-white">+ {t('Yangi mahsulot')}</button>
+      </div>}
+      {createMode && <StockCreate mode={createMode} selected={category} categories={categories} onClose={() => setCreateMode(null)} onSaved={c => { setCategory(c); setSearch(''); setCreateMode(null) }} />}
+
       <p className="-mt-2 mb-4 text-sm text-stone-500">{t("Har bir sotuvda texkarta bo'yicha avtomatik ayiriladi. Kirim qilish uchun miqdorni yozing.")}</p>
       <div className="mb-4 flex flex-wrap gap-2">
         {['', ...categories].map(c => <button key={c} onClick={() => setCategory(c)} className={`rounded-xl px-4 py-2 text-sm font-medium ${category === c ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>{t(c || 'Barchasi')} · {INGREDIENTS.filter(i => !c || categoryOf(i) === c).length}</button>)}

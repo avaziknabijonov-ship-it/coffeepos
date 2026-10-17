@@ -11,13 +11,13 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, inspect, select, text
+from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.orm import Session
 
 from . import seed
 from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
-    Base, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
+    Base, LoyaltyConfig, LoyaltyCustomer, LoyaltyEntry, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .licensing import may_write, subscription_payload, subscription_status
@@ -36,6 +36,12 @@ def migrate() -> None:
     with engine.begin() as conn:
         if 'category' not in {c['name'] for c in inspect(engine).get_columns('ingredients')}:
             conn.execute(text("ALTER TABLE ingredients ADD COLUMN category VARCHAR(64) NOT NULL DEFAULT ''"))
+        order_cols = {c["name"] for c in inspect(engine).get_columns("orders")}
+        for column in ("bonus_used", "bonus_earned"):
+            if column not in order_cols:
+                conn.execute(text(f"ALTER TABLE orders ADD COLUMN {column} BIGINT NOT NULL DEFAULT 0"))
+        if "bonus_balance" not in order_cols:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_balance BIGINT"))
         if "note" not in have:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
         if "inventory_id" not in have:
@@ -169,6 +175,7 @@ def order_out(o: Order) -> dict:
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name,
+        "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned, "bonusBalance": o.bonus_balance,
     }
 
 
@@ -338,6 +345,88 @@ def delete_account(body: DeleteAccountIn, ctx: Ctx = Depends(require("owner"))) 
     ctx.db.commit()
     limiter.reset(key)
     return {"ok": True}
+
+
+# ---------- customer loyalty ----------
+
+class LoyaltyConfigIn(BaseModel):
+    enabled: bool
+    earnPct: int = Field(ge=0, le=100)
+    redeemPct: int = Field(ge=0, le=100)
+
+
+def loyalty_config(db: Session, cid: int) -> dict:
+    cfg = db.get(LoyaltyConfig, cid)
+    return {"enabled": cfg.enabled if cfg else False, "earnPct": cfg.earn_pct if cfg else 5, "redeemPct": cfg.redeem_pct if cfg else 30}
+
+
+def loyalty_phone(value: str) -> str:
+    if re.search(r"[^0-9+() \-]", value):
+        raise HTTPException(400, "Telefon raqami noto'g'ri")
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 9:
+        digits = "998" + digits
+    if not 10 <= len(digits) <= 15:
+        raise HTTPException(400, "Telefon raqamini davlat kodi bilan kiriting")
+    return "+" + digits
+
+
+def loyalty_customer_out(c: LoyaltyCustomer) -> dict:
+    return {"id": c.id, "phone": c.phone, "name": c.name, "balance": c.balance}
+
+
+@app.get("/api/loyalty/config")
+def get_loyalty_config(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    return loyalty_config(ctx.db, ctx.cid)
+
+
+@app.put("/api/loyalty/config")
+def set_loyalty_config(body: LoyaltyConfigIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cfg = ctx.db.get(LoyaltyConfig, ctx.cid)
+    if cfg is None:
+        cfg = LoyaltyConfig(company_id=ctx.cid)
+        ctx.db.add(cfg)
+    cfg.enabled, cfg.earn_pct, cfg.redeem_pct = body.enabled, body.earnPct, body.redeemPct
+    ctx.db.commit()
+    return loyalty_config(ctx.db, ctx.cid)
+
+
+@app.get("/api/loyalty/customers")
+def find_loyalty_customer(phone: str, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    customer = ctx.db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == ctx.cid, LoyaltyCustomer.phone == loyalty_phone(phone)))
+    return {"customer": loyalty_customer_out(customer) if customer else None}
+
+
+class LoyaltyCustomerIn(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+    name: str = Field(default="", max_length=64)
+
+
+@app.post("/api/loyalty/customers")
+def add_loyalty_customer(body: LoyaltyCustomerIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    from sqlalchemy.exc import IntegrityError
+    phone = loyalty_phone(body.phone)
+    customer = ctx.db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == ctx.cid, LoyaltyCustomer.phone == phone))
+    if not customer:
+        customer = LoyaltyCustomer(company_id=ctx.cid, phone=phone, name=body.name.strip())
+        ctx.db.add(customer)
+        try:
+            ctx.db.commit()
+        except IntegrityError:
+            ctx.db.rollback()
+            customer = ctx.db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == ctx.cid, LoyaltyCustomer.phone == phone))
+            if customer is None:
+                raise
+    return loyalty_customer_out(customer)
+
+
+@app.get("/api/loyalty/customers/{customer_id}/history")
+def loyalty_history(customer_id: int, ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
+    customer = ctx.db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == ctx.cid, LoyaltyCustomer.id == customer_id))
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    entries = ctx.db.scalars(select(LoyaltyEntry).where(LoyaltyEntry.company_id == ctx.cid, LoyaltyEntry.customer_id == customer_id).order_by(LoyaltyEntry.id.desc()).limit(100)).all()
+    return [{"orderId": str(e.order_id), "earned": e.earned, "spent": e.spent, "balance": e.balance, "createdAt": e.created_at} for e in entries]
 
 
 # ---------- menu ----------
@@ -861,6 +950,8 @@ class OrderIn(BaseModel):
     debtPhone: str = Field(default="", max_length=32)
     debtNote: str = Field(default="", max_length=256)
     cashGiven: int | None = Field(default=None, ge=0)
+    loyaltyCustomerId: int | None = Field(default=None, gt=0)
+    bonusSpend: int = Field(default=0, ge=0, strict=True)
 
 
 @app.post("/api/orders")
@@ -890,10 +981,37 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
     discount = round(subtotal * body.discountPct / 100 / 100) * 100
     total = subtotal - discount
+    bonus_earned = 0
+    loyalty_customer = None
+    if body.bonusSpend and not body.loyaltyCustomerId:
+        raise HTTPException(400, "Bonus uchun mijozni tanlang")
+    if body.loyaltyCustomerId:
+        cfg = loyalty_config(db, cid)
+        if not cfg["enabled"]:
+            raise HTTPException(400, "Bonus tizimi yoqilmagan")
+        loyalty_customer = db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == cid, LoyaltyCustomer.id == body.loyaltyCustomerId))
+        if loyalty_customer is None:
+            raise HTTPException(404, "Mijoz topilmadi")
+        if body.payment == "qarz":
+            raise HTTPException(400, "Qarz savdosida bonus ishlatilmaydi va yig'ilmaydi")
+        if body.bonusSpend > total * cfg["redeemPct"] // 100:
+            raise HTTPException(400, "Bonus ishlatish chegarasidan oshdi")
+        total -= body.bonusSpend
+        bonus_earned = total * cfg["earnPct"] // 100
     if body.payment == "qarz" and not body.customer.strip():
         raise HTTPException(400, "Qarz uchun mijoz ismi kerak")
     if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
         raise HTTPException(400, "Berilgan pul yetarli emas")
+
+    bonus_balance = None
+    if loyalty_customer is not None:
+        # A conditional atomic update prevents two terminals spending one balance.
+        bonus_balance = db.execute(update(LoyaltyCustomer).where(
+            LoyaltyCustomer.id == loyalty_customer.id, LoyaltyCustomer.company_id == cid,
+            LoyaltyCustomer.balance >= body.bonusSpend,
+        ).values(balance=LoyaltyCustomer.balance - body.bonusSpend + bonus_earned).returning(LoyaltyCustomer.balance)).scalar_one_or_none()
+        if bonus_balance is None:
+            raise HTTPException(409, "Bonus yetarli emas. Mijoz balansini yangilang")
 
     day_orders = db.scalars(
         select(Order.number).where(Order.company_id == cid, Order.created_at >= start_of_day_ms())
@@ -901,11 +1019,14 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     order = Order(
         company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
         items=items, subtotal=subtotal, discount=discount, total=total,
+        bonus_used=body.bonusSpend, bonus_earned=bonus_earned, bonus_balance=bonus_balance,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
     )
     db.add(order)
     db.flush()
+    if loyalty_customer is not None:
+        db.add(LoyaltyEntry(company_id=cid, customer_id=loyalty_customer.id, order_id=order.id, earned=bonus_earned, spent=body.bonusSpend, balance=bonus_balance))
     if body.payment == "qarz":
         db.add(Debt(company_id=cid, order_id=order.id, customer=body.customer.strip(), phone=body.debtPhone.strip(), note=body.debtNote.strip(), total=total))
     used: dict[str, float] = {}

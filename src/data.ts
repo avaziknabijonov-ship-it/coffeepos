@@ -18,6 +18,7 @@ export interface OrderItem {
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
 }
 export interface Order {
+  bonusUsed?: number; bonusEarned?: number; bonusBalance?: number | null
   id: string; number: number; customer: string; items: OrderItem[]
   subtotal: number; discount: number; total: number; cost: number
   payment: Payment; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string

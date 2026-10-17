@@ -7,12 +7,14 @@ import { api } from './api'
 import { refreshMenu, startOfToday, stockMove, useAppState } from './store'
 import { MenuEditor, ProductForm, ShiftsView, StaffView } from './AdminExtra'
 import StockCreate from './StockCreate'
+import LoyaltyAdmin from './Loyalty'
 import { InventoryView } from './Inventory'
 import { SalaryView, DebtsView, ExpensesView } from './Finance'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts' | 'expenses' | 'profit'
+type View = 'loyalty' | 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'salary' | 'debts' | 'expenses' | 'profit'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'stock', label: 'Ombor' },
+  { id: 'loyalty', label: 'Bonus tizimi' },
   { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
@@ -48,6 +50,7 @@ export default function Admin({ initialView = 'stock' }: { initialView?: View })
           </div>
         </div>
         {initialView === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => { window.location.hash = 'admin' }} />}
+        {view === 'loyalty' && <LoyaltyAdmin />}
         {view === 'stock' && <Stock stock={stock} today={today} />}
         {view === 'inventory' && <InventoryView />}
         {view === 'menu' && <MenuEditor />}

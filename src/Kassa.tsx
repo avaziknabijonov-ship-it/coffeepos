@@ -7,6 +7,8 @@ import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState } from './store'
 import { OpenShift } from './Shift'
 import FloorMap from './FloorMap'
+import { BonusPicker } from './Loyalty'
+import type { BonusSelection } from './Loyalty'
 import { defaultTables, readSaved } from './floorState'
 import type { Draft, Table } from './floorState'
 
@@ -75,8 +77,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
-  const confirmPayment = async (payment: Payment, cashGiven?: number, debtPhone?: string, debtNote?: string) => {
-    const order = await placeOrder(cart, { customer: [selected !== 'takeaway' ? `${t('Stol')} ${tables.find(x => x.id === selected)?.name}` : '', customer.trim()].filter(Boolean).join(' · ').slice(0, 64), discountPct, payment, cashGiven, debtPhone, debtNote })
+  const confirmPayment = async (payment: Payment, cashGiven?: number, debtPhone?: string, debtNote?: string, bonus?: BonusSelection) => {
+    const order = await placeOrder(cart, { customer: [selected !== 'takeaway' ? `${t('Stol')} ${tables.find(x => x.id === selected)?.name}` : '', customer.trim()].filter(Boolean).join(' · ').slice(0, 64), discountPct, payment, cashGiven, debtPhone, debtNote, loyaltyCustomerId: bonus?.customerId, bonusSpend: bonus?.spend })
     setPaying(false)
     setCartOpen(false)
     clear()
@@ -358,8 +360,10 @@ const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
   { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone }, { id: 'qarz', icon: BookOpen },
 ]
 
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number, debtPhone?: string, debtNote?: string) => Promise<void> }) {
+function PaymentModal({ total: baseTotal, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number, debtPhone?: string, debtNote?: string, bonus?: BonusSelection) => Promise<void> }) {
+  const [bonus, setBonus] = useState<BonusSelection>({ spend: 0 })
   const [method, setMethod] = useState<Payment>('karta')
+  const total = baseTotal - (method === 'qarz' ? 0 : bonus.spend)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [debtPhone, setDebtPhone] = useState('')
@@ -368,7 +372,7 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
     setBusy(true)
     setError('')
     try {
-      await onConfirm(method, method === 'naqd' ? given : undefined, method === 'qarz' ? debtPhone : undefined, method === 'qarz' ? debtNote : undefined)
+      await onConfirm(method, method === 'naqd' ? given : undefined, method === 'qarz' ? debtPhone : undefined, method === 'qarz' ? debtNote : undefined, method === 'qarz' ? undefined : bonus)
     } catch (e) {
       setError((e as Error).message)
       setBusy(false)
@@ -381,7 +385,7 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
-      <div className="w-full rounded-t-3xl bg-white sm:max-w-md sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[95dvh] w-full overflow-y-auto rounded-t-3xl bg-white sm:max-w-md sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
           <div>
             <div className="text-sm text-stone-500">{t("To'lanadigan summa")}</div>
@@ -392,11 +396,12 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-2">
             {PAY_OPTIONS.map(({ id, icon: Icon }) => (
-              <Chip key={id} active={method === id} onClick={() => setMethod(id)}>
+              <Chip key={id} active={method === id} onClick={() => { setMethod(id); if (id === 'qarz') setBonus({ spend: 0 }) }}>
                 <span className="flex items-center gap-2 py-1 text-base"><Icon className="size-5" />{t(PAYMENT_LABEL[id])}</span>
               </Chip>
             ))}
           </div>
+          {method !== 'qarz' && <BonusPicker total={baseTotal} onChange={setBonus} />}
           {method === 'qarz' && <div className="space-y-2"><p className="text-sm text-amber-800">Qarz uchun savatdagi mijoz ismini kiriting.</p><input value={debtPhone} onChange={(e) => setDebtPhone(e.target.value)} placeholder="Telefon (ixtiyoriy)" className="w-full rounded-xl border p-3" /><textarea value={debtNote} onChange={(e) => setDebtNote(e.target.value)} placeholder="Qarz izohi" maxLength={256} className="w-full rounded-xl border p-3" /></div>}
           {method === 'naqd' && (
             <div className="space-y-2">
@@ -452,6 +457,8 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.discount > 0 && <div className="flex justify-between"><span>{t('Chegirma')}</span><span>−{fmt(order.discount)}</span></div>}
           <div className="flex justify-between text-sm font-bold"><span>{t('JAMI')}</span><span>{som(order.total)}</span></div>
+          {!!order.bonusUsed && <div className="flex justify-between"><span>{t('Ishlatilgan bonus')}</span><span>{som(order.bonusUsed)}</span></div>}
+          {order.bonusBalance != null && <><div className="flex justify-between"><span>{t('Yig‘ilgan bonus')}</span><span>{som(order.bonusEarned || 0)}</span></div><div className="flex justify-between"><span>{t('Bonus balansi')}</span><span>{som(order.bonusBalance)}</span></div></>}
           <div className="flex justify-between"><span>{t("To'lov")}</span><span>{t(PAYMENT_LABEL[order.payment])}</span></div>
           {order.cashGiven != null && (
             <>

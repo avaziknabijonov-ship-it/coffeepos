@@ -150,6 +150,40 @@ class Order(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
     ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
+    bonus_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    bonus_earned: Mapped[int] = mapped_column(BigInteger, default=0)
+    bonus_balance: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class LoyaltyConfig(Base):
+    __tablename__ = "loyalty_config"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    earn_pct: Mapped[int] = mapped_column(Integer, default=5)
+    redeem_pct: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class LoyaltyCustomer(Base):
+    __tablename__ = "loyalty_customers"
+    __table_args__ = (UniqueConstraint("company_id", "phone"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    phone: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(64), default="")
+    balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class LoyaltyEntry(Base):
+    __tablename__ = "loyalty_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("loyalty_customers.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), unique=True)
+    earned: Mapped[int] = mapped_column(BigInteger)
+    spent: Mapped[int] = mapped_column(BigInteger)
+    balance: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
 class StockMove(Base):

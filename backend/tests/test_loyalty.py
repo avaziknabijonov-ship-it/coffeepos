@@ -119,3 +119,41 @@ with engine.connect() as conn:
     env = {**os.environ, 'DATABASE_URL': f'sqlite:///{tmp_path}/legacy.db'}
     result = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_admin_bonus_adjustments_are_audited_scoped_and_repeat_safe():
+    with TestClient(app) as c:
+        h, other = setup(c), setup(c)
+        customer = c.post('/api/loyalty/customers', headers=h, json={'phone': '901112233', 'name': 'Bonus client'}).json()
+        cid = customer['id']
+        url = f'/api/loyalty/customers/{cid}/adjustments'
+        body = {'amount': 1000, 'reason': 'Opening promotion', 'requestId': uuid4().hex}
+        r = c.post(url, headers=h, json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()['customer']['balance'] == 1000
+        assert c.post(url, headers=h, json=body).json()['customer']['balance'] == 1000
+        assert c.post(url, headers=h, json={**body, 'amount': 2000}).status_code == 409
+        assert c.post(url, headers=other, json={**body, 'requestId': uuid4().hex}).status_code == 404
+        for delta, reason, expected in [(0, 'zero', 400), (1, '   ', 400), (1.5, 'fraction', 422), (-1001, 'too much', 409), (1000000001, 'too large', 422)]:
+            assert c.post(url, headers=h, json={'amount': delta, 'reason': reason, 'requestId': uuid4().hex}).status_code == expected
+        minus = {'amount': -300, 'reason': 'Correction', 'requestId': uuid4().hex}
+        assert c.post(url, headers=h, json=minus).json()['customer']['balance'] == 700
+        assert c.post(url, headers=h, json=minus).json()['customer']['balance'] == 700
+        history = c.get(f'/api/loyalty/customers/{cid}/history', headers=h).json()
+        assert len(history) == 2
+        assert {x['reason'] for x in history} == {'Opening promotion', 'Correction'}
+        assert all(x['staff'] == 'Owner' and x['kind'] == 'adjustment' and x['orderId'] is None for x in history)
+        assert c.post('/api/staff', headers=h, json={'name': 'Cashier', 'role': 'kassir', 'pin': '5678'}).status_code == 200
+        slug = c.get('/api/me', headers=h).json()['company']['slug']
+        token = c.post('/api/auth/login', json={'company': slug, 'pin': '5678'}).json()['token']
+        assert c.post(url, headers={'Authorization': 'Bearer ' + token}, json={**body, 'requestId': uuid4().hex}).status_code == 403
+        # Identical simultaneous retries credit the account only once.
+        concurrent = {'amount': 100, 'reason': 'Retry test', 'requestId': uuid4().hex}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(lambda _: c.post(url, headers=h, json=concurrent), range(2)))
+        assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+        current = c.get('/api/loyalty/customers?phone=901112233', headers=h).json()['customer']
+        assert current['balance'] == 800
+        assert len(c.get(f'/api/loyalty/customers/{cid}/history', headers=h).json()) == 3
+        # Repeating a previous debit after a later operation does not debit again.
+        assert c.post(url, headers=h, json=minus).json()['customer']['balance'] == 800

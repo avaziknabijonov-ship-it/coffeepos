@@ -15,6 +15,18 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Bonus balansini o‘zgartirish": "Изменить бонусный баланс",
+  "Bonus qo‘shish": "Добавить бонусы",
+  "Bonus kamaytirish": "Списать бонусы",
+  "Bonus miqdori": "Количество бонусов",
+  "O‘zgartirish sababi": "Причина изменения",
+  "Masalan: aksiya yoki xatoni tuzatish": "Например: акция или исправление ошибки",
+  "Bonusni saqlash": "Сохранить бонусы",
+  "Bonus balansi yangilandi": "Бонусный баланс обновлён",
+  "Qo‘lda o‘zgartirish": "Ручное изменение",
+  "Bonus miqdori va o'zgartirish sababini kiriting": "Укажите количество бонусов и причину изменения",
+  "So'rov allaqachon boshqa o'zgarish uchun ishlatilgan": "Этот запрос уже использован для другого изменения",
+
   "Bonus tizimi": "Бонусная система",
   "Mijoz telefoni": "Телефон клиента",
   "Mijoz topilmadi. Roziligi bilan bonus hisobini oching.": "Клиент не найден. С его согласия откройте бонусный счёт.",

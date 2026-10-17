@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from . import seed
 from .platform import router as platform_router, page_router as platform_page_router, pricing_out
 from .db import (
-    Base, LoyaltyConfig, LoyaltyCustomer, LoyaltyEntry, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
+    Base, LoyaltyAdjustment, LoyaltyConfig, LoyaltyCustomer, LoyaltyEntry, Category, Company, Debt, DebtPayment, Expense, Ingredient, Inventory, Modifier, Order, Product, SalaryEntry, SessionLocal, Shift, Staff, StockCategory, StockMove, Subscription, engine, now_ms,
 )
 from .logic import build_item
 from .licensing import may_write, subscription_payload, subscription_status
@@ -426,7 +426,62 @@ def loyalty_history(customer_id: int, ctx: Ctx = Depends(require(*CASHIERS))) ->
     if customer is None:
         raise HTTPException(404, "Mijoz topilmadi")
     entries = ctx.db.scalars(select(LoyaltyEntry).where(LoyaltyEntry.company_id == ctx.cid, LoyaltyEntry.customer_id == customer_id).order_by(LoyaltyEntry.id.desc()).limit(100)).all()
-    return [{"orderId": str(e.order_id), "earned": e.earned, "spent": e.spent, "balance": e.balance, "createdAt": e.created_at} for e in entries]
+    adjustments = ctx.db.scalars(select(LoyaltyAdjustment).where(LoyaltyAdjustment.company_id == ctx.cid, LoyaltyAdjustment.customer_id == customer_id).order_by(LoyaltyAdjustment.id.desc()).limit(100)).all()
+    history = [{"id": f"order-{e.id}", "orderId": str(e.order_id), "earned": e.earned, "spent": e.spent, "balance": e.balance, "createdAt": e.created_at, "kind": "order", "reason": "", "staff": ""} for e in entries]
+    history += [{"id": f"adjustment-{a.id}", "orderId": None, "earned": max(a.amount, 0), "spent": max(-a.amount, 0), "balance": a.balance, "createdAt": a.created_at, "kind": "adjustment", "reason": a.reason, "staff": a.staff_name} for a in adjustments]
+    return sorted(history, key=lambda e: (e["createdAt"], e["id"]), reverse=True)[:100]
+
+
+class LoyaltyAdjustmentIn(BaseModel):
+    amount: int = Field(strict=True, ge=-1_000_000_000, le=1_000_000_000)
+    reason: str = Field(min_length=1, max_length=256)
+    requestId: str = Field(pattern=r"^[a-zA-Z0-9_-]{16,64}$")
+
+
+@app.post("/api/loyalty/customers/{customer_id}/adjustments")
+def adjust_loyalty_balance(customer_id: int, body: LoyaltyAdjustmentIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    from sqlalchemy.exc import IntegrityError
+    db = ctx.db
+    reason = body.reason.strip()
+    if body.amount == 0 or not reason:
+        raise HTTPException(400, "Bonus miqdori va o'zgartirish sababini kiriting")
+    customer = db.scalar(select(LoyaltyCustomer).where(LoyaltyCustomer.company_id == ctx.cid, LoyaltyCustomer.id == customer_id))
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+
+    def previous():
+        return db.scalar(select(LoyaltyAdjustment).where(LoyaltyAdjustment.company_id == ctx.cid, LoyaltyAdjustment.request_id == body.requestId))
+
+    def result(entry):
+        if entry.customer_id != customer_id or entry.amount != body.amount or entry.reason != reason:
+            raise HTTPException(409, "So'rov allaqachon boshqa o'zgarish uchun ishlatilgan")
+        db.refresh(customer)
+        return {"customer": loyalty_customer_out(customer), "adjustmentId": entry.id}
+
+    entry = previous()
+    if entry is not None:
+        return result(entry)
+    balance = db.execute(update(LoyaltyCustomer).where(
+        LoyaltyCustomer.id == customer_id, LoyaltyCustomer.company_id == ctx.cid,
+        LoyaltyCustomer.balance >= max(0, -body.amount),
+    ).values(balance=LoyaltyCustomer.balance + body.amount).returning(LoyaltyCustomer.balance)).scalar_one_or_none()
+    if balance is None:
+        # Another identical request may have committed while this one waited.
+        entry = previous()
+        if entry is not None:
+            return result(entry)
+        raise HTTPException(409, "Bonus yetarli emas. Mijoz balansini yangilang")
+    entry = LoyaltyAdjustment(company_id=ctx.cid, customer_id=customer_id, amount=body.amount,
+        balance=balance, reason=reason, staff_name=ctx.staff.name, staff_id=ctx.staff.id, request_id=body.requestId)
+    db.add(entry)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        entry = previous()
+        if entry is None:
+            raise
+    return result(entry)
 
 
 # ---------- menu ----------

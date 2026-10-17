@@ -186,6 +186,21 @@ class LoyaltyEntry(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
+class LoyaltyAdjustment(Base):
+    __tablename__ = "loyalty_adjustments"
+    __table_args__ = (UniqueConstraint("company_id", "request_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("loyalty_customers.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    balance: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str] = mapped_column(String(256))
+    staff_name: Mapped[str] = mapped_column(String(64))
+    staff_id: Mapped[int] = mapped_column(Integer)
+    request_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
 class StockMove(Base):
     __tablename__ = "stock_moves"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -160,3 +160,20 @@ class Inventory(Base):
     shortage: Mapped[int] = mapped_column(BigInteger, default=0)
     surplus: Mapped[int] = mapped_column(BigInteger, default=0)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class PurchaseInvoice(Base):
+    """Supplier delivery note; lines preserve purchase prices and units."""
+    __tablename__ = "purchase_invoices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    number: Mapped[str] = mapped_column(String(64))
+    supplier: Mapped[str] = mapped_column(String(128))
+    received_at: Mapped[int] = mapped_column(BigInteger)
+    payment_status: Mapped[str] = mapped_column(String(16), default="unpaid")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    lines: Mapped[list] = mapped_column(JSON)
+    total: Mapped[int] = mapped_column(BigInteger, default=0)
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    __table_args__ = (UniqueConstraint("company_id", "number"),)

@@ -463,6 +463,33 @@ def list_purchases(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
     return [purchase_out(p) for p in ctx.db.scalars(q)]
 
 
+class PurchaseDetailsUpdate(BaseModel):
+    number: str = Field(min_length=1, max_length=64)
+    supplier: str = Field(min_length=1, max_length=128)
+    received_at: int = Field(gt=0)
+    note: str = Field(default="", max_length=500)
+
+
+@app.put("/api/purchases/{purchase_id}")
+def update_purchase_details(purchase_id: int, body: PurchaseDetailsUpdate, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    inv = ctx.db.get(PurchaseInvoice, purchase_id)
+    if inv is None or inv.company_id != ctx.cid:
+        raise HTTPException(404, "Nakladnoy topilmadi")
+    duplicate = ctx.db.scalar(select(PurchaseInvoice).where(
+        PurchaseInvoice.company_id == ctx.cid,
+        PurchaseInvoice.number == body.number.strip(),
+        PurchaseInvoice.id != purchase_id
+    ))
+    if duplicate:
+        raise HTTPException(409, "Bu nakladnoy raqami allaqachon mavjud")
+    inv.number = body.number.strip()
+    inv.supplier = body.supplier.strip()
+    inv.received_at = body.received_at
+    inv.note = body.note.strip()
+    ctx.db.commit()
+    return purchase_out(inv)
+
+
 @app.post("/api/purchases")
 def create_purchase(body: PurchaseInvoiceIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     db = ctx.db

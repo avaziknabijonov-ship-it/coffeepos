@@ -1,0 +1,55 @@
+"""Server-side subscription management. Run inside the API container.
+
+Examples:
+  python -m app.license_admin list
+  python -m app.license_admin grant testcoffee monthly 30
+  python -m app.license_admin grant testcoffee yearly 365
+  python -m app.license_admin suspend testcoffee
+"""
+import argparse
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import select
+from .db import Base, Company, Subscription, SessionLocal, engine, now_ms
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="CoffeePOS subscription management")
+    sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("list")
+    grant = sub.add_parser("grant")
+    grant.add_argument("slug")
+    grant.add_argument("plan", choices=["monthly", "yearly"])
+    grant.add_argument("days", type=int)
+    suspend = sub.add_parser("suspend")
+    suspend.add_argument("slug")
+    args = parser.parse_args()
+    Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        if args.action == "list":
+            companies = db.scalars(select(Company).order_by(Company.id)).all()
+            for c in companies:
+                p = db.get(Subscription, c.id)
+                expiry = datetime.fromtimestamp(p.expires_at / 1000, tz=timezone.utc).isoformat() if p else "none"
+                print(f"{c.slug} | {p.plan if p else 'none'} | {p.status if p else 'none'} | {expiry}")
+            return
+        company = db.scalar(select(Company).where(Company.slug == args.slug))
+        if not company:
+            parser.error("Company not found")
+        p = db.get(Subscription, company.id)
+        if args.action == "grant":
+            if not 1 <= args.days <= 730:
+                parser.error("days must be between 1 and 730")
+            expiry = int((datetime.now(timezone.utc) + timedelta(days=args.days)).timestamp() * 1000)
+            if p is None:
+                p = Subscription(company_id=company.id, plan=args.plan, expires_at=expiry)
+                db.add(p)
+            else:
+                p.plan, p.status, p.expires_at, p.updated_at = args.plan, "active", expiry, now_ms()
+        elif args.action == "suspend":
+            if p is None:
+                parser.error("Subscription not found")
+            p.status, p.updated_at = "suspended", now_ms()
+        db.commit()
+        print(f"{args.action}: {company.slug}")
+
+if __name__ == "__main__":
+    main()

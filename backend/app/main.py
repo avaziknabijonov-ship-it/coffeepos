@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, Category, Company, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -633,6 +633,31 @@ def stock_moves(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[d
         }
         for m in ctx.db.scalars(q)
     ]
+
+
+# ---------- expense records ----------
+class ExpenseIn(BaseModel):
+    amount: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=64)
+    description: str = Field(default="", max_length=256)
+    payment: Literal["cash", "card", "bank"] = "cash"
+
+
+@app.get("/api/expenses")
+def expenses(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(Expense).where(Expense.company_id == ctx.cid).order_by(Expense.id.desc()).limit(250)
+    return [{"id": e.id, "amount": e.amount, "category": e.category, "description": e.description,
+             "payment": e.payment, "staff": e.staff_name, "createdAt": e.created_at} for e in ctx.db.scalars(q)]
+
+
+@app.post("/api/expenses")
+def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    e = Expense(company_id=ctx.cid, amount=body.amount, category=body.category.strip(),
+                description=body.description.strip(), payment=body.payment, staff_name=ctx.staff.name)
+    ctx.db.add(e)
+    ctx.db.commit()
+    ctx.db.refresh(e)
+    return {"id": e.id}
 
 
 # ---------- staff ----------

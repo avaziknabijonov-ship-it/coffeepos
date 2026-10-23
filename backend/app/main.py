@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -419,6 +419,68 @@ def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, note=note, staff_name=ctx.staff.name))
     ctx.db.commit()
     return ingredient_out(i)
+
+
+class PurchaseLineIn(BaseModel):
+    ing: str
+    qty: float = Field(gt=0)
+    unit_price: float = Field(ge=0)
+
+
+class PurchaseInvoiceIn(BaseModel):
+    number: str = Field(min_length=1, max_length=64)
+    supplier: str = Field(min_length=1, max_length=128)
+    received_at: int = Field(gt=0)
+    payment_status: Literal["paid", "unpaid", "partial"] = "unpaid"
+    note: str = Field(default="", max_length=500)
+    lines: list[PurchaseLineIn] = Field(min_length=1)
+
+
+def purchase_out(p: PurchaseInvoice) -> dict:
+    return {
+        "id": p.id, "number": p.number, "supplier": p.supplier,
+        "receivedAt": p.received_at, "paymentStatus": p.payment_status,
+        "note": p.note, "lines": p.lines, "total": p.total,
+        "staff": p.staff_name, "createdAt": p.created_at,
+    }
+
+
+@app.get("/api/purchases")
+def list_purchases(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(PurchaseInvoice).where(PurchaseInvoice.company_id == ctx.cid).order_by(PurchaseInvoice.id.desc()).limit(200)
+    return [purchase_out(p) for p in ctx.db.scalars(q)]
+
+
+@app.post("/api/purchases")
+def create_purchase(body: PurchaseInvoiceIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    db = ctx.db
+    if db.scalar(select(PurchaseInvoice).where(PurchaseInvoice.company_id == ctx.cid, PurchaseInvoice.number == body.number.strip())):
+        raise HTTPException(409, "Bu nakladnoy raqami allaqachon mavjud")
+    keys = [l.ing for l in body.lines]
+    if len(keys) != len(set(keys)):
+        raise HTTPException(400, "Bir xil xomashyoni bitta satrda kiriting")
+    ings = {i.key: i for i in rows(db, Ingredient, ctx.cid)}
+    validated = []
+    for l in body.lines:
+        ing = ings.get(l.ing)
+        if ing is None:
+            raise HTTPException(404, f"Xomashyo topilmadi: {l.ing}")
+        subtotal = round(l.qty * l.unit_price)
+        validated.append({"ing": ing.key, "name": ing.name, "unit": ing.unit, "qty": l.qty, "unitPrice": l.unit_price, "subtotal": subtotal})
+    inv = PurchaseInvoice(company_id=ctx.cid, number=body.number.strip(), supplier=body.supplier.strip(),
+                          received_at=body.received_at, payment_status=body.payment_status, note=body.note.strip(),
+                          lines=validated, total=sum(l["subtotal"] for l in validated), staff_name=ctx.staff.name)
+    db.add(inv)
+    db.flush()
+    for l in validated:
+        ing = ings[l["ing"]]
+        old_stock = ing.stock
+        ing.stock += l["qty"]
+        ing.cost = (old_stock * ing.cost + l["qty"] * l["unitPrice"]) / (old_stock + l["qty"]) if old_stock > 0 else l["unitPrice"]
+        db.add(StockMove(company_id=ctx.cid, ingredient=ing.key, qty=l["qty"], reason="intake",
+                         staff_name=ctx.staff.name, note=None))
+    db.commit()
+    return purchase_out(inv)
 
 
 class CountLine(BaseModel):

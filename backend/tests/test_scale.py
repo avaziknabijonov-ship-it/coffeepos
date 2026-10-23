@@ -1,15 +1,6 @@
 """Regression test for 100+ independent coffee-shop tenants.
-Uses a fresh local SQLite database and does not contact the production VPS.
+Runs with the integration test suite's isolated SQLite database.
 """
-import os
-import tempfile
-from pathlib import Path
-
-os.environ["DATABASE_URL"] = "sqlite:///" + str(Path(tempfile.mkdtemp()) / "scale.sqlite3")
-os.environ["SEED_DEMO"] = "0"
-os.environ["ENFORCE_LICENSES"] = "0"
-os.environ["ALLOW_PUBLIC_REGISTRATION"] = "1"
-
 from fastapi.testclient import TestClient
 from app.main import app
 

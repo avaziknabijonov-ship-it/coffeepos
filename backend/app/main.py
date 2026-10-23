@@ -580,9 +580,22 @@ def list_inventories(days: int = 90, ctx: Ctx = Depends(require(*MANAGERS))) -> 
 
 
 @app.get("/api/reports/losses")
-def losses_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+def losses_report(days: int = 30, date_from: str | None = None, date_to: str | None = None, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     """Write-offs by cause and ingredient, plus stocktake shortage/surplus, valued at current cost."""
     since = start_of_day_ms(days)
+    until = None
+    if date_from is not None or date_to is not None:
+        if not date_from or not date_to:
+            raise HTTPException(400, "Ikkala sanani kiriting")
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d")
+            end_date = datetime.strptime(date_to, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(400, "Sana formati noto'g'ri")
+        if end_date < start_date or (end_date - start_date).days > 3660:
+            raise HTTPException(400, "Sana oralig'i noto'g'ri")
+        since = int(start_date.replace(tzinfo=TZ).timestamp() * 1000)
+        until = int((end_date + timedelta(days=1)).replace(tzinfo=TZ).timestamp() * 1000)
     ings = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
     moves = ctx.db.scalars(
         select(StockMove).where(
@@ -592,6 +605,8 @@ def losses_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dic
     by_note: dict[str, int] = {}
     by_ing: dict[str, dict] = {}
     for m in moves:
+        if until is not None and m.created_at >= until:
+            continue
         i = ings.get(m.ingredient)
         value = round(m.qty * (i.cost if i else 0))
         row = by_ing.setdefault(m.ingredient, {
@@ -605,7 +620,10 @@ def losses_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dic
         else:
             row["countQty"] += m.qty
             row["countValue"] += value
-    invs = ctx.db.scalars(select(Inventory).where(Inventory.company_id == ctx.cid, Inventory.created_at >= since)).all()
+    iq = select(Inventory).where(Inventory.company_id == ctx.cid, Inventory.created_at >= since)
+    if until is not None:
+        iq = iq.where(Inventory.created_at < until)
+    invs = ctx.db.scalars(iq).all()
     items = sorted(by_ing.values(), key=lambda r: r["writeoffValue"] - r["countValue"], reverse=True)
     return {
         "days": days,

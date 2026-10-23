@@ -177,3 +177,12 @@ class PurchaseInvoice(Base):
     staff_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     __table_args__ = (UniqueConstraint("company_id", "number"),)
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    plan: Mapped[str] = mapped_column(String(16), default="monthly")
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    expires_at: Mapped[int] = mapped_column(BigInteger)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

@@ -2,10 +2,9 @@ import { useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
 import { Coffee, Delete } from 'lucide-react'
-import { login, register } from './store'
+import { login } from './store'
 
 export default function Login() {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
   return (
     <div className="grid min-h-dvh place-items-center bg-stone-900 p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
@@ -14,7 +13,7 @@ export default function Login() {
           CoffeePOS
           <span className="ml-auto"><LangSwitch light /></span>
         </div>
-        {mode === 'login' ? <PinLogin onRegister={() => setMode('register')} /> : <Register onBack={() => setMode('login')} />}
+        <PinLogin />
       </div>
     </div>
   )
@@ -22,7 +21,7 @@ export default function Login() {
 
 const input = 'w-full rounded-xl border border-stone-200 px-3 py-2.5 outline-none focus:border-amber-500'
 
-function PinLogin({ onRegister }: { onRegister: () => void }) {
+function PinLogin() {
   const [company, setCompany] = useState(() => localStorage.getItem('coffeepos-company') ?? 'demo')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
@@ -75,52 +74,7 @@ function PinLogin({ onRegister }: { onRegister: () => void }) {
         className="w-full rounded-xl bg-amber-600 py-3.5 font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">
         {busy ? t('Kirilmoqda…') : t('Kirish')}
       </button>
-      {company === 'demo' && (
-        <p className="text-center text-xs text-stone-500">{t('Demo PIN: 1111 rahbar · 2222 kassir · 3333 barista')}</p>
-      )}
-      <button onClick={onRegister} className="w-full text-sm font-medium text-amber-700">{t("Yangi kofe barni ro'yxatdan o'tkazish")}</button>
     </div>
   )
 }
 
-function Register({ onBack }: { onBack: () => void }) {
-  const [f, setF] = useState({ companyName: '', slug: '', ownerName: '', ownerPin: '' })
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const upd = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    let v = e.target.value
-    if (k === 'slug') v = v.toLowerCase().replace(/[^a-z0-9-]/g, '')
-    if (k === 'ownerPin') v = v.replace(/\D/g, '').slice(0, 6)
-    setF((x) => ({ ...x, [k]: v }))
-  }
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      await register(f)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <h2 className="font-semibold">{t('Yangi kofe bar')}</h2>
-      <input required placeholder={t('Kofe bar nomi')} value={f.companyName} onChange={upd('companyName')} className={input} />
-      <div>
-        <input required minLength={3} placeholder={t('Login (masalan: bek-coffee)')} value={f.slug} onChange={upd('slug')} className={input} />
-        <p className="mt-1 text-xs text-stone-500">{t('Kirishda ishlatiladi: lotin harflari, raqam va "-"')}</p>
-      </div>
-      <input required placeholder={t('Rahbar ismi')} value={f.ownerName} onChange={upd('ownerName')} className={input} />
-      <input required minLength={4} inputMode="numeric" type="password" placeholder={t('Rahbar PIN-kodi (4–6 raqam)')} value={f.ownerPin} onChange={upd('ownerPin')} className={input} />
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      <button disabled={busy} className="w-full rounded-xl bg-amber-600 py-3.5 font-semibold text-white disabled:bg-stone-300">
-        {busy ? t('Yaratilmoqda…') : t('Yaratish')}
-      </button>
-      <p className="text-xs text-stone-500">{t("Standart kofe menyusi, texkartalar va ombor avtomatik qo'shiladi, keyin Admin bo'limida o'zgartirasiz.")}</p>
-      <button type="button" onClick={onBack} className="w-full text-sm font-medium text-stone-600">{t('Orqaga')}</button>
-    </form>
-  )
-}

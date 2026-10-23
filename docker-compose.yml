@@ -19,7 +19,9 @@ services:
       DATABASE_URL: postgresql+psycopg://coffeepos:${POSTGRES_PASSWORD}@db:5432/coffeepos
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       SEED_DEMO: ${SEED_DEMO:-0}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://mcoffeepos.uz,https://www.mcoffeepos.uz}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-0}
+      ENFORCE_LICENSES: ${ENFORCE_LICENSES:-0}
     depends_on:
       db: { condition: service_healthy }
 

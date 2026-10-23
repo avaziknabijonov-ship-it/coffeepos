@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, Category, Company, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -91,6 +91,10 @@ def auth(db: Session = Depends(get_db), authorization: str = Header(default=""))
     staff = db.get(Staff, int(claims["sub"]))
     if not staff or not staff.active or staff.company_id != claims["cid"]:
         raise HTTPException(401, "Qaytadan kiring")
+    if os.environ.get("ENFORCE_LICENSES", "0") == "1":
+        subscription = db.get(Subscription, staff.company_id)
+        if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
+            raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
     return Ctx(db, staff, db.get(Company, staff.company_id))
 
 
@@ -211,6 +215,10 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
     staff = None
     if company:
         staff = next((s for s in rows(db, Staff, company.id) if s.active and check_pin(body.pin, s.pin_hash)), None)
+    if staff and os.environ.get("ENFORCE_LICENSES", "0") == "1":
+        subscription = db.get(Subscription, company.id)
+        if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
+            raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
     if not staff:
         limiter.fail(key)
         raise HTTPException(401, "Kofe bar yoki PIN noto'g'ri")
@@ -231,6 +239,8 @@ class RegisterIn(BaseModel):
 
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    if os.environ.get("ALLOW_PUBLIC_REGISTRATION", "0") != "1":
+        raise HTTPException(403, "Ro'yxatdan o'tish uchun administratorga murojaat qiling")
     if db.scalar(select(Company).where(Company.slug == body.slug)):
         raise HTTPException(409, "Bu login band, boshqasini tanlang")
     create_company(db, body.slug, body.companyName.strip(), body.ownerName.strip(), body.ownerPin)

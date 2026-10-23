@@ -1,0 +1,9 @@
+{
+  "appId": "uz.mcoffeepos.app",
+  "appName": "CoffeePOS",
+  "webDir": "dist",
+  "server": {
+    "url": "https://mcoffeepos.uz",
+    "cleartext": false
+  }
+}

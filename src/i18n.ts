@@ -54,6 +54,7 @@ const RU: Record<string, string> = {
   'Ta’mirlash': 'Ремонт', 'Xo‘jalik': 'Хозяйственные', 'Boshqa': 'Другое',
   'Sana oralig‘i': 'Период', 'Boshlanish sanasi': 'Дата начала',
   'Tugash sanasi': 'Дата окончания', 'Sana oralig‘i noto‘g‘ri': 'Неверный период',
+  'Amallar': 'Действия', 'Perechek': 'Повторный чек', 'Otmena': 'Отмена', 'Bekor qilingan': 'Отменён', 'Buyurtma bekor qilinsinmi?': 'Отменить заказ?',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

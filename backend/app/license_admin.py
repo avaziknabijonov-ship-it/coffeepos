@@ -24,6 +24,10 @@ def main() -> None:
     grant.add_argument("slug")
     grant.add_argument("plan", choices=["monthly", "yearly"])
     grant.add_argument("days", type=int)
+    renew = sub.add_parser("renew")
+    renew.add_argument("slug")
+    renew.add_argument("plan", choices=["monthly", "yearly"])
+    renew.add_argument("days", type=int)
     suspend = sub.add_parser("suspend")
     suspend.add_argument("slug")
     args = parser.parse_args()
@@ -55,10 +59,12 @@ def main() -> None:
         if not company:
             parser.error("Company not found")
         p = db.get(Subscription, company.id)
-        if args.action == "grant":
+        if args.action in ("grant", "renew"):
             if not 1 <= args.days <= 730:
                 parser.error("days must be between 1 and 730")
-            expiry = int((datetime.now(timezone.utc) + timedelta(days=args.days)).timestamp() * 1000)
+            current = now_ms()
+            start = max(current, p.expires_at) if args.action == "renew" and p is not None and p.status == "active" else current
+            expiry = start + args.days * 86400000
             if p is None:
                 p = Subscription(company_id=company.id, plan=args.plan, expires_at=expiry)
                 db.add(p)

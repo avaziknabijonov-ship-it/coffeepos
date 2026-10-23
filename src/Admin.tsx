@@ -30,7 +30,7 @@ export default function Admin() {
   const [view, setView] = useState<View>('dashboard')
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
-  const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
+  const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday() && o.status !== 'cancelled'), [orders])
   const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
 
   return (

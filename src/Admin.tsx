@@ -4,7 +4,7 @@ import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, Book
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
-import { startOfToday, useAppState } from './store'
+import { startOfToday, useAppState, sync } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
 import Expenses from './Expenses'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
@@ -235,13 +235,28 @@ function Recipes() {
 }
 
 function Orders({ today }: { today: Orders }) {
+  const [printing, setPrinting] = useState<Orders[number] | null>(null)
+  const [actionError, setActionError] = useState('')
+  const cancel = async (o: Orders[number]) => {
+    if (!window.confirm(t('Buyurtma bekor qilinsinmi?'))) return
+    try { await api('/api/orders/' + o.id + '/cancel', { method: 'POST' }); await sync() }
+    catch (e) { setActionError((e as Error).message) }
+  }
+  const reprint = (o: Orders[number]) => { setPrinting(o); window.setTimeout(() => window.print(), 80) }
   const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
   return (
     <Card title={t('Bugungi buyurtmalar ({n})', { n: list.length })}>
+      {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
+        <h2>CoffeePOS · № {printing.number}</h2>
+        <p>{new Date(printing.createdAt).toLocaleString()}</p>
+        {printing.items.map((it, i) => <div key={i}>{it.qty} × {it.name}: {fmt(it.qty * it.unitPrice)}</div>)}
+        <b>{t('JAMI')}: {fmt(printing.total)} {t("so'm")}</b>
+      </div>}
+      {actionError && <p role="alert" className="text-red-600">{actionError}</p>}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-stone-500">
-            <tr><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">{t('Vaqt')}</th><th className="pb-2 font-medium">{t('Mijoz')}</th><th className="pb-2 font-medium">{t('Tarkib')}</th><th className="pb-2 font-medium">{t("To'lov")}</th><th className="pb-2 text-right font-medium">{t('Summa')}</th><th className="pb-2 pl-4 font-medium">{t('Holat')}</th></tr>
+            <tr><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">{t('Vaqt')}</th><th className="pb-2 font-medium">{t('Mijoz')}</th><th className="pb-2 font-medium">{t('Tarkib')}</th><th className="pb-2 font-medium">{t("To'lov")}</th><th className="pb-2 text-right font-medium">{t('Summa')}</th><th className="pb-2 pl-4 font-medium">{t('Holat')}</th><th>{t('Amallar')}</th></tr>
           </thead>
           <tbody>
             {list.map((o) => (
@@ -252,7 +267,11 @@ function Orders({ today }: { today: Orders }) {
                 <td className="py-2 text-stone-600">{o.items.map((it) => `${it.qty}× ${it.name}${it.size ? ' ' + it.size : ''}`).join(', ')}</td>
                 <td className="py-2">{t(PAYMENT_LABEL[o.payment])}</td>
                 <td className="py-2 text-right font-semibold tabular-nums">{fmt(o.total)}</td>
-                <td className="py-2 pl-4"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{t(STATUS_LABEL[o.status])}</span></td>
+                <td className="py-2 pl-4"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{o.status === 'cancelled' ? t('Bekor qilingan') : t(STATUS_LABEL[o.status])}</span></td>
+                <td className="py-2"><div className="flex gap-2">
+                  <button className="rounded-lg border px-2 py-1" onClick={() => reprint(o)}>{t('Perechek')}</button>
+                  {o.status === 'new' && <button className="rounded-lg border border-red-200 px-2 py-1 text-red-700" onClick={() => cancel(o)}>{t('Otmena')}</button>}
+                </div></td>
               </tr>
             ))}
           </tbody>

@@ -30,7 +30,7 @@ export default function Admin() {
   const [view, setView] = useState<View>('dashboard')
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
-  const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday() && o.status !== 'cancelled'), [orders])
+  const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
   const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
 
   return (
@@ -81,8 +81,9 @@ function Card({ title, children, className = '' }: { title?: string; children: R
 }
 
 function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goStock: () => void }) {
-  const revenue = today.reduce((s, o) => s + o.total, 0)
-  const cost = today.reduce((s, o) => s + o.cost, 0)
+  const active = today.filter(o => o.status !== 'cancelled')
+  const revenue = active.reduce((s, o) => s + o.total, 0)
+  const cost = active.reduce((s, o) => s + o.cost, 0)
   const profit = revenue - cost
   const avg = today.length ? revenue / today.length : 0
 

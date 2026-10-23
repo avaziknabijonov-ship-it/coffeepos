@@ -22,6 +22,8 @@ export default function PurchaseInvoices() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [opened, setOpened] = useState<number | null>(null)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [printing, setPrinting] = useState<Invoice | null>(null)
   const load = () => api<Invoice[]>('/api/purchases').then(setHistory).catch((e: Error) => setError(e.message))
   useEffect(() => { void load() }, [])
   const amount = (l: Line) => Number(l.qty) * Number(l.unitPrice)
@@ -35,13 +37,21 @@ export default function PurchaseInvoices() {
     if (new Set(lines.map(l => l.ing)).size !== lines.length) { setError('Bir xil mahsulotni takrorlamang.'); return }
     setBusy(true)
     try {
-      await api('/api/purchases', { body: { number: number.trim(), supplier: supplier.trim(), received_at: new Date(date + 'T12:00:00').getTime(), payment_status: paymentStatus, note, lines: lines.map(l => ({ ing: l.ing, qty: Number(l.qty), unit_price: Number(l.unitPrice) })) } })
-      setNumber(''); setSupplier(''); setNote(''); setLines([newLine()])
+      await api(editId ? `/api/purchases/${editId}` : '/api/purchases', { method: editId ? 'PUT' : 'POST', body: { number: number.trim(), supplier: supplier.trim(), received_at: new Date(date + 'T12:00:00').getTime(), ...(editId ? {} : { payment_status: paymentStatus, lines: lines.map(l => ({ ing: l.ing, qty: Number(l.qty), unit_price: Number(l.unitPrice) })) }), note } })
+      setEditId(null); setNumber(''); setSupplier(''); setNote(''); setLines([newLine()])
       await Promise.all([load(), sync(), refreshMenu()])
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
+  const beginEdit = (p: Invoice) => {
+    setEditId(p.id); setNumber(p.number); setSupplier(p.supplier)
+    setDate(new Date(p.receivedAt).toISOString().slice(0, 10))
+    setNote(p.note); window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const cancelEdit = () => { setEditId(null); setNumber(''); setSupplier(''); setNote('') }
+  const printInvoice = (p: Invoice) => { setPrinting(p); setTimeout(() => window.print(), 80) }
   const input = 'w-full min-w-0 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500'
   return <div className="space-y-5">
+    {printing && <div className="print-area hidden print:block bg-white p-5 text-black"><h1>{t('Kirim nakladnoyi')} № {printing.number}</h1><p>{printing.supplier} · {new Date(printing.receivedAt).toLocaleDateString()}</p><table className="w-full"><tbody>{printing.lines.map((l,i) => <tr key={i}><td>{l.name}</td><td>{l.qty} {l.unit}</td><td>{fmt(l.subtotal)}</td></tr>)}</tbody></table><h2>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</h2></div>}
     <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-5 flex items-center gap-2"><FileText className="size-5 text-amber-600" /><h2 className="text-lg font-bold">{t('Bozorlik — kirim nakladnoyi')}</h2></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -50,6 +60,7 @@ export default function PurchaseInvoices() {
         <label className="space-y-1 text-sm">{t('Kelgan sana')}<input type="date" className={input} value={date} onChange={e => setDate(e.target.value)} /></label>
         <label className="space-y-1 text-sm">{t("To'lov holati")}<select className={input} value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}><option value="unpaid">Qarz</option><option value="paid">To‘langan</option><option value="partial">Qisman to‘langan</option></select></label>
       </div>
+      {editId && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm">{t('Tahrirlash: faqat sana, raqam, yetkazib beruvchi va izoh. Mahsulot kirimi o‘zgarmaydi.')}</p>}
       <div className="mt-5 overflow-x-auto">
         <table className="w-full min-w-[650px] text-sm">
           <thead><tr className="border-b text-left text-stone-500"><th className="p-2">Mahsulot</th><th className="p-2">Miqdor</th><th className="p-2">Narx / birlik (so‘m)</th><th className="p-2 text-right">Summa</th><th className="p-2"></th></tr></thead>
@@ -61,14 +72,14 @@ export default function PurchaseInvoices() {
       </div>
       <button onClick={() => setLines(v => [...v, newLine()])} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Plus className="size-4" /> Mahsulot qo‘shish</button>
       <label className="mt-4 block space-y-1 text-sm">Izoh<input className={input} value={note} onChange={e => setNote(e.target.value)} placeholder="Ixtiyoriy izoh" /></label>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="text-lg font-bold">Jami: {fmt(total)} so‘m</div><button disabled={busy} onClick={save} className="rounded-xl bg-stone-900 px-5 py-3 font-semibold text-white disabled:opacity-50">{busy ? 'Saqlanmoqda...' : 'Nakladnoyni saqlash va omborga kirim qilish'}</button></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="text-lg font-bold">Jami: {fmt(total)} so‘m</div><div className="flex flex-wrap gap-2">{editId && <button onClick={cancelEdit} className="rounded-xl border px-4 py-3">{t('Bekor qilish')}</button>}<button disabled={busy} onClick={save} className="rounded-xl bg-stone-900 px-5 py-3 font-semibold text-white disabled:opacity-50">{busy ? t('Saqlanmoqda...') : editId ? t('O‘zgarishlarni saqlash') : t('Nakladnoyni saqlash va omborga kirim qilish')}</button></div></div>
       {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </section>
     <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
       <h2 className="mb-3 font-semibold">Kirim hujjatlari tarixi</h2>
       {history.length === 0 ? <p className="text-sm text-stone-500">Hozircha nakladnoy yo‘q.</p> : <div className="space-y-2">{history.map(p => <div key={p.id} className="rounded-xl border border-stone-200">
         <button className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpened(v => v === p.id ? null : p.id)}><span><b>№ {p.number}</b> · {p.supplier} · {new Date(p.receivedAt).toLocaleDateString()}</span><span className="font-semibold">{fmt(p.total)} so‘m · {p.paymentStatus === 'paid' ? 'To‘langan' : p.paymentStatus === 'partial' ? 'Qisman' : 'Qarz'}</span></button>
-        {opened === p.id && <div className="border-t p-3 text-sm">{p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3 py-1"><span>{l.name} — {l.qty} {l.unit} × {fmt(l.unitPrice)}</span><b>{fmt(l.subtotal)}</b></div>)}{p.note && <p className="mt-2 text-stone-500">{p.note}</p>}</div>}
+        {opened === p.id && <div className="border-t p-3 text-sm"><div className="mb-3 flex gap-2"><button onClick={() => beginEdit(p)} className="rounded-lg border px-3 py-2">{t('Tahrirlash')}</button><button onClick={() => printInvoice(p)} className="rounded-lg border px-3 py-2">{t('Chop etish')}</button></div>{p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3 py-1"><span>{l.name} — {l.qty} {l.unit} × {fmt(l.unitPrice)}</span><b>{fmt(l.subtotal)}</b></div>)}{p.note && <p className="mt-2 text-stone-500">{p.note}</p>}</div>}
       </div>)}</div>}
     </section>
     <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">

@@ -12,7 +12,7 @@ export interface Modifier { id: string; group: ModGroupId; name: string; price: 
 export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
-export type Status = 'new' | 'preparing' | 'ready' | 'done'
+export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
@@ -28,7 +28,7 @@ export const som = (n: number) => `${fmt(n)} ${t("so'm")}`
 export const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
 export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click' }
-export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi' }
+export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi', cancelled: 'Bekor qilingan' }
 export const UNIT_LABEL: Record<Unit, string> = { g: 'g', ml: 'ml', dona: 'dona' }
 
 export type Role = 'owner' | 'admin' | 'kassir' | 'barista'

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
-import { TriangleAlert } from 'lucide-react'
+import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
@@ -19,6 +19,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'staff', label: 'Xodimlar' },
   { id: 'shifts', label: 'Smenalar' },
 ]
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -30,26 +31,35 @@ export default function Admin() {
   const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl space-y-5 p-3 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-1 overflow-x-auto rounded-xl bg-stone-200/70 p-1">
-            {VIEWS.map((v) => (
-              <button key={v.id} onClick={() => setView(v.id)}
-                className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium sm:px-4 ${view === v.id ? 'bg-white shadow-sm' : 'text-stone-600'}`}>
-                {t(v.label)}{v.id === 'stock' && low.length > 0 && <span className="ml-1.5 rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
-              </button>
-            ))}
+    <div className="h-full overflow-y-auto bg-stone-50">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-3 md:flex-row md:gap-5 md:p-5">
+        <aside className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
+          <div className="mb-3 hidden px-3 pt-2 md:block">
+            <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">{t('Boshqaruv')}</p>
+            <h2 className="mt-1 text-lg font-bold text-stone-900">{t('Admin panel')}</h2>
           </div>
-        </div>
-        {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
-        {view === 'stock' && <Stock stock={stock} today={today} />}
-        {view === 'inventory' && <InventoryView />}
-        {view === 'menu' && <MenuEditor />}
-        {view === 'recipes' && <Recipes />}
-        {view === 'orders' && <Orders today={today} />}
-        {view === 'staff' && <StaffView />}
-        {view === 'shifts' && <ShiftsView />}
+          <nav aria-label={t('Admin bo‘limlari')} className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+            {VIEWS.map((v) => {
+              const Icon = VIEW_ICONS[v.id]
+              return <button key={v.id} onClick={() => setView(v.id)} aria-current={view === v.id ? 'page' : undefined}
+                className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors md:w-full ${view === v.id ? 'bg-stone-900 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'}`}>
+                <Icon className="size-[18px] shrink-0" />
+                <span className="flex-1 whitespace-nowrap">{t(v.label)}</span>
+                {v.id === 'stock' && low.length > 0 && <span className="rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
+              </button>
+            })}
+          </nav>
+        </aside>
+        <main className="min-w-0 flex-1 space-y-5">
+          {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
+          {view === 'stock' && <Stock stock={stock} today={today} />}
+          {view === 'inventory' && <InventoryView />}
+          {view === 'menu' && <MenuEditor />}
+          {view === 'recipes' && <Recipes />}
+          {view === 'orders' && <Orders today={today} />}
+          {view === 'staff' && <StaffView />}
+          {view === 'shifts' && <ShiftsView />}
+        </main>
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
-import { Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Pencil, Plus, Trash2, X, ChevronDown } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { ModGroupId, Payment, Product, Role, Size, Unit } from './data'
 import { api } from './api'
@@ -35,6 +35,7 @@ export function MenuEditor() {
   useAppState()
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
   const [catName, setCatName] = useState('')
+  const [expandedCats, setExpandedCats] = useState<string[]>([])
   const [ing, setIng] = useState({ name: '', unit: 'g' as Unit, cost: '', min: '' })
   const role = useAppState().session?.staff.role
 
@@ -45,14 +46,17 @@ export function MenuEditor() {
           {CATEGORIES.map((c) => {
             const list = PRODUCTS.filter((p) => p.cat === c.id)
             return (
-              <div key={c.id}>
-                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-stone-500">
-                  {c.name}
+              <div key={c.id} className="rounded-xl border border-stone-200">
+                <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-stone-700">
+                  <button onClick={() => setExpandedCats(v => v.includes(c.id) ? v.filter(x => x !== c.id) : [...v, c.id])} aria-expanded={expandedCats.includes(c.id)} className="flex flex-1 items-center gap-2 text-left">
+                    <ChevronDown className={`size-4 ${expandedCats.includes(c.id) ? '' : '-rotate-90'}`} />
+                    {c.name} <span className="rounded-full bg-stone-100 px-2 text-xs">{list.length}</span>
+                  </button>
                   {list.length === 0 && (
                     <button aria-label={t("Kategoriyani o'chirish")} onClick={() => run(() => api(`/api/categories/${c.id}`, { method: 'DELETE' }))} className="text-stone-400 hover:text-red-600"><Trash2 className="size-4" /></button>
                   )}
                 </div>
-                <div className="divide-y divide-stone-100 rounded-xl border border-stone-100">
+                {expandedCats.includes(c.id) && <div className="divide-y divide-stone-100 border-t border-stone-100">
                   {list.map((p) => (
                     <div key={p.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                       <span className={`min-w-32 flex-1 font-medium ${p.active ? '' : 'text-stone-400 line-through'}`}>{p.name}</span>
@@ -64,7 +68,7 @@ export function MenuEditor() {
                       <button onClick={() => setEditing(p)} aria-label={t('Tahrirlash')} className="rounded-lg p-2 hover:bg-stone-100"><Pencil className="size-4" /></button>
                     </div>
                   ))}
-                </div>
+                </div>}
               </div>
             )
           })}

@@ -186,3 +186,26 @@ class Subscription(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")
     expires_at: Mapped[int] = mapped_column(BigInteger)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    category: Mapped[str] = mapped_column(String(64))
+    description: Mapped[str] = mapped_column(String(256), default="")
+    payment: Mapped[str] = mapped_column(String(16), default="cash")
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class StaffPayment(Base):
+    __tablename__ = "staff_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    note: Mapped[str] = mapped_column(String(256), default="")
+    recorded_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

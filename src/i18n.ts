@@ -21,7 +21,6 @@ const RU: Record<string, string> = {
   "Kelgan sana": "Дата поступления",
   "To'lov holati": "Статус оплаты",
   "Mahsulot": "Товар",
-  "Miqdor": "Количество",
   "Narx / birlik (so‘m)": "Цена за единицу (сум)",
   "Summa": "Сумма",
   "Mahsulot qo‘shish": "Добавить товар",

@@ -52,6 +52,8 @@ const RU: Record<string, string> = {
   'Summani to‘g‘ri kiriting': 'Введите корректную сумму', 'Saqlash': 'Сохранить',
   'Ijara': 'Аренда', 'Kommunal': 'Коммунальные', 'Transport': 'Транспорт',
   'Ta’mirlash': 'Ремонт', 'Xo‘jalik': 'Хозяйственные', 'Boshqa': 'Другое',
+  'Sana oralig‘i': 'Период', 'Boshlanish sanasi': 'Дата начала',
+  'Tugash sanasi': 'Дата окончания', 'Sana oralig‘i noto‘g‘ri': 'Неверный период',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

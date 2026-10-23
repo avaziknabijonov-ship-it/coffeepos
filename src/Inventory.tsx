@@ -258,8 +258,18 @@ function History() {
 
 function Report() {
   const [days, setDays] = useState(30)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [custom, setCustom] = useState(false)
+  const [dateError, setDateError] = useState('')
   const [data, setData] = useState<Losses | null>(null)
-  useEffect(() => { api<Losses>(`/api/reports/losses?days=${days}`).then(setData).catch((e: Error) => alert(e.message)) }, [days])
+  useEffect(() => {
+    if (custom && (!dateFrom || !dateTo || dateFrom > dateTo)) return
+    const query = custom
+      ? `date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
+      : `days=${days}`
+    api<Losses>(`/api/reports/losses?${query}`).then(setData).catch((e: Error) => setDateError(e.message))
+  }, [days, dateFrom, dateTo, custom])
   const notes = Object.entries(data?.byNote ?? {}).sort((a, b) => b[1] - a[1])
   const maxNote = Math.max(1, ...notes.map((n) => n[1]))
   const net = data ? data.writeoffTotal + data.shortage - data.surplus : 0
@@ -268,10 +278,17 @@ function Report() {
     <div className="space-y-4">
       <div className="flex gap-2">
         {[7, 30, 90].map((d) => (
-          <button key={d} onClick={() => setDays(d)} className={`rounded-full px-3 py-1.5 text-sm font-medium ${days === d ? 'bg-amber-600 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{t('{n} kun', { n: d })}</button>
+          <button key={d} onClick={() => { setCustom(false); setDateError(''); setDays(d) }} className={`rounded-full px-3 py-1.5 text-sm font-medium ${!custom && days === d ? 'bg-amber-600 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{t('{n} kun', { n: d })}</button>
         ))}
+        <button onClick={() => { setCustom(true); setDateError('') }} className={`rounded-full px-3 py-1.5 text-sm font-medium ${custom ? 'bg-amber-600 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{t('Sana oralig‘i')}</button>
       </div>
-      {data && (
+      {custom && <div className="flex flex-wrap gap-3 rounded-xl border bg-white p-3 text-sm">
+        <label className="flex flex-col gap-1">{t('Boshlanish sanasi')}<input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setDateError('') }} className="rounded-lg border px-3 py-2" /></label>
+        <label className="flex flex-col gap-1">{t('Tugash sanasi')}<input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => { setDateTo(e.target.value); setDateError('') }} className="rounded-lg border px-3 py-2" /></label>
+        {dateFrom && dateTo && dateFrom > dateTo && <p className="self-end text-red-600">{t('Sana oralig‘i noto‘g‘ri')}</p>}
+      </div>}
+      {dateError && <p role="alert" className="text-red-600">{dateError}</p>}
+      {(!custom || (dateFrom && dateTo && dateFrom <= dateTo)) && data && (
         <>
           <div className="grid gap-3 sm:grid-cols-4">
             <Stat label={t('Hisobdan chiqarildi')} value={som(data.writeoffTotal)} className={data.writeoffTotal ? 'text-red-600' : ''} />

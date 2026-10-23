@@ -765,7 +765,7 @@ class CloseShiftIn(BaseModel):
 
 
 def shift_summary(db: Session, shift: Shift) -> dict:
-    orders = db.scalars(select(Order).where(Order.shift_id == shift.id)).all()
+    orders = db.scalars(select(Order).where(Order.shift_id == shift.id, Order.status != "cancelled")).all()
     by_payment: dict[str, int] = {}
     for o in orders:
         by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
@@ -882,6 +882,32 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     return order_out(order)
 
 
+@app.post("/api/orders/{oid}/cancel")
+def cancel_order(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    order = ctx.db.get(Order, oid)
+    if order is None or order.company_id != ctx.cid:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    if order.status != "new":
+        raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")
+    shift = open_shift(ctx.db, ctx.cid)
+    if shift is None or order.shift_id != shift.id:
+        raise HTTPException(409, "Yopilgan smenadagi buyurtmani bekor qilib bo'lmaydi")
+    ingredients = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
+    moves = ctx.db.scalars(select(StockMove).where(
+        StockMove.company_id == ctx.cid, StockMove.order_id == order.id, StockMove.reason == "sale"
+    )).all()
+    for move in moves:
+        item = ingredients.get(move.ingredient)
+        if item is not None:
+            item.stock -= move.qty
+            ctx.db.add(StockMove(company_id=ctx.cid, ingredient=move.ingredient,
+                                 qty=-move.qty, reason="return", order_id=order.id,
+                                 staff_name=ctx.staff.name))
+    order.status = "cancelled"
+    ctx.db.commit()
+    return order_out(order)
+
+
 class StatusIn(BaseModel):
     status: Literal["new", "preparing", "ready", "done"]
 
@@ -920,6 +946,6 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     out = []
     for d in range(days - 1, -1, -1):
         lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
-        day = [o for o in orders if lo <= o.created_at < hi]
+        day = [o for o in orders if lo <= o.created_at < hi and o.status != "cancelled"]
         out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
     return out

@@ -15,6 +15,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CoffeePOS subscription management")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("list")
+    create = sub.add_parser("create")
+    create.add_argument("slug")
+    create.add_argument("name")
+    create.add_argument("owner_name")
+    create.add_argument("pin")
     grant = sub.add_parser("grant")
     grant.add_argument("slug")
     grant.add_argument("plan", choices=["monthly", "yearly"])
@@ -24,6 +29,19 @@ def main() -> None:
     args = parser.parse_args()
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
+        if args.action == "create":
+            import re
+            from .main import create_company
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,40}", args.slug):
+                parser.error("Invalid slug")
+            if not re.fullmatch(r"\\d{4,6}", args.pin):
+                parser.error("PIN must contain 4-6 digits")
+            if db.scalar(select(Company).where(Company.slug == args.slug)):
+                parser.error("Company already exists")
+            create_company(db, args.slug, args.name, args.owner_name, args.pin)
+            db.commit()
+            print("Created:", args.slug)
+            return
         if args.action == "list":
             companies = db.scalars(select(Company).order_by(Company.id)).all()
             for c in companies:

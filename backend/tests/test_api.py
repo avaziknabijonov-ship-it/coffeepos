@@ -54,8 +54,13 @@ def test_full_flow():
         assert c.post("/api/staff", json={"name": "Lola", "role": "barista", "pin": "4444"}, headers=owner).status_code == 200
         login(c, "4444")
 
-        r = c.post("/api/stock", json={"ing": "beans", "qty": 1000, "reason": "intake"}, headers=owner)
-        assert r.json()["stock"] == stock["beans"] + 1000
+        invoice = {
+            "number": "TEST-001", "supplier": "Test Supplier", "received_at": 1780000000000,
+            "payment_status": "paid", "lines": [{"ing": "beans", "qty": 1000, "unit_price": 100}],
+        }
+        response = c.post("/api/purchases", json=invoice, headers=owner)
+        assert response.status_code == 200, response.text
+        assert c.get("/api/sync", headers=owner).json()["stock"]["beans"] == stock["beans"] + 1000
 
         closed = c.post("/api/shifts/close", json={"closingCash": 282000}, headers=kassir).json()
         assert closed["expectedCash"] == 200000 + 82000 and closed["difference"] == 0

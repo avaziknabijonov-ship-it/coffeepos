@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
-import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock } from 'lucide-react'
+import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
 import { startOfToday, useAppState } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
+import Expenses from './Expenses'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
@@ -19,8 +20,9 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'orders', label: 'Buyurtmalar' },
   { id: 'staff', label: 'Xodimlar' },
   { id: 'shifts', label: 'Smenalar' },
+  { id: 'expenses', label: 'Xarajatlar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -60,6 +62,7 @@ export default function Admin() {
           {view === 'orders' && <Orders today={today} />}
           {view === 'staff' && <StaffView />}
           {view === 'shifts' && <ShiftsView />}
+          {view === 'expenses' && <Expenses />}
         </main>
       </div>
     </div>

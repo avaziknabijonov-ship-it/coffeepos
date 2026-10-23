@@ -4,7 +4,8 @@ import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, Book
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
-import { startOfToday, stockMove, useAppState } from './store'
+import { startOfToday, useAppState } from './store'
+import PurchaseInvoices from './PurchaseInvoices'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
@@ -52,7 +53,7 @@ export default function Admin() {
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
           {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
-          {view === 'stock' && <Stock stock={stock} today={today} />}
+          {view === 'stock' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
           {view === 'menu' && <MenuEditor />}
           {view === 'recipes' && <Recipes />}
@@ -181,55 +182,6 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
         </Card>
       </div>
     </div>
-  )
-}
-
-function perBulk(cost: number, unit: string) {
-  return unit === 'g' ? `${fmt(cost * 1000)} / kg` : unit === 'ml' ? `${fmt(cost * 1000)} / l` : `${fmt(cost)} / ${t('dona')}`
-}
-
-function Stock({ stock, today }: { stock: Record<string, number>; today: Orders }) {
-  const [amounts, setAmounts] = useState<Record<string, string>>({})
-  const used: Record<string, number> = {}
-  for (const o of today) for (const it of o.items) for (const l of it.consumption) used[l.ing] = (used[l.ing] ?? 0) + l.qty * it.qty
-
-  return (
-    <Card title={t('Ombor qoldiqlari')}>
-      <p className="-mt-2 mb-4 text-sm text-stone-500">{t("Har bir sotuvda texkarta bo'yicha avtomatik ayiriladi. Kirim qilish uchun miqdorni yozing.")}</p>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-sm">
-          <thead className="text-left text-stone-500">
-            <tr><th className="pb-2 font-medium">{t('Xomashyo')}</th><th className="pb-2 text-right font-medium">{t('Qoldiq')}</th><th className="pb-2 text-right font-medium">{t('Bugun sarf')}</th><th className="pb-2 text-right font-medium">{t('Tannarx')}</th><th className="pb-2 font-medium pl-4">{t('Holat')}</th><th className="pb-2 font-medium">{t('Kirim')}</th></tr>
-          </thead>
-          <tbody>
-            {INGREDIENTS.map((i) => {
-              const q = stock[i.id] ?? 0
-              const isLow = q < i.min
-              const amount = Number(amounts[i.id]) || 0
-              return (
-                <tr key={i.id} className="border-t border-stone-100">
-                  <td className="py-2">{i.name}</td>
-                  <td className={`py-2 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>{fmt(q)} {t(UNIT_LABEL[i.unit])}</td>
-                  <td className="py-2 text-right tabular-nums text-stone-500">{fmt(used[i.id] ?? 0)}</td>
-                  <td className="py-2 text-right text-stone-500">{perBulk(i.cost, i.unit)}</td>
-                  <td className="py-2 pl-4">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isLow ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{isLow ? t('Kam (min {n})', { n: fmt(i.min) }) : t('Yetarli')}</span>
-                  </td>
-                  <td className="py-2">
-                    <div className="flex gap-1">
-                      <input inputMode="numeric" value={amounts[i.id] ?? ''} onChange={(e) => setAmounts((a) => ({ ...a, [i.id]: e.target.value.replace(/\D/g, '') }))}
-                        placeholder={t(UNIT_LABEL[i.unit])} className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 outline-none focus:border-amber-500" />
-                      <button disabled={!amount} onClick={() => { stockMove(i.id, amount, 'intake').then(() => setAmounts((a) => ({ ...a, [i.id]: '' }))).catch((e: Error) => alert(e.message)) }}
-                        className="rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">{t("Qo'shish")}</button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Card>
   )
 }
 

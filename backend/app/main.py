@@ -917,6 +917,8 @@ def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(auth)) -> dict:
     o = ctx.db.get(Order, oid)
     if not o or o.company_id != ctx.cid:
         raise HTTPException(404, "Topilmadi")
+    if o.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan buyurtma holatini o'zgartirib bo'lmaydi")
     o.status = body.status
     if body.status == "ready":
         o.ready_at = now_ms()

@@ -101,3 +101,17 @@ def test_inventory_and_losses():
         assert rep["byNote"] == {"spill": round(100 * beans["cost"])}
         assert rep["inventories"] == 1 and rep["shortage"] == inv["shortage"]
         assert rep["items"][0]["ing"] == "beans" and rep["items"][0]["writeoffQty"] == 100
+
+
+def test_expense_isolation_and_permissions():
+    with TestClient(app) as c:
+        a = c.post("/api/auth/register", json={"companyName": "Coffee A", "slug": "company-a", "ownerName": "A", "ownerPin": "4567"})
+        b = c.post("/api/auth/register", json={"companyName": "Coffee B", "slug": "company-b", "ownerName": "B", "ownerPin": "5678"})
+        assert a.status_code == 200 and b.status_code == 200
+        ah = {"Authorization": "Bearer " + a.json()["token"]}
+        bh = {"Authorization": "Bearer " + b.json()["token"]}
+        created = c.post("/api/expenses", json={"amount": 10000, "category": "Transport", "payment": "cash"}, headers=ah)
+        assert created.status_code == 200, created.text
+        assert len(c.get("/api/expenses", headers=ah).json()) == 1
+        assert c.get("/api/expenses", headers=bh).json() == []
+        assert c.post("/api/expenses", json={"amount": -1, "category": "Bad"}, headers=ah).status_code == 422

@@ -405,6 +405,8 @@ class StockIn(BaseModel):
 
 @app.post("/api/stock")
 def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if body.reason == "intake":
+        raise HTTPException(400, "Kirim faqat nakladnoy orqali qilinadi")
     i = get_row(ctx.db, Ingredient, ctx.cid, body.ing)
     if body.reason == "count":
         if body.qty < 0:

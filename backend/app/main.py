@@ -660,6 +660,32 @@ def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
     return {"id": e.id}
 
 
+class StaffPaymentIn(BaseModel):
+    staff_id: int
+    amount: int = Field(gt=0)
+    note: str = Field(default="", max_length=256)
+
+
+@app.get("/api/staff-payments")
+def staff_payments(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(StaffPayment).where(StaffPayment.company_id == ctx.cid).order_by(StaffPayment.id.desc()).limit(250)
+    return [{"id": p.id, "staffId": p.staff_id, "amount": p.amount, "note": p.note,
+             "recordedBy": p.recorded_by, "createdAt": p.created_at} for p in ctx.db.scalars(q)]
+
+
+@app.post("/api/staff-payments")
+def add_staff_payment(body: StaffPaymentIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    member = ctx.db.get(Staff, body.staff_id)
+    if member is None or member.company_id != ctx.cid:
+        raise HTTPException(404, "Xodim topilmadi")
+    p = StaffPayment(company_id=ctx.cid, staff_id=member.id, amount=body.amount,
+                     note=body.note.strip(), recorded_by=ctx.staff.name)
+    ctx.db.add(p)
+    ctx.db.commit()
+    ctx.db.refresh(p)
+    return {"id": p.id}
+
+
 # ---------- staff ----------
 
 class StaffIn(BaseModel):

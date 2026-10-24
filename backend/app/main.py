@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import seed
@@ -56,6 +57,9 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_used BIGINT NOT NULL DEFAULT 0"))
         if "bonus_earned" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_earned BIGINT NOT NULL DEFAULT 0"))
+        if "client_key" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
 
 
 def init_db() -> None:
@@ -950,11 +954,18 @@ class OrderIn(BaseModel):
     cashGiven: int | None = Field(default=None, ge=0)
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
+    clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
 
 
 @app.post("/api/orders")
 def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     db, cid = ctx.db, ctx.cid
+    if body.clientKey:
+        existing = db.scalar(select(Order).where(
+            Order.company_id == cid, Order.client_key == body.clientKey
+        ))
+        if existing:
+            return order_out(existing)
     shift = open_shift(db, cid)
     if not shift:
         raise HTTPException(409, "Avval smenani oching")
@@ -1014,6 +1025,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     order = Order(
         company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
+        client_key=body.clientKey,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
@@ -1035,7 +1047,17 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         if key in ings:
             ings[key].stock -= qty
             db.add(StockMove(company_id=cid, ingredient=key, qty=-qty, reason="sale", order_id=order.id, staff_name=ctx.staff.name))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if body.clientKey:
+            duplicate = db.scalar(select(Order).where(
+                Order.company_id == cid, Order.client_key == body.clientKey
+            ))
+            if duplicate:
+                return order_out(duplicate)
+        raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
     return order_out(order)
 
 

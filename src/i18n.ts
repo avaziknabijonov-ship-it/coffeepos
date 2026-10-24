@@ -67,6 +67,7 @@ const RU: Record<string, string> = {
   "Nakladnoy bekor qilinsinmi? Ombor kirimi qaytariladi.": "Отменить накладную? Приход на склад будет сторнирован.",
   "Nakladnoyni bekor qilish": "Отменить накладную",
   'Barista vazifasi ham': 'Также работает бариста',
+  'Xarajat': 'Расход', 'Naqd xarajat smena kassasidan ayriladi.': 'Наличные расходы вычитаются из кассы смены.',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

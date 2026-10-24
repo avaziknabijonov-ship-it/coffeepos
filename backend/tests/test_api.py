@@ -120,3 +120,48 @@ def test_expense_isolation_and_permissions():
         assert len(c.get("/api/expenses", headers=ah).json()) == 1
         assert c.get("/api/expenses", headers=bh).json() == []
         assert c.post("/api/expenses", json={"amount": -1, "category": "Bad"}, headers=ah).status_code == 422
+
+
+def test_combined_cashier_barista_permission():
+    with TestClient(app) as c:
+        registered = c.post("/api/auth/register", json={
+            "companyName": "Dual Role Cafe", "slug": "dual-role-cafe",
+            "ownerName": "Owner", "ownerPin": "8751"
+        })
+        assert registered.status_code == 200, registered.text
+        owner = {"Authorization": "Bearer " + registered.json()["token"]}
+        assert c.post("/api/staff", headers=owner, json={
+            "name": "Combined", "role": "kassir", "pin": "8752", "canBarista": True
+        }).json()["canBarista"] is True
+        assert c.post("/api/staff", headers=owner, json={
+            "name": "OnlyCashier", "role": "kassir", "pin": "8753"
+        }).json()["canBarista"] is False
+        assert c.post("/api/staff", headers=owner, json={
+            "name": "OnlyBarista", "role": "barista", "pin": "8754"
+        }).status_code == 200
+        combo, regular, barista = (
+            login(c, "8752", "dual-role-cafe"),
+            login(c, "8753", "dual-role-cafe"),
+            login(c, "8754", "dual-role-cafe"),
+        )
+        assert c.post("/api/shifts/open", json={"openingCash": 0}, headers=combo).status_code == 200
+        order = c.post("/api/orders", headers=combo, json={
+            "items": [{"productId": "latte", "size": "M", "modIds": [], "qty": 1}],
+            "payment": "naqd", "cashGiven": 100000
+        })
+        assert order.status_code == 200, order.text
+        url = "/api/orders/" + order.json()["id"]
+        assert c.patch(url, headers=regular, json={"status": "preparing"}).status_code == 403
+        assert c.patch(url, headers=combo, json={"status": "preparing"}).status_code == 200
+        staff = c.get("/api/staff", headers=owner).json()
+        combined = next(x for x in staff if x["name"] == "Combined")
+        updated = c.put("/api/staff/" + str(combined["id"]), headers=owner, json={
+            "name": combined["name"], "role": "kassir", "active": True, "canBarista": False
+        })
+        assert updated.status_code == 200 and updated.json()["canBarista"] is False
+        assert c.patch(url, headers=combo, json={"status": "ready"}).status_code == 403
+        assert c.patch(url, headers=barista, json={"status": "ready"}).status_code == 200
+        assert c.post("/api/orders", headers=barista, json={
+            "items": [{"productId": "latte", "size": "M", "modIds": [], "qty": 1}],
+            "payment": "naqd", "cashGiven": 100000
+        }).status_code == 403

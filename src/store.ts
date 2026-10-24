@@ -13,6 +13,7 @@ export interface ShiftInfo {
   revenue: number
   byPayment: Partial<Record<Payment, number>>
   expectedCash: number
+  cashExpenses?: number
   difference?: number
 }
 export interface State {

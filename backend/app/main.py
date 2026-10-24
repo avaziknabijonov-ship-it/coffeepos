@@ -966,7 +966,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     earned = 0
     redeemed = 0
     if phone:
-        if not re.fullmatch(r"\\+?[0-9]{9,15}", phone):
+        if not re.fullmatch(r"\+?[0-9]{9,15}", phone):
             raise HTTPException(422, "Telefon raqami noto'g'ri")
         config = bonus_settings(db, cid)
         if config.enabled:

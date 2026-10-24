@@ -759,6 +759,54 @@ def add_staff_payment(body: StaffPaymentIn, ctx: Ctx = Depends(require(*MANAGERS
     return {"id": p.id}
 
 
+# ---------- CoffeePOS loyalty ----------
+class BonusSettingsIn(BaseModel):
+    enabled: bool
+    earn_percent: int = Field(ge=0, le=20)
+    redemption_limit_percent: int = Field(ge=0, le=50)
+
+
+def bonus_settings(db: Session, cid: int) -> BonusConfig:
+    config = db.get(BonusConfig, cid)
+    if config is None:
+        config = BonusConfig(company_id=cid, enabled=False, earn_percent=5,
+                             redemption_limit_percent=30)
+        db.add(config)
+        db.flush()
+    return config
+
+
+@app.get("/api/bonus/config")
+def bonus_config_get(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    config = bonus_settings(ctx.db, ctx.cid)
+    return {"enabled": config.enabled, "earnPercent": config.earn_percent,
+            "redemptionLimitPercent": config.redemption_limit_percent}
+
+
+@app.put("/api/bonus/config")
+def bonus_config_put(body: BonusSettingsIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    config = bonus_settings(ctx.db, ctx.cid)
+    config.enabled = body.enabled
+    config.earn_percent = body.earn_percent
+    config.redemption_limit_percent = body.redemption_limit_percent
+    ctx.db.commit()
+    return {"enabled": config.enabled, "earnPercent": config.earn_percent,
+            "redemptionLimitPercent": config.redemption_limit_percent}
+
+
+@app.get("/api/bonus/customers/{phone}")
+def bonus_customer_get(phone: str, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    if not re.fullmatch(r"\+?[0-9]{9,15}", phone):
+        raise HTTPException(422, "Telefon raqami noto'g'ri")
+    customer = ctx.db.scalar(select(Customer).where(Customer.company_id == ctx.cid,
+                                                      Customer.phone == phone))
+    config = bonus_settings(ctx.db, ctx.cid)
+    return {"phone": phone, "name": customer.name if customer else "",
+            "balance": customer.bonus_balance if customer else 0,
+            "enabled": config.enabled, "earnPercent": config.earn_percent,
+            "redemptionLimitPercent": config.redemption_limit_percent}
+
+
 # ---------- staff ----------
 
 class StaffIn(BaseModel):

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
 import { setMenu } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
@@ -22,6 +23,8 @@ export interface State {
   stock: Record<string, number>
   shift: ShiftInfo | null
   online: boolean
+  pendingCount: number
+  pendingError: string
   lang: Lang
 }
 
@@ -31,7 +34,7 @@ export const startOfToday = () => {
   return d.getTime()
 }
 
-let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true, lang: getLang() }
+let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true, pendingCount: 0, pendingError: '', lang: getLang() }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch }
@@ -57,9 +60,39 @@ export function setLang(lang: Lang) {
 
 let timer: ReturnType<typeof setInterval> | undefined
 
+const menuCache = (slug: string) => 'coffeepos-menu-cache:' + slug
+const syncCache = (slug: string) => 'coffeepos-sync-cache:' + slug
+let pushing = false
+
+async function pushPendingSales() {
+  if (pushing || !state.session) return
+  pushing = true
+  const company = state.session.company.slug
+  try {
+    for (const sale of getQueuedSales(company)) {
+      try {
+        await api<Order>('/api/orders', { body: sale.body })
+        removeQueuedSale(company, sale.clientKey)
+        set({ pendingError: '' })
+      } catch (e) {
+        set({ pendingError: (e as Error).message })
+        break
+      }
+    }
+  } finally {
+    set({ pendingCount: getQueuedSales(company).length })
+    pushing = false
+  }
+}
+
 export async function sync() {
   try {
+    await pushPendingSales()
     const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }>(`/api/sync?since=${startOfToday()}`)
+    const company = state.session?.company.slug
+    if (company) {
+      try { localStorage.setItem(syncCache(company), JSON.stringify(d)) } catch { /* cache is optional */ }
+    }
     set({ orders: d.orders, stock: d.stock, shift: d.shift, online: true })
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) logout()
@@ -67,15 +100,35 @@ export async function sync() {
   }
 }
 
-export async function refreshMenu() {
-  setMenu(await api<Menu>('/api/menu'))
+export async function refreshMenu(company = state.session?.company.slug) {
+  try {
+    const menu = await api<Menu>('/api/menu')
+    setMenu(menu)
+    if (company) {
+      try { localStorage.setItem(menuCache(company), JSON.stringify(menu)) } catch { /* cache is optional */ }
+    }
+  } catch (e) {
+    const cached = company ? localStorage.getItem(menuCache(company)) : null
+    if (!(e instanceof ApiError && e.status === 0 && cached)) throw e
+    setMenu(JSON.parse(cached) as Menu)
+    set({ online: false })
+  }
   set({ menuVersion: state.menuVersion + 1 })
 }
 
 async function start(session: Session) {
-  await refreshMenu()
+  set({ session, pendingCount: getQueuedSales(session.company.slug).length })
+  try { localStorage.setItem('coffeepos-last-session', JSON.stringify(session)) } catch { /* optional */ }
+  const cachedSync = localStorage.getItem(syncCache(session.company.slug))
+  if (cachedSync) {
+    try {
+      const d = JSON.parse(cachedSync) as { orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }
+      set({ orders: d.orders, stock: d.stock, shift: d.shift })
+    } catch { /* invalid cache */ }
+  }
+  await refreshMenu(session.company.slug)
   await sync()
-  set({ session, phase: 'ready' })
+  set({ phase: 'ready' })
   clearInterval(timer)
   timer = setInterval(sync, 2500)
 }
@@ -84,7 +137,18 @@ export async function bootstrap() {
   if (!getToken()) return set({ phase: 'login' })
   try {
     await start(await api<Session>('/api/me'))
-  } catch {
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 0) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('coffeepos-last-session') ?? 'null') as Session | null
+        if (cached && cached.company.slug === localStorage.getItem('coffeepos-company')) {
+          await start(cached)
+          return
+        }
+      } catch { /* offline session not available */ }
+      set({ phase: 'login', online: false })
+      return
+    }
     setToken(null)
     set({ phase: 'login' })
   }
@@ -114,9 +178,33 @@ export const nextNumber = () =>
   state.orders.filter((o) => o.createdAt >= startOfToday()).reduce((m, o) => Math.max(m, o.number), 0) + 1
 
 export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
-  const order = await api<Order>('/api/orders', {
-    body: { ...o, items: items.map((i) => ({ productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty })) },
-  })
+  const clientKey = crypto.randomUUID()
+  const payload = { ...o, clientKey, items: items.map((i) => ({
+    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+  })) }
+  let order: Order
+  try {
+    order = await api<Order>('/api/orders', { body: payload })
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 0 && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
+    const company = state.session.company.slug
+    const sale = queueCashSale(company, {
+      clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,
+      payment: 'naqd', cashGiven: o.cashGiven,
+    })
+    const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
+    const discount = Math.round(subtotal * o.discountPct / 100 / 100) * 100
+    order = {
+      id: 'offline:' + clientKey, number: nextNumber(), customer: o.customer,
+      items, subtotal, discount, total: subtotal - discount,
+      cost: items.reduce((sum, item) => sum + item.qty * item.unitCost, 0),
+      payment: 'naqd', cashGiven: o.cashGiven, status: 'new',
+      createdAt: sale.createdAt, readyAt: null, barista: state.session.staff.name,
+      pendingSync: true,
+    }
+    set({ online: false, pendingCount: getQueuedSales(company).length, orders: [...state.orders, order] })
+    return order
+  }
   set({ orders: [...state.orders, order] })
   void sync()
   return order

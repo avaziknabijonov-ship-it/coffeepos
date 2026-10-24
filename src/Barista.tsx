@@ -21,7 +21,7 @@ export default function Barista() {
   const { orders } = useAppState()
   const now = useNow()
   const [mobileCol, setMobileCol] = useState<Status>('new')
-  const byStatus = (s: Status) => orders.filter((o) => o.status === s).sort((a, b) => a.createdAt - b.createdAt)
+  const byStatus = (s: Status) => orders.filter((o) => o.status === s && !o.pendingSync).sort((a, b) => a.createdAt - b.createdAt)
 
   return (
     <div className="flex h-full flex-col">

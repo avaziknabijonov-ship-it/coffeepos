@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
-import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet } from 'lucide-react'
+import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet, Gift } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
 import { startOfToday, useAppState, sync } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
 import Expenses from './Expenses'
+import BonusSettings from './BonusSettings'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses' | 'bonus'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
@@ -21,8 +22,9 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'staff', label: 'Xodimlar' },
   { id: 'shifts', label: 'Smenalar' },
   { id: 'expenses', label: 'Xarajatlar' },
+  { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -63,6 +65,7 @@ export default function Admin() {
           {view === 'staff' && <StaffView />}
           {view === 'shifts' && <ShiftsView />}
           {view === 'expenses' && <Expenses />}
+          {view === 'bonus' && <BonusSettings />}
         </main>
       </div>
     </div>

@@ -165,3 +165,51 @@ def test_combined_cashier_barista_permission():
             "items": [{"productId": "latte", "size": "M", "modIds": [], "qty": 1}],
             "payment": "naqd", "cashGiven": 100000
         }).status_code == 403
+
+
+def test_idempotent_sales_and_cashier_cash_spending():
+    with TestClient(app) as c:
+        created = c.post("/api/auth/register", json={
+            "companyName": "Safe Retry Coffee", "slug": "safe-retry-coffee",
+            "ownerName": "Owner", "ownerPin": "7381"
+        })
+        assert created.status_code == 200, created.text
+        owner = {"Authorization": "Bearer " + created.json()["token"]}
+        added = c.post("/api/staff", json={
+            "name": "Cashier", "role": "kassir", "pin": "7382"
+        }, headers=owner)
+        assert added.status_code == 200, added.text
+        cashier = login(c, "7382", "safe-retry-coffee")
+        assert c.post("/api/expenses", headers=cashier, json={
+            "amount": 500, "category": "Boshqa", "payment": "cash"
+        }).status_code == 409
+        assert c.post("/api/shifts/open", headers=cashier, json={
+            "openingCash": 10000
+        }).status_code == 200
+        first_expense = c.post("/api/expenses", headers=cashier, json={
+            "amount": 5000, "category": "Transport", "payment": "cash"
+        })
+        assert first_expense.status_code == 200, first_expense.text
+        assert c.get("/api/sync", headers=cashier).json()["shift"]["expectedCash"] == 5000
+        assert c.post("/api/expenses", headers=cashier, json={
+            "amount": 2000, "category": "Transport", "payment": "card"
+        }).status_code == 200
+        assert c.get("/api/sync", headers=cashier).json()["shift"]["expectedCash"] == 5000
+        stock0 = c.get("/api/sync", headers=cashier).json()["stock"]["beans"]
+        payload = {
+            "clientKey": "offline-retry-tx-00001",
+            "items": [{"productId": "latte", "size": "M", "modIds": [], "qty": 1}],
+            "payment": "naqd", "cashGiven": 50000
+        }
+        created_order = c.post("/api/orders", headers=cashier, json=payload)
+        assert created_order.status_code == 200, created_order.text
+        duplicate = c.post("/api/orders", headers=cashier, json=payload)
+        assert duplicate.status_code == 200, duplicate.text
+        assert created_order.json()["id"] == duplicate.json()["id"]
+        stock_after = c.get("/api/sync", headers=cashier).json()["stock"]["beans"]
+        assert stock_after < stock0
+        assert len(c.get("/api/sync", headers=cashier).json()["orders"]) == 1
+        finance = c.get("/api/reports/finance?days=7", headers=owner)
+        assert finance.status_code == 200, finance.text
+        assert finance.json()["expenses"] == 7000
+        assert finance.json()["orders"] == 1

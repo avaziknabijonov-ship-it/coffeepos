@@ -242,12 +242,11 @@ function Cart(props: {
       <div className="space-y-3 border-t border-stone-200 p-4">
         <div className="flex items-center gap-2 text-sm">
           <span className="text-stone-500">{t('Chegirma')}</span>
-          {[0, 5, 10].map((p) => (
-            <button key={p} onClick={() => props.setDiscountPct(p)}
-              className={`rounded-lg px-3 py-1.5 font-medium ${props.discountPct === p ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>
-              {p === 0 ? t("Yo'q") : `${p}%`}
-            </button>
-          ))}
+          <input aria-label={t('Chegirma foizi')} type="number" inputMode="numeric"
+            min={0} max={50} step={1} value={props.discountPct}
+            onChange={e => props.setDiscountPct(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))}
+            className="w-20 rounded-lg border border-stone-200 px-3 py-2 text-center font-semibold" />
+          <span className="font-semibold">%</span>
         </div>
         {props.bonusRedeem > 0 && <div className="flex justify-between text-sm text-amber-700"><span>{t('Bonus ishlatildi')}</span><span>−{som(props.bonusRedeem)}</span></div>}
         {props.discount > 0 && (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
-import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign } from 'lucide-react'
+import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
@@ -10,10 +10,11 @@ import Expenses from './Expenses'
 import BonusSettings from './BonusSettings'
 import Finance from './Finance'
 import Payroll from './Payroll'
+import PrinterSettings from './PrinterSettings'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll'
+type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
@@ -26,9 +27,10 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'expenses', label: 'Xarajatlar' },
   { id: 'finance', label: 'Moliya hisoboti' },
   { id: 'payroll', label: 'Oylik hisobi' },
+  { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -72,6 +74,7 @@ export default function Admin() {
           {view === 'bonus' && <BonusSettings />}
           {view === 'finance' && <Finance />}
           {view === 'payroll' && <Payroll />}
+          {view === 'printer' && <PrinterSettings />}
         </main>
       </div>
     </div>

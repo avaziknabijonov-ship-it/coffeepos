@@ -1130,6 +1130,54 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
         out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
     return out
 
+# ---------- management financial snapshot ----------
+@app.get("/api/reports/finance")
+def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Cash-accounting approximation, not formal net profit or tax reporting."""
+    days = max(1, min(days, 92))
+    start = start_of_day_ms(days - 1)
+    db, cid = ctx.db, ctx.cid
+    orders = db.scalars(select(Order).where(
+        Order.company_id == cid, Order.created_at >= start,
+        Order.status != "cancelled",
+    )).all()
+    expenses = db.scalars(select(Expense).where(
+        Expense.company_id == cid, Expense.created_at >= start,
+    )).all()
+    wages = db.scalars(select(StaffPayment).where(
+        StaffPayment.company_id == cid, StaffPayment.created_at >= start,
+    )).all()
+    by_payment: dict[str, int] = {}
+    for o in orders:
+        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+
+    daily = []
+    for d in range(days - 1, -1, -1):
+        lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
+        day_sales = [o for o in orders if lo <= o.created_at < hi]
+        day_expenses = sum(e.amount for e in expenses if lo <= e.created_at < hi)
+        day_wages = sum(w.amount for w in wages if lo <= w.created_at < hi)
+        revenue = sum(o.total for o in day_sales)
+        cogs = sum(o.cost for o in day_sales)
+        daily.append({
+            "day": lo, "orders": len(day_sales), "revenue": revenue,
+            "cogs": cogs, "grossProfit": revenue - cogs,
+            "expenses": day_expenses, "staffPayments": day_wages,
+            "operatingBalance": revenue - cogs - day_expenses - day_wages,
+        })
+    def total(key: str) -> int:
+        return sum(day[key] for day in daily)
+    return {
+        "days": days, "start": start,
+        "orders": total("orders"), "revenue": total("revenue"),
+        "cogs": total("cogs"), "grossProfit": total("grossProfit"),
+        "expenses": total("expenses"), "staffPayments": total("staffPayments"),
+        "operatingBalance": total("operatingBalance"),
+        "byPayment": by_payment, "daily": daily,
+        "note": "Tax, supplier debts, pending salaries and other liabilities are not included.",
+    }
+
+
 # ---------- platform owner (disabled until SUPERADMIN_KEY is configured) ----------
 def require_superadmin(x_superadmin_key: str = Header(default="")) -> None:
     expected = os.environ.get("SUPERADMIN_KEY", "")

@@ -121,6 +121,9 @@ class Order(Base):
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"), index=True)
     number: Mapped[int] = mapped_column(Integer)
     customer: Mapped[str] = mapped_column(String(64), default="")
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
+    bonus_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    bonus_earned: Mapped[int] = mapped_column(BigInteger, default=0)
     items: Mapped[list] = mapped_column(JSON)
     subtotal: Mapped[int] = mapped_column(BigInteger)
     discount: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -212,3 +215,32 @@ class StaffPayment(Base):
     note: Mapped[str] = mapped_column(String(256), default="")
     recorded_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+class Customer(Base):
+    __tablename__ = "customers"
+    __table_args__ = (UniqueConstraint("company_id", "phone"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    phone: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(64), default="")
+    bonus_balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class BonusConfig(Base):
+    __tablename__ = "bonus_configs"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    earn_percent: Mapped[int] = mapped_column(Integer, default=5)
+    redemption_limit_percent: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class BonusLedger(Base):
+    __tablename__ = "bonus_ledger"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

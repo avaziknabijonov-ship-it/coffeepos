@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api } from './api'
+import CashExpense from './CashExpense'
 import { t } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -34,6 +35,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<Order | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
+  const [expenseOpen, setExpenseOpen] = useState(false)
 
   const products = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -115,6 +117,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />
             {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
+          <button onClick={() => setExpenseOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Xarajat')}</button>
           <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
           </div>
           <div className="-mx-3 flex gap-2 overflow-x-auto px-3 md:hidden">
@@ -164,6 +167,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { addToCart(it); setModal(null) }} />}
       {paying && <PaymentModal total={total} onClose={() => setPaying(false)} onConfirm={confirmPayment} />}
       {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
+      {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
     </div>
   )
 }

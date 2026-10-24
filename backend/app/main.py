@@ -930,6 +930,8 @@ class OrderIn(BaseModel):
     discountPct: int = Field(default=0, ge=0, le=100)
     payment: Literal["naqd", "karta", "payme", "click"]
     cashGiven: int | None = Field(default=None, ge=0)
+    customerPhone: str = Field(default="", max_length=20)
+    bonusRedeem: int = Field(default=0, ge=0)
 
 
 @app.post("/api/orders")
@@ -959,6 +961,32 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
     discount = round(subtotal * body.discountPct / 100 / 100) * 100
     total = subtotal - discount
+    phone = body.customerPhone.strip()
+    customer = None
+    earned = 0
+    redeemed = 0
+    if phone:
+        if not re.fullmatch(r"\\+?[0-9]{9,15}", phone):
+            raise HTTPException(422, "Telefon raqami noto'g'ri")
+        config = bonus_settings(db, cid)
+        if config.enabled:
+            customer = db.scalar(select(Customer).where(
+                Customer.company_id == cid, Customer.phone == phone).with_for_update())
+            if customer is None:
+                customer = Customer(company_id=cid, phone=phone, name=body.customer.strip())
+                db.add(customer)
+                db.flush()
+            limit = (total * config.redemption_limit_percent) // 100
+            if body.bonusRedeem > customer.bonus_balance or body.bonusRedeem > limit:
+                raise HTTPException(409, "Bonus yetarli emas yoki limit oshirilgan")
+            redeemed = body.bonusRedeem
+            total -= redeemed
+            earned = (total * config.earn_percent) // 100
+            customer.bonus_balance += earned - redeemed
+        elif body.bonusRedeem:
+            raise HTTPException(409, "Bonus tizimi o'chirilgan")
+    elif body.bonusRedeem:
+        raise HTTPException(422, "Bonus ishlatish uchun mijoz telefoni kerak")
     if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
         raise HTTPException(400, "Berilgan pul yetarli emas")
 
@@ -967,12 +995,20 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     ).all()
     order = Order(
         company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
+        customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
     )
     db.add(order)
     db.flush()
+    if customer is not None:
+        if redeemed:
+            db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
+                               amount=-redeemed, reason="redeem"))
+        if earned:
+            db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
+                               amount=earned, reason="earn"))
     used: dict[str, float] = {}
     for it in items:
         for line in it["consumption"]:
@@ -1006,6 +1042,19 @@ def cancel_order(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
             ctx.db.add(StockMove(company_id=ctx.cid, ingredient=move.ingredient,
                                  qty=-move.qty, reason="return", order_id=order.id,
                                  staff_name=ctx.staff.name))
+    if order.customer_id is not None:
+        customer = ctx.db.scalar(select(Customer).where(
+            Customer.id == order.customer_id, Customer.company_id == ctx.cid).with_for_update())
+        if customer is not None:
+            if customer.bonus_balance < order.bonus_earned:
+                raise HTTPException(409, "Mijoz bonusdan foydalangan. Avval bonus hisobini tekshiring")
+            customer.bonus_balance += order.bonus_used - order.bonus_earned
+            if order.bonus_earned:
+                ctx.db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id,
+                                       order_id=order.id, amount=-order.bonus_earned, reason="cancel_earn"))
+            if order.bonus_used:
+                ctx.db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id,
+                                       order_id=order.id, amount=order.bonus_used, reason="cancel_redeem"))
     order.status = "cancelled"
     ctx.db.commit()
     return order_out(order)

@@ -17,7 +17,7 @@ import { bootstrap, logout, useAppState } from './store'
 type Tab = 'kassa' | 'barista' | 'display' | 'admin'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir'] },
-  { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'kassir', 'barista'] },
+  { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'barista'] },
   { id: 'display', label: 'Mijoz ekrani', icon: Monitor, roles: ['owner', 'admin', 'kassir', 'barista'] },
   { id: 'admin', label: 'Admin', icon: LayoutDashboard, roles: ['owner', 'admin'] },
 ]

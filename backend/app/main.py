@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, Category, Company, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -43,6 +43,14 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_at BIGINT"))
         if "cancelled_by" not in purchase_columns:
             conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_by VARCHAR(64)"))
+    order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
+    with engine.begin() as conn:
+        if "customer_id" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN customer_id INTEGER"))
+        if "bonus_used" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_used BIGINT NOT NULL DEFAULT 0"))
+        if "bonus_earned" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_earned BIGINT NOT NULL DEFAULT 0"))
 
 
 def init_db() -> None:
@@ -126,6 +134,7 @@ def order_out(o: Order) -> dict:
         "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
+        "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name,
     }
 

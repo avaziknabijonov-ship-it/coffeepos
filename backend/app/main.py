@@ -24,6 +24,7 @@ TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
 Role = Literal["owner", "admin", "kassir", "barista"]
 MANAGERS = ("owner", "admin")
 CASHIERS = ("owner", "admin", "kassir")
+BARISTAS = ("owner", "admin", "barista")
 
 
 
@@ -1065,17 +1066,21 @@ class StatusIn(BaseModel):
 
 
 @app.patch("/api/orders/{oid}")
-def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(auth)) -> dict:
-    o = ctx.db.get(Order, oid)
-    if not o or o.company_id != ctx.cid:
+def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(require(*BARISTAS))) -> dict:
+    # Only barista (or a supervisor) can advance preparation stages.
+    order = ctx.db.scalar(select(Order).where(
+        Order.id == oid, Order.company_id == ctx.cid
+    ).with_for_update())
+    if order is None:
         raise HTTPException(404, "Topilmadi")
-    if o.status == "cancelled":
-        raise HTTPException(409, "Bekor qilingan buyurtma holatini o'zgartirib bo'lmaydi")
-    o.status = body.status
+    allowed = {"new": "preparing", "preparing": "ready", "ready": "done"}
+    if allowed.get(order.status) != body.status:
+        raise HTTPException(409, "Buyurtma holatini faqat keyingi bosqichga o'tkazish mumkin")
+    order.status = body.status
     if body.status == "ready":
-        o.ready_at = now_ms()
+        order.ready_at = now_ms()
     ctx.db.commit()
-    return order_out(o)
+    return order_out(order)
 
 
 @app.get("/api/sync")

@@ -91,13 +91,13 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
   const profit = revenue - cost
-  const avg = today.length ? revenue / today.length : 0
+  const avg = active.length ? revenue / active.length : 0
 
-  const orderHours = today.map((o) => new Date(o.createdAt).getHours())
+  const orderHours = active.map((o) => new Date(o.createdAt).getHours())
   const firstHour = Math.min(8, ...orderHours)
   const lastHour = Math.max(22, ...orderHours)
   const hours = Array.from({ length: lastHour - firstHour + 1 }, (_, i) => firstHour + i)
-  const byHour = hours.map((h) => today.filter((o) => new Date(o.createdAt).getHours() === h).reduce((s, o) => s + o.total, 0))
+  const byHour = hours.map((h) => active.filter((o) => new Date(o.createdAt).getHours() === h).reduce((s, o) => s + o.total, 0))
   const maxHour = Math.max(1, ...byHour)
 
   const [daily, setDaily] = useState<{ day: number; revenue: number }[]>([])
@@ -108,7 +108,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   const maxWeek = Math.max(1, ...week.map((w) => w.value))
 
   const top = Object.values(
-    today.flatMap((o) => o.items).reduce<Record<string, { name: string; qty: number; revenue: number; profit: number }>>((acc, it) => {
+    active.flatMap((o) => o.items).reduce<Record<string, { name: string; qty: number; revenue: number; profit: number }>>((acc, it) => {
       const r = (acc[it.productId] ??= { name: it.name, qty: 0, revenue: 0, profit: 0 })
       r.qty += it.qty
       r.revenue += it.unitPrice * it.qty
@@ -117,7 +117,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
     }, {}),
   ).sort((a, b) => b.qty - a.qty).slice(0, 6)
 
-  const payments = (Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => ({ p, sum: today.filter((o) => o.payment === p).reduce((s, o) => s + o.total, 0) }))
+  const payments = (Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => ({ p, sum: active.filter((o) => o.payment === p).reduce((s, o) => s + o.total, 0) }))
 
   return (
     <div className="space-y-5">

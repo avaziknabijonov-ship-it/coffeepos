@@ -117,9 +117,11 @@ class Shift(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"), index=True)
+    client_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     number: Mapped[int] = mapped_column(Integer)
     customer: Mapped[str] = mapped_column(String(64), default="")
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)

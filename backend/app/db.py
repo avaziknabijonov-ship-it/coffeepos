@@ -49,6 +49,7 @@ class Staff(Base):
     role: Mapped[str] = mapped_column(String(16))
     pin_hash: Mapped[str] = mapped_column(String(128))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_barista: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Category(Base):

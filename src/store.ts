@@ -187,7 +187,7 @@ export async function placeOrder(items: OrderItem[], o: { customer: string; disc
   try {
     order = await api<Order>('/api/orders', { body: payload })
   } catch (e) {
-    if (!(e instanceof ApiError && e.status === 0 && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
+    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
     const company = state.session.company.slug
     const sale = queueCashSale(company, {
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,

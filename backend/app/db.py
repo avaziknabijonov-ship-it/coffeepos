@@ -247,3 +247,18 @@ class BonusLedger(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     reason: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+class PayrollPlan(Base):
+    """Staff workdays and monthly salary set by a manager for a specific month."""
+    __tablename__ = "payroll_plans"
+    __table_args__ = (UniqueConstraint("company_id", "staff_id", "month"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff.id"), index=True)
+    month: Mapped[str] = mapped_column(String(7))
+    monthly_salary: Mapped[int] = mapped_column(BigInteger, default=0)
+    standard_days: Mapped[int] = mapped_column(Integer, default=26)
+    worked_days: Mapped[float] = mapped_column(default=0)
+    deductions: Mapped[int] = mapped_column(BigInteger, default=0)
+    note: Mapped[str] = mapped_column(String(256), default="")
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

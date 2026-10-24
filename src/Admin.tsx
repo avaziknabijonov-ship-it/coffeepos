@@ -130,7 +130,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { label: t('Bugungi tushum'), value: som(revenue) },
-          { label: t('Buyurtmalar'), value: String(today.length) },
+          { label: t('Buyurtmalar'), value: String(active.length) },
           { label: t("O'rtacha chek"), value: som(avg) },
           { label: t('Yalpi foyda'), value: som(profit), sub: `${t('marja')} ${pct(profit, revenue)}%` },
         ].map((m) => (

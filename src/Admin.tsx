@@ -17,7 +17,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
-  { id: 'orders', label: 'Buyurtmalar' },
+  { id: 'orders', label: 'Cheklar tarixi' },
   { id: 'staff', label: 'Xodimlar' },
   { id: 'shifts', label: 'Smenalar' },
   { id: 'expenses', label: 'Xarajatlar' },
@@ -246,7 +246,7 @@ function Orders({ today }: { today: Orders }) {
   const reprint = (o: Orders[number]) => { setPrinting(o); window.setTimeout(() => window.print(), 80) }
   const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
   return (
-    <Card title={t('Bugungi buyurtmalar ({n})', { n: list.length })}>
+    <Card title={t('Bugungi cheklar ({n})', { n: list.length })}>
       {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
         <h2>CoffeePOS · № {printing.number}</h2>
         <p>{new Date(printing.createdAt).toLocaleString()}</p>

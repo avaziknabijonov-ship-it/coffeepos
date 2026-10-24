@@ -729,7 +729,9 @@ def expenses(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
 
 
 @app.post("/api/expenses")
-def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    if ctx.staff.role == "kassir" and open_shift(ctx.db, ctx.cid) is None:
+        raise HTTPException(409, "Xarajat kiritish uchun smena ochiq bo'lishi kerak")
     e = Expense(company_id=ctx.cid, amount=body.amount, category=body.category.strip(),
                 description=body.description.strip(), payment=body.payment, staff_name=ctx.staff.name)
     ctx.db.add(e)
@@ -879,12 +881,21 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     by_payment: dict[str, int] = {}
     for o in orders:
         by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    # Cash expenses reduce the physically expected register balance.
+    cutoff = shift.closed_at if shift.closed_at is not None else now_ms()
+    cash_spent = sum(row.amount for row in db.scalars(select(Expense).where(
+        Expense.company_id == shift.company_id,
+        Expense.payment == "cash",
+        Expense.created_at >= shift.opened_at,
+        Expense.created_at <= cutoff,
+    )))
     return {
         "shift": shift_out(shift),
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0),
+        "cashExpenses": cash_spent,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent,
     }
 
 

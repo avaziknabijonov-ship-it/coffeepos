@@ -44,7 +44,12 @@ def test_full_flow():
         bad = {**order, "items": [{"productId": "espresso", "size": "-", "modIds": ["milk-almond"]}]}
         assert c.post("/api/orders", json=bad, headers=kassir).status_code == 400
 
+        assert c.post("/api/orders", json=order, headers=barista).status_code == 403
+        assert c.patch(f"/api/orders/{o['id']}", json={"status": "preparing"}, headers=kassir).status_code == 403
+        assert c.patch(f"/api/orders/{o['id']}", json={"status": "ready"}, headers=barista).status_code == 409
+        assert c.patch(f"/api/orders/{o['id']}", json={"status": "preparing"}, headers=barista).status_code == 200
         assert c.patch(f"/api/orders/{o['id']}", json={"status": "ready"}, headers=barista).json()["readyAt"]
+        assert c.patch(f"/api/orders/{o['id']}", json={"status": "done"}, headers=barista).status_code == 200
 
         assert c.patch("/api/products/latte/active", json={"active": False}, headers=kassir).status_code == 200
         assert c.post("/api/orders", json=order, headers=kassir).status_code == 400

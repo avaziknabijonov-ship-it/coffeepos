@@ -464,6 +464,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
             </>
           )}
           <div className="mt-2 text-center text-stone-500">{t('Rahmat! Yana keling.')}</div>
+          <div className="mt-2 border-t border-dashed border-stone-300 pt-2 text-center text-[10px] font-bold">{t('Bu fiskal chek emas.')} </div>
         </div>
         <div className="flex gap-2 p-5 pt-0">
           <button onClick={() => window.print()} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 font-semibold hover:bg-stone-200"><Printer className="size-4" />{t('Chek')}</button>

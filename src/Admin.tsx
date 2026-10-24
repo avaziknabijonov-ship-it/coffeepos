@@ -87,7 +87,7 @@ function Card({ title, children, className = '' }: { title?: string; children: R
 }
 
 function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goStock: () => void }) {
-  const active = today.filter(o => o.status !== 'cancelled')
+  const active = today.filter(o => o.status !== 'cancelled' && !o.pendingSync)
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
   const profit = revenue - cost

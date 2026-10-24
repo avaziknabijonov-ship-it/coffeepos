@@ -8,6 +8,7 @@ import Barista from './Barista'
 import Display from './Display'
 import Admin from './Admin'
 import Login from './Login'
+import Superadmin from './Superadmin'
 import { CloseShiftModal } from './Shift'
 import { ROLE_LABEL } from './data'
 import type { Role } from './data'
@@ -28,7 +29,10 @@ const fromHash = (): Tab | null => {
 void bootstrap()
 
 export default function App() {
+  const [platform, setPlatform] = useState(() => window.location.hash === '#superadmin')
+  useEffect(() => { const onHash = () => setPlatform(window.location.hash === '#superadmin'); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash) }, [])
   const { phase, session } = useAppState()
+  if (platform) return <Superadmin />
   if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">{t('Yuklanmoqda…')}</div>
   if (phase === 'login' || !session) return <Login />
   return <Main role={session.staff.role} />

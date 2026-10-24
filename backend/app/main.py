@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -768,6 +768,86 @@ def add_staff_payment(body: StaffPaymentIn, ctx: Ctx = Depends(require(*MANAGERS
     ctx.db.commit()
     ctx.db.refresh(p)
     return {"id": p.id}
+
+
+# ---------- staff salary and advance accounting ----------
+class PayrollPlanIn(BaseModel):
+    monthly_salary: int = Field(ge=0, le=1_000_000_000)
+    standard_days: int = Field(default=26, ge=1, le=31)
+    worked_days: float = Field(default=0, ge=0, le=31)
+    deductions: int = Field(default=0, ge=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=256)
+
+
+def month_bounds(month: str) -> tuple[int, int]:
+    if not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month):
+        raise HTTPException(422, "Oy YYYY-MM formatida bo'lishi kerak")
+    y, m = [int(v) for v in month.split("-")]
+    if not 2000 <= y <= 2100:
+        raise HTTPException(422, "Yil noto'g'ri")
+    lo = datetime(y, m, 1, tzinfo=TZ)
+    hi = datetime(y + 1, 1, 1, tzinfo=TZ) if m == 12 else datetime(y, m + 1, 1, tzinfo=TZ)
+    return int(lo.timestamp() * 1000), int(hi.timestamp() * 1000)
+
+
+@app.get("/api/payroll")
+def payroll_get(month: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    lo, hi = month_bounds(month)
+    db, cid = ctx.db, ctx.cid
+    plans = {p.staff_id: p for p in db.scalars(select(PayrollPlan).where(
+        PayrollPlan.company_id == cid, PayrollPlan.month == month
+    ))}
+    payouts: dict[int, int] = {}
+    for payment in db.scalars(select(StaffPayment).where(
+        StaffPayment.company_id == cid,
+        StaffPayment.created_at >= lo,
+        StaffPayment.created_at < hi,
+    )):
+        payouts[payment.staff_id] = payouts.get(payment.staff_id, 0) + payment.amount
+    items = []
+    for person in rows(db, Staff, cid):
+        plan = plans.get(person.id)
+        salary = plan.monthly_salary if plan else 0
+        work = plan.worked_days if plan else 0
+        norm = plan.standard_days if plan else 26
+        deduct = plan.deductions if plan else 0
+        earned = round(salary * work / norm)
+        paid = payouts.get(person.id, 0)
+        balance = earned - deduct - paid
+        items.append({
+            "staffId": person.id, "name": person.name, "role": person.role,
+            "monthlySalary": salary, "standardDays": norm, "workedDays": work,
+            "deductions": deduct, "paid": paid, "earned": earned,
+            "toPay": max(0, balance), "overpaid": max(0, -balance),
+            "note": plan.note if plan else "",
+        })
+    return {"month": month, "items": items}
+
+
+@app.put("/api/payroll/{staff_id}/{month}")
+def payroll_set(staff_id: int, month: str, body: PayrollPlanIn,
+                ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    month_bounds(month)
+    person = ctx.db.get(Staff, staff_id)
+    if person is None or person.company_id != ctx.cid:
+        raise HTTPException(404, "Xodim topilmadi")
+    if body.worked_days > body.standard_days:
+        raise HTTPException(422, "Ishlangan kun me'yoridan ko'p")
+    plan = ctx.db.scalar(select(PayrollPlan).where(
+        PayrollPlan.company_id == ctx.cid,
+        PayrollPlan.staff_id == staff_id, PayrollPlan.month == month,
+    ))
+    if plan is None:
+        plan = PayrollPlan(company_id=ctx.cid, staff_id=staff_id, month=month)
+        ctx.db.add(plan)
+    plan.monthly_salary = body.monthly_salary
+    plan.standard_days = body.standard_days
+    plan.worked_days = body.worked_days
+    plan.deductions = body.deductions
+    plan.note = body.note.strip()
+    plan.updated_at = now_ms()
+    ctx.db.commit()
+    return {"ok": True, "staffId": staff_id, "month": month}
 
 
 # ---------- CoffeePOS loyalty ----------

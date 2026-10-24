@@ -44,6 +44,10 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_at BIGINT"))
         if "cancelled_by" not in purchase_columns:
             conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_by VARCHAR(64)"))
+    staff_columns = {c["name"] for c in inspect(engine).get_columns("staff")}
+    if "can_barista" not in staff_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN can_barista BOOLEAN NOT NULL DEFAULT FALSE"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
         if "customer_id" not in order_columns:
@@ -127,7 +131,7 @@ def require(*roles: str):
 # ---------- serializers ----------
 
 def staff_out(s: Staff) -> dict:
-    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active}
+    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista)}
 
 
 def order_out(o: Order) -> dict:
@@ -815,6 +819,7 @@ class StaffIn(BaseModel):
     role: Role
     pin: str | None = Field(default=None, pattern=PIN_RE)
     active: bool = True
+    canBarista: bool = False
 
 
 def guard_owner(ctx: Ctx, role: str) -> None:
@@ -834,7 +839,7 @@ def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(400, "PIN kerak")
     if pin_taken(ctx.db, ctx.cid, body.pin):
         raise HTTPException(409, "Bu PIN band")
-    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active)
+    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active, can_barista=body.canBarista if body.role == "kassir" else False)
     ctx.db.add(s)
     ctx.db.commit()
     return staff_out(s)
@@ -854,6 +859,7 @@ def update_staff(sid: int, body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))
             raise HTTPException(409, "Bu PIN band")
         s.pin_hash = hash_pin(body.pin)
     s.name, s.role, s.active = body.name.strip(), body.role, body.active
+    s.can_barista = body.canBarista if body.role == "kassir" else False
     ctx.db.commit()
     return staff_out(s)
 
@@ -1066,8 +1072,12 @@ class StatusIn(BaseModel):
 
 
 @app.patch("/api/orders/{oid}")
-def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(require(*BARISTAS))) -> dict:
-    # Only barista (or a supervisor) can advance preparation stages.
+def set_status(oid: int, body: StatusIn, ctx: Ctx = Depends(auth)) -> dict:
+    # Cashiers cannot prepare orders unless a manager explicitly grants barista access.
+    if ctx.staff.role not in BARISTAS and not (
+        ctx.staff.role == "kassir" and ctx.staff.can_barista
+    ):
+        raise HTTPException(403, "Barista vazifasi uchun ruxsat yo'q")
     order = ctx.db.scalar(select(Order).where(
         Order.id == oid, Order.company_id == ctx.cid
     ).with_for_update())

@@ -951,3 +951,86 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
         day = [o for o in orders if lo <= o.created_at < hi and o.status != "cancelled"]
         out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
     return out
+
+# ---------- platform owner (disabled until SUPERADMIN_KEY is configured) ----------
+def require_superadmin(x_superadmin_key: str = Header(default="")) -> None:
+    expected = os.environ.get("SUPERADMIN_KEY", "")
+    if len(expected) < 40:
+        raise HTTPException(503, "Superadmin sozlanmagan")
+    if not secrets.compare_digest(x_superadmin_key, expected):
+        raise HTTPException(401, "Superadmin ruxsati yo'q")
+
+
+def platform_company(c: Company, subscription: Subscription | None) -> dict:
+    return {
+        "id": c.id, "slug": c.slug, "name": c.name, "createdAt": c.created_at,
+        "subscription": None if subscription is None else {
+            "plan": subscription.plan, "status": subscription.status,
+            "expiresAt": subscription.expires_at, "updatedAt": subscription.updated_at
+        }
+    }
+
+
+@app.get("/api/superadmin/companies")
+def platform_companies(offset: int = 0, limit: int = 100, db: Session = Depends(get_db),
+                       _: None = Depends(require_superadmin)) -> dict:
+    offset, limit = max(0, offset), max(1, min(limit, 500))
+    companies = db.scalars(select(Company).order_by(Company.id).offset(offset).limit(limit)).all()
+    subscriptions = {p.company_id: p for p in db.scalars(
+        select(Subscription).where(Subscription.company_id.in_([c.id for c in companies]))
+    )} if companies else {}
+    return {"items": [platform_company(c, subscriptions.get(c.id)) for c in companies],
+            "offset": offset, "limit": limit}
+
+
+class PlatformCompanyIn(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,40}$")
+    name: str = Field(min_length=2, max_length=128)
+    owner_name: str = Field(min_length=1, max_length=64)
+    owner_pin: str = Field(pattern=r"^\d{4,6}$")
+    plan: Literal["monthly", "yearly"] = "monthly"
+    days: int = Field(default=30, ge=1, le=730)
+
+
+@app.post("/api/superadmin/companies", status_code=201)
+def platform_create_company(body: PlatformCompanyIn, db: Session = Depends(get_db),
+                            _: None = Depends(require_superadmin)) -> dict:
+    slug = body.slug.strip().lower()
+    if db.scalar(select(Company).where(Company.slug == slug)):
+        raise HTTPException(409, "Bunday login mavjud")
+    company = create_company(db, slug, body.name.strip(), body.owner_name.strip(), body.owner_pin)
+    expiry = now_ms() + body.days * 86400000
+    sub = Subscription(company_id=company.id, plan=body.plan, status="active", expires_at=expiry)
+    db.add(sub)
+    db.commit()
+    return platform_company(company, sub)
+
+
+class PlatformSubscriptionIn(BaseModel):
+    action: Literal["grant", "renew", "suspend"]
+    plan: Literal["monthly", "yearly"] = "monthly"
+    days: int = Field(default=30, ge=1, le=730)
+
+
+@app.post("/api/superadmin/companies/{slug}/subscription")
+def platform_subscription(slug: str, body: PlatformSubscriptionIn,
+                          db: Session = Depends(get_db), _: None = Depends(require_superadmin)) -> dict:
+    company = db.scalar(select(Company).where(Company.slug == slug))
+    if company is None:
+        raise HTTPException(404, "Qahvaxona topilmadi")
+    sub = db.get(Subscription, company.id)
+    if body.action == "suspend":
+        if sub is None:
+            raise HTTPException(409, "Obuna mavjud emas")
+        sub.status, sub.updated_at = "suspended", now_ms()
+    else:
+        current = now_ms()
+        base = max(current, sub.expires_at) if body.action == "renew" and sub is not None and sub.status == "active" else current
+        expiry = base + body.days * 86400000
+        if sub is None:
+            sub = Subscription(company_id=company.id, plan=body.plan, status="active", expires_at=expiry)
+            db.add(sub)
+        else:
+            sub.plan, sub.status, sub.expires_at, sub.updated_at = body.plan, "active", expiry, current
+    db.commit()
+    return platform_company(company, sub)

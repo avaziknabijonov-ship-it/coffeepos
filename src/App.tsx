@@ -39,11 +39,12 @@ export default function App() {
 }
 
 function Main({ role }: { role: Role }) {
-  const tabs = TABS.filter((t) => t.roles.includes(role))
+  const { orders, shift, session, online } = useAppState()
+  const canBarista = Boolean(session?.staff.canBarista)
+  const tabs = TABS.filter((t) => t.roles.includes(role) || (t.id === 'barista' && role === 'kassir' && canBarista))
   const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : tabs[0].id)
   const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
   const [shiftOpen, setShiftOpen] = useState(false)
-  const { orders, shift, session, online } = useAppState()
   const waiting = orders.filter((o) => o.status === 'new').length
 
   useEffect(() => {
@@ -51,7 +52,7 @@ function Main({ role }: { role: Role }) {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role])
+  }, [role, canBarista])
 
   return (
     <div className="flex h-dvh flex-col">

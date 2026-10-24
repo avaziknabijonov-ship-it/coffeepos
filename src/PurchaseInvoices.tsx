@@ -6,7 +6,7 @@ import { t } from './i18n'
 import { Plus, Trash2, FileText } from 'lucide-react'
 
 type Line = { ing: string; qty: string; unitPrice: string }
-type Invoice = { id: number; number: string; supplier: string; receivedAt: number; paymentStatus: string; total: number; lines: { name: string; qty: number; unit: string; unitPrice: number; subtotal: number }[]; note: string }
+type Invoice = { id: number; number: string; supplier: string; receivedAt: number; paymentStatus: string; status: 'active' | 'cancelled'; total: number; lines: { name: string; qty: number; unit: string; unitPrice: number; subtotal: number }[]; note: string }
 const newLine = (): Line => ({ ing: '', qty: '', unitPrice: '' })
 const localDate = () => { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - offset).toISOString().slice(0, 10) }
 
@@ -39,6 +39,15 @@ export default function PurchaseInvoices() {
     try {
       await api(editId ? `/api/purchases/${editId}` : '/api/purchases', { method: editId ? 'PUT' : 'POST', body: { number: number.trim(), supplier: supplier.trim(), received_at: new Date(date + 'T12:00:00').getTime(), ...(editId ? {} : { payment_status: paymentStatus, lines: lines.map(l => ({ ing: l.ing, qty: Number(l.qty), unit_price: Number(l.unitPrice) })) }), note } })
       setEditId(null); setNumber(''); setSupplier(''); setNote(''); setLines([newLine()])
+      await Promise.all([load(), sync(), refreshMenu()])
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const cancelInvoice = async (p: Invoice) => {
+    if (!window.confirm(t('Nakladnoy bekor qilinsinmi? Ombor kirimi qaytariladi.'))) return
+    setBusy(true); setError('')
+    try {
+      await api(`/api/purchases/${p.id}/cancel`, { method: 'POST' })
+      if (editId === p.id) cancelEdit()
       await Promise.all([load(), sync(), refreshMenu()])
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -78,8 +87,8 @@ export default function PurchaseInvoices() {
     <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
       <h2 className="mb-3 font-semibold">{t("Kirim hujjatlari tarixi")}</h2>
       {history.length === 0 ? <p className="text-sm text-stone-500">{t("Hozircha nakladnoy yo‘q.")}</p> : <div className="space-y-2">{history.map(p => <div key={p.id} className="rounded-xl border border-stone-200">
-        <button className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpened(v => v === p.id ? null : p.id)}><span><b>№ {p.number}</b> · {p.supplier} · {new Date(p.receivedAt).toLocaleDateString()}</span><span className="font-semibold">{fmt(p.total)} so‘m · {p.paymentStatus === 'paid' ? t('To‘langan') : p.paymentStatus === 'partial' ? t('Qisman to‘langan') : t('Qarz')}</span></button>
-        {opened === p.id && <div className="border-t p-3 text-sm"><div className="mb-3 flex gap-2"><button onClick={() => beginEdit(p)} className="rounded-lg border px-3 py-2">{t('Tahrirlash')}</button><button onClick={() => printInvoice(p)} className="rounded-lg border px-3 py-2">{t('Chop etish')}</button></div>{p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3 py-1"><span>{l.name} — {l.qty} {l.unit} × {fmt(l.unitPrice)}</span><b>{fmt(l.subtotal)}</b></div>)}{p.note && <p className="mt-2 text-stone-500">{p.note}</p>}</div>}
+        <button className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpened(v => v === p.id ? null : p.id)}><span><b>№ {p.number}</b> · {p.supplier} · {new Date(p.receivedAt).toLocaleDateString()}</span><span className="font-semibold">{p.status === 'cancelled' ? t('Bekor qilingan') + ' · ' : ''}{fmt(p.total)} {t("so'm")} · {p.paymentStatus === 'paid' ? t('To‘langan') : p.paymentStatus === 'partial' ? t('Qisman to‘langan') : t('Qarz')}</span></button>
+        {opened === p.id && <div className="border-t p-3 text-sm"><div className="mb-3 flex gap-2">{p.status !== 'cancelled' && <button onClick={() => beginEdit(p)} className="rounded-lg border px-3 py-2">{t('Tahrirlash')}</button>}<button onClick={() => printInvoice(p)} className="rounded-lg border px-3 py-2">{t('Chop etish')}</button>{p.status !== 'cancelled' && <button disabled={busy} onClick={() => cancelInvoice(p)} className="rounded-lg border border-red-200 px-3 py-2 text-red-700 disabled:opacity-50">{t('Nakladnoyni bekor qilish')}</button>}</div>{p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3 py-1"><span>{l.name} — {l.qty} {l.unit} × {fmt(l.unitPrice)}</span><b>{fmt(l.subtotal)}</b></div>)}{p.note && <p className="mt-2 text-stone-500">{p.note}</p>}</div>}
       </div>)}</div>}
     </section>
     <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">

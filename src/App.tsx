@@ -39,13 +39,13 @@ export default function App() {
 }
 
 function Main({ role }: { role: Role }) {
-  const { orders, shift, session, online } = useAppState()
+  const { orders, shift, session, online, pendingCount, pendingError } = useAppState()
   const canBarista = Boolean(session?.staff.canBarista)
   const tabs = TABS.filter((t) => t.roles.includes(role) || (t.id === 'barista' && role === 'kassir' && canBarista))
   const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : tabs[0].id)
   const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
   const [shiftOpen, setShiftOpen] = useState(false)
-  const waiting = orders.filter((o) => o.status === 'new').length
+  const waiting = orders.filter((o) => o.status === 'new' && !o.pendingSync).length
 
   useEffect(() => {
     const onHash = () => setTab(pick(fromHash()))
@@ -78,6 +78,9 @@ function Main({ role }: { role: Role }) {
           ))}
         </nav>
         {!online && <span title={t("Server bilan aloqa yo'q")} className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">{t("Aloqa yo'q")}</span></span>}
+        {pendingCount > 0 && <span className="rounded-lg bg-amber-500 px-2 py-1 text-xs font-bold text-stone-950" title={pendingError || t('Serverga yuborilmagan buyurtmalar')}>
+          {t('Navbatda')}: {pendingCount}
+        </span>}
         <button onClick={() => role !== 'barista' && setShiftOpen(true)} className="hidden rounded-lg px-2 py-1 text-right text-xs leading-tight text-stone-300 hover:bg-white/10 md:block">
           <div className="flex items-center justify-end gap-1.5"><span className={`size-2 rounded-full ${shift ? 'bg-emerald-400' : 'bg-red-400'}`} />{shift ? t('Smena ochiq') : t('Smena yopiq')}</div>
           <div><span className="text-white">{session?.staff.name}</span> · {t(ROLE_LABEL[role])}</div>
@@ -85,6 +88,9 @@ function Main({ role }: { role: Role }) {
         <LangSwitch />
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
+      {pendingError && pendingCount > 0 && <div role="alert" className="bg-red-50 px-3 py-2 text-center text-xs text-red-800">
+        {t('Sinxronlashda xato')}: {pendingError}
+      </div>}
       <div className="min-h-0 flex-1">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
         {tab === 'barista' && <Barista />}

@@ -438,11 +438,12 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
       <div className="flex max-h-[92dvh] w-full max-w-sm flex-col rounded-3xl bg-white" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col items-center gap-1 px-5 pt-5 text-center">
           <span className="grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check className="size-7" /></span>
-          <div className="text-lg font-bold">{t('Buyurtma #{n} qabul qilindi', { n: order.number })}</div>
-          <div className="text-sm text-stone-500">{t('Barista ekraniga yuborildi')}</div>
+          <div className="text-lg font-bold">{order.pendingSync ? t('Offline buyurtma saqlandi') : t('Buyurtma #{n} qabul qilindi', { n: order.number })}</div>
+          <div className="text-sm text-stone-500">{order.pendingSync ? t('Internet qaytgach serverga yuboriladi. Bu fiskal chek emas.') : t('Barista ekraniga yuborildi')}</div>
         </div>
         <div className="print-area mx-5 my-4 overflow-y-auto rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 font-mono text-xs">
           <div className="text-center font-bold">{company}</div>
+          {order.pendingSync && <div className="my-2 border-2 border-dashed border-amber-700 p-2 text-center font-bold">{t('OFFLINE — SERVER TASDIQLAMAGAN. FISKAL CHEK EMAS.')}</div>
           <div className="text-center text-stone-500">{new Date(order.createdAt).toLocaleDateString('ru-RU')} {time(order.createdAt)} · #{order.number}</div>
           {order.customer && <div className="mt-1 text-center">{t('Mijoz')}: {order.customer}</div>}
           <div className="my-2 border-t border-dashed border-stone-300" />

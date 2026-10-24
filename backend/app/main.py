@@ -35,6 +35,14 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
         if "inventory_id" not in have:
             conn.execute(text("ALTER TABLE stock_moves ADD COLUMN inventory_id INTEGER"))
+    purchase_columns = {c["name"] for c in inspect(engine).get_columns("purchase_invoices")}
+    with engine.begin() as conn:
+        if "status" not in purchase_columns:
+            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'"))
+        if "cancelled_at" not in purchase_columns:
+            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_at BIGINT"))
+        if "cancelled_by" not in purchase_columns:
+            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_by VARCHAR(64)"))
 
 
 def init_db() -> None:
@@ -454,6 +462,7 @@ def purchase_out(p: PurchaseInvoice) -> dict:
         "receivedAt": p.received_at, "paymentStatus": p.payment_status,
         "note": p.note, "lines": p.lines, "total": p.total,
         "staff": p.staff_name, "createdAt": p.created_at,
+        "status": p.status, "cancelledAt": p.cancelled_at, "cancelledBy": p.cancelled_by,
     }
 
 
@@ -475,6 +484,8 @@ def update_purchase_details(purchase_id: int, body: PurchaseDetailsUpdate, ctx: 
     inv = ctx.db.get(PurchaseInvoice, purchase_id)
     if inv is None or inv.company_id != ctx.cid:
         raise HTTPException(404, "Nakladnoy topilmadi")
+    if inv.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan nakladnoyni tahrirlab bo'lmaydi")
     duplicate = ctx.db.scalar(select(PurchaseInvoice).where(
         PurchaseInvoice.company_id == ctx.cid,
         PurchaseInvoice.number == body.number.strip(),
@@ -487,6 +498,41 @@ def update_purchase_details(purchase_id: int, body: PurchaseDetailsUpdate, ctx: 
     inv.received_at = body.received_at
     inv.note = body.note.strip()
     ctx.db.commit()
+    return purchase_out(inv)
+
+
+@app.post("/api/purchases/{purchase_id}/cancel")
+def cancel_purchase(purchase_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    db = ctx.db
+    inv = db.scalar(select(PurchaseInvoice).where(
+        PurchaseInvoice.company_id == ctx.cid, PurchaseInvoice.id == purchase_id
+    ).with_for_update())
+    if inv is None:
+        raise HTTPException(404, "Nakladnoy topilmadi")
+    if inv.status != "active":
+        raise HTTPException(409, "Nakladnoy allaqachon bekor qilingan")
+    ingredients = {i.key: i for i in db.scalars(select(Ingredient).where(
+        Ingredient.company_id == ctx.cid
+    ).with_for_update())}
+    for line in inv.lines:
+        ing = ingredients.get(line["ing"])
+        if ing is None or ing.stock + 0.000001 < line["qty"]:
+            raise HTTPException(409, "Omborda yetarli qoldiq yo'q; avval inventarizatsiya qiling")
+    for line in inv.lines:
+        ing = ingredients[line["ing"]]
+        before = ing.stock
+        qty = line["qty"]
+        remaining = before - qty
+        if remaining > 0.000001:
+            ing.cost = max(0.0, (before * ing.cost - qty * line["unitPrice"]) / remaining)
+        ing.stock = max(0.0, remaining)
+        db.add(StockMove(company_id=ctx.cid, ingredient=ing.key, qty=-qty,
+                         reason="purchase_cancel", staff_name=ctx.staff.name,
+                         note=str(inv.id)[:32]))
+    inv.status = "cancelled"
+    inv.cancelled_at = now_ms()
+    inv.cancelled_by = ctx.staff.name
+    db.commit()
     return purchase_out(inv)
 
 

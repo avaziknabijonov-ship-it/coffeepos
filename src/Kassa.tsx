@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { api } from './api'
 import { t } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -15,6 +16,7 @@ const CAT_TINT: Record<string, string> = {
   tea: 'bg-emerald-100 text-emerald-800',
   dessert: 'bg-rose-100 text-rose-800',
 }
+type BonusSnapshot = { phone: string; name: string; balance: number; enabled: boolean; earnPercent: number; redemptionLimitPercent: number }
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
 export default function Kassa({ onShift }: { onShift: () => void }) {
@@ -23,6 +25,10 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<OrderItem[]>([])
   const [customer, setCustomer] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [bonusInfo, setBonusInfo] = useState<BonusSnapshot | null>(null)
+  const [bonusError, setBonusError] = useState('')
+  const [bonusRedeem, setBonusRedeem] = useState(0)
   const [discountPct, setDiscountPct] = useState(0)
   const [modal, setModal] = useState<Product | null>(null)
   const [paying, setPaying] = useState(false)
@@ -37,7 +43,9 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 
   const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.qty, 0)
   const discount = Math.round((subtotal * discountPct) / 100 / 100) * 100
-  const total = subtotal - discount
+  const maxRedeem = bonusInfo?.enabled ? Math.min(bonusInfo.balance, Math.floor((subtotal - discount) * bonusInfo.redemptionLimitPercent / 100)) : 0
+  const effectiveBonus = Math.min(bonusRedeem, maxRedeem)
+  const total = subtotal - discount - effectiveBonus
   const count = cart.reduce((s, i) => s + i.qty, 0)
 
   const addToCart = (item: OrderItem) =>
@@ -51,20 +59,32 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     setCart([])
     setCustomer('')
     setDiscountPct(0)
+    setCustomerPhone('')
+    setBonusInfo(null)
+    setBonusRedeem(0)
+    setBonusError('')
   }
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
   const confirmPayment = async (payment: Payment, cashGiven?: number) => {
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven })
+    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven,
+      customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus })
     setPaying(false)
     setCartOpen(false)
     clear()
     setReceipt(order)
   }
 
+  const loadBonus = async () => {
+    setBonusError(''); setBonusInfo(null); setBonusRedeem(0)
+    try { setBonusInfo(await api<BonusSnapshot>('/api/bonus/customers/' + encodeURIComponent(customerPhone.trim()))) }
+    catch (e) { setBonusError((e as Error).message) }
+  }
   const cartPanel = (
     <Cart
       number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
+      customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
+      bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
       changeQty={changeQty} clear={clear} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
@@ -150,6 +170,9 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 
 function Cart(props: {
   number: number; cart: OrderItem[]; customer: string; setCustomer: (v: string) => void
+  customerPhone: string; setCustomerPhone: (v: string) => void
+  bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
+  setBonusRedeem: (v: number) => void; loadBonus: () => void
   discountPct: number; setDiscountPct: (v: number) => void; subtotal: number; discount: number; total: number
   changeQty: (key: string, d: number) => void; clear: () => void; onPay: () => void; onClose?: () => void
 }) {
@@ -173,6 +196,20 @@ function Cart(props: {
       <div className="px-4 pt-3">
         <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder={t('Mijoz ismi (stakan uchun)')}
           className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 outline-none focus:border-amber-500" />
+      </div>
+      <div className="space-y-2 px-4 pt-2">
+        <div className="flex gap-2">
+          <input value={props.customerPhone} onChange={e=>props.setCustomerPhone(e.target.value)}
+            placeholder={t('Mijoz telefoni (bonus)')} inputMode="tel" autoComplete="off"
+            className="min-w-0 flex-1 rounded-xl border border-stone-200 px-3 py-2 text-sm" />
+          <button onClick={props.loadBonus} disabled={!props.customerPhone.trim()}
+            className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-40">{t('Tekshirish')}</button>
+        </div>
+        {props.bonusError && <p role="alert" className="text-xs text-red-600">{props.bonusError}</p>}
+        {props.bonusInfo?.enabled && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 p-2 text-xs">
+          <span>{t('Bonus qoldig‘i')}: {som(props.bonusInfo.balance)}</span>
+          <label>{t('Ishlatish')} <input className="w-24 rounded border bg-white p-1" type="number" min={0} max={props.maxRedeem} step={1} value={props.bonusRedeem} onChange={e => props.setBonusRedeem(Math.max(0, Math.min(Number(e.target.value) || 0, props.maxRedeem)))} /></label>
+        </div>}
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {cart.length === 0 && (
@@ -208,6 +245,7 @@ function Cart(props: {
             </button>
           ))}
         </div>
+        {props.bonusRedeem > 0 && <div className="flex justify-between text-sm text-amber-700"><span>{t('Bonus ishlatildi')}</span><span>−{som(props.bonusRedeem)}</span></div>}
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">
             <div className="flex justify-between"><span>{t('Oraliq summa')}</span><span>{som(props.subtotal)}</span></div>

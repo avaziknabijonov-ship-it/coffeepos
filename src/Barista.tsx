@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { t } from './i18n'
+import { t, tCatalogName } from './i18n'
 import { Clock } from 'lucide-react'
 import { STATUS_LABEL } from './data'
 import type { Order, Status } from './data'
@@ -69,7 +69,7 @@ function Ticket({ order, now, action, tone, onAction }: { order: Order; now: num
       <ul className="my-3 space-y-1.5">
         {order.items.map((it) => (
           <li key={it.key}>
-            <span className="font-semibold">{it.qty}× {it.name}</span>{it.size && <span className="ml-1 rounded bg-stone-100 px-1.5 text-sm font-semibold">{it.size}</span>}
+            <span className="font-semibold">{it.qty}× {tCatalogName(it.name)}</span>{it.size && <span className="ml-1 rounded bg-stone-100 px-1.5 text-sm font-semibold">{it.size}</span>}
             {it.mods.length > 0 && <div className="text-sm text-stone-600">{it.mods.join(' · ')}</div>}
           </li>
         ))}

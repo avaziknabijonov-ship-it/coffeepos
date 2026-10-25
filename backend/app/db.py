@@ -50,6 +50,8 @@ class Staff(Base):
     pin_hash: Mapped[str] = mapped_column(String(128))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     can_barista: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_cancel_orders: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_reprint_receipts: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Category(Base):

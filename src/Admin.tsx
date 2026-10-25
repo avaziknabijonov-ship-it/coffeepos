@@ -230,6 +230,12 @@ function Recipes() {
   if (!p) return <Card><p className="text-stone-500">{t("Menyu bo'sh.")}</p></Card>
   return (
     <div className="space-y-4">
+      <div className="flex justify-end"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-texkarta',
+        ['Mahsulot','O‘lcham','Hajm','Xomashyo','Miqdor','Birlik','Xomashyo tannarxi','Sotuv narxi'],
+        PRODUCTS.flatMap(product => product.sizes.flatMap(size => size.recipe.map(line =>
+          [product.name,size.label,size.volume ?? '',ING[line.ing]?.name ?? line.ing,line.qty,
+           ING[line.ing] ? UNIT_LABEL[ING[line.ing].unit] : '',Math.round(line.qty*(ING[line.ing]?.cost ?? 0)),size.price]))))}
+        >{t('Excelga eksport')}</button></div>
       <div className="flex flex-wrap gap-2">
         {PRODUCTS.map((x) => (
           <button key={x.id} onClick={() => setPid(x.id)} className={`rounded-full px-3 py-1.5 text-sm font-medium ${x.id === pid ? 'bg-stone-900 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{x.name}</button>

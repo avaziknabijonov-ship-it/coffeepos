@@ -308,6 +308,14 @@ def add_category(body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     return {"id": cat.key, "name": cat.name}
 
 
+@app.put("/api/categories/{key}")
+def rename_category(key: str, body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cat = get_row(ctx.db, Category, ctx.cid, key)
+    cat.name = body.name.strip()
+    ctx.db.commit()
+    return {"id": cat.key, "name": cat.name}
+
+
 @app.delete("/api/categories/{key}")
 def delete_category(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     cat = get_row(ctx.db, Category, ctx.cid, key)

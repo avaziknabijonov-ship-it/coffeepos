@@ -52,6 +52,12 @@ export function MenuEditor() {
                     <ChevronDown className={`size-4 ${expandedCats.includes(c.id) ? '' : '-rotate-90'}`} />
                     {c.name} <span className="rounded-full bg-stone-100 px-2 text-xs">{list.length}</span>
                   </button>
+                  <button aria-label={t('Kategoriya nomini o‘zgartirish')} title={t('Nomini o‘zgartirish')}
+                    className="rounded-lg px-2 py-1 text-stone-600 hover:bg-stone-100"
+                    onClick={() => {
+                      const name = prompt(t('Yangi kategoriya nomi'), c.name)
+                      if (name && name.trim() && name.trim() !== c.name) void run(() => api(`/api/categories/${encodeURIComponent(c.id)}`, { method: 'PUT', body: { name: name.trim() } }))
+                    }}><Pencil className="size-4" /></button>
                   {list.length === 0 && (
                     <button aria-label={t("Kategoriyani o'chirish")} onClick={() => run(() => api(`/api/categories/${c.id}`, { method: 'DELETE' }))} className="text-stone-400 hover:text-red-600"><Trash2 className="size-4" /></button>
                   )}

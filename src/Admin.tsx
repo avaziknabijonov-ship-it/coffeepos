@@ -280,14 +280,16 @@ function Orders({ today }: { today: Orders }) {
   const [printing, setPrinting] = useState<Orders[number] | null>(null)
   const [actionError, setActionError] = useState('')
   const cancel = async (o: Orders[number]) => {
-    if (!window.confirm(t('Buyurtma bekor qilinsinmi?'))) return
-    try { await api('/api/orders/' + o.id + '/cancel', { method: 'POST' }); await sync() }
+    const reason = window.prompt('Otmena sababi (kamida 3 ta belgi):')
+    if (!reason || reason.trim().length < 3) return
+    try { await api('/api/orders/' + o.id + '/cancel', { method: 'POST', body: { reason: reason.trim() } }); await sync() }
     catch (e) { setActionError((e as Error).message) }
   }
   const reprint = (o: Orders[number]) => { setPrinting(o); window.setTimeout(() => window.print(), 80) }
   const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
   return (
     <Card title={t('Bugungi cheklar ({n})', { n: list.length })}>
+      <div className="mb-3 inline-flex rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Otmena: {list.filter(o => o.status === 'cancelled').length} ta · {fmt(list.filter(o => o.status === 'cancelled').reduce((sum,o) => sum + o.total,0))} so‘m</div>
       <div className="mb-3 text-right"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-cheklar', ['Raqam','Sana','Mijoz','Mahsulot','To‘lov','Summa','Holat'], list.map(o => [o.number,new Date(o.createdAt).toLocaleString(),o.customer,o.items.map(i=>`${i.qty}x ${i.name}`).join(', '),o.payment,o.total,o.status]))}>{t('Excelga eksport')}</button></div>
       {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
         <h2>CoffeePOS · № {printing.number}</h2>
@@ -303,14 +305,14 @@ function Orders({ today }: { today: Orders }) {
           </thead>
           <tbody>
             {list.map((o) => (
-              <tr key={o.id} className="border-t border-stone-100 align-top">
+              <tr key={o.id} className={`border-t align-top ${o.status === 'cancelled' ? 'border-red-300 bg-red-50 text-red-900' : 'border-stone-100'}`}>
                 <td className="py-2 font-semibold">{o.number}</td>
                 <td className="py-2 text-stone-500">{time(o.createdAt)}</td>
                 <td className="py-2">{o.customer || '—'}</td>
                 <td className="py-2 text-stone-600">{o.items.map((it) => `${it.qty}× ${it.name}${it.size ? ' ' + it.size : ''}`).join(', ')}</td>
                 <td className="py-2">{t(PAYMENT_LABEL[o.payment])}</td>
                 <td className="py-2 text-right font-semibold tabular-nums">{fmt(o.total)}</td>
-                <td className="py-2 pl-4"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{o.status === 'cancelled' ? t('Bekor qilingan') : t(STATUS_LABEL[o.status])}</span></td>
+                <td className="py-2 pl-4"><span title={o.status === 'cancelled' ? `${o.cancelledBy || '—'} · ${o.cancelReason || '—'}` : undefined} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${o.status === 'cancelled' ? 'bg-red-600 text-white' : 'bg-stone-100'}`}>{o.status === 'cancelled' ? t('Bekor qilingan') : t(STATUS_LABEL[o.status])}</span></td>
                 <td className="py-2"><div className="flex gap-2">
                   <button className="rounded-lg border px-2 py-1" onClick={() => reprint(o)}>{t('Perechek')}</button>
                   {o.status === 'new' && <button className="rounded-lg border border-red-200 px-2 py-1 text-red-700" onClick={() => cancel(o)}>{t('Otmena')}</button>}

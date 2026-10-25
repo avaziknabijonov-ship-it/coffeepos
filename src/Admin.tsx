@@ -164,7 +164,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
 
   return (
     <div className="premium-dashboard space-y-5">
-      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · ANALYTICS</p><h1 className="text-2xl font-extrabold">{t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
+      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
@@ -336,7 +336,7 @@ function Orders({ today }: { today: Orders }) {
       <label className="text-sm">{t("Boshlanish sanasi")}<input aria-label={t("Boshlanish sanasi")} className="mt-1 w-full rounded-lg border p-2" type="date" value={from} onChange={e=>setFrom(e.target.value)} /></label>
       <label className="text-sm">{t("Tugash sanasi")}<input aria-label={t("Tugash sanasi")} className="mt-1 w-full rounded-lg border p-2" type="date" value={to} onChange={e=>setTo(e.target.value)} /></label>
       <label className="text-sm">{t("Kassir / xodim")}<select className="mt-1 w-full rounded-lg border p-2" value={staff} onChange={e=>setStaff(e.target.value)}><option value="">{t("Barcha xodimlar")}</option>{cashierNames.map(n=><option key={n}>{n}</option>)}</select></label>
-      <label className="text-sm">Smena<select className="mt-1 w-full rounded-lg border p-2" value={shiftId} onChange={e=>setShiftId(e.target.value)}><option value="">{t("Barcha smenalar")}</option>{shifts.map(s=><option key={s.shift.id} value={s.shift.id}>№{s.shift.id} · {s.shift.staff} · {new Date(s.shift.openedAt).toLocaleDateString()}</option>)}</select></label>
+      <label className="text-sm">{t("Smena")}<select className="mt-1 w-full rounded-lg border p-2" value={shiftId} onChange={e=>setShiftId(e.target.value)}><option value="">{t("Barcha smenalar")}</option>{shifts.map(s=><option key={s.shift.id} value={s.shift.id}>№{s.shift.id} · {s.shift.staff} · {new Date(s.shift.openedAt).toLocaleDateString()}</option>)}</select></label>
     </div>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <span className="rounded-lg bg-stone-100 px-3 py-2 text-sm font-semibold">{t('Cheklar')}: {list.length}</span>

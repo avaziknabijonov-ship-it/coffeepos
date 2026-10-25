@@ -15,6 +15,9 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Birlik": "Единица",
+  "O‘chirish": "Удалить",
+  "Faqat qoldig‘i nol bo‘lgan, tarix va texkartalarda ishlatilmagan tovarni o‘chirish mumkin.": "Можно удалить только товар с нулевым остатком, не использовавшийся в документах и техкартах.",
   "Mahsulotni o‘chirish": "Удалить товар",
   "Mahsulot o‘chirilsinmi?": "Удалить товар?",
 

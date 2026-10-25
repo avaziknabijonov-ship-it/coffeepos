@@ -60,3 +60,43 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 [data-theme="light"] .premium-dashboard .premium-kpi { background:linear-gradient(135deg,#fff,#fff8ef); }
 @media(max-width:950px) { .premium-payments-layout { flex-direction:column; align-items:stretch; } .premium-donut { align-self:center; } }
 @media(max-width:600px) { .premium-titlebar { flex-direction:column; align-items:flex-start; } .premium-date { display:none; } .premium-kpi { min-height:128px; padding:14px !important; } .premium-kpi-icon { width:38px; height:38px; margin-right:8px; } .premium-chart { padding:14px !important; } }
+
+/* CoffeePOS design system: admin follows Variant B, cashier follows Variant K2.
+   These independent surfaces must never inherit each other's theme. */
+.admin-shell { background:#0d0b0d !important; color:#f4ede4 !important; font-family:Manrope,'Segoe UI',sans-serif; }
+.admin-shell > div > aside { background:linear-gradient(160deg,#171416,#100e10) !important; border-color:#46362b !important; color:#efe7de; }
+.admin-shell > div > aside nav button:not([aria-current="page"]) { color:#cfc1b0 !important; }
+.admin-shell > div > aside nav button:not([aria-current="page"]):hover { background:#30261f !important; color:#ffe1a1 !important; }
+.admin-shell > div > aside nav button[aria-current="page"] { background:linear-gradient(110deg,#6a3c1d,#2d1d19) !important; color:#ffdb97 !important; border:1px solid #c59141; box-shadow:0 0 15px #b17a3226; }
+.admin-shell .bg-white { background:#1c191c !important; }
+.admin-shell .bg-stone-50 { background:#242024 !important; }
+.admin-shell .bg-stone-100 { background:#312a2b !important; }
+.admin-shell .border-stone-100,.admin-shell .border-stone-200 { border-color:#443934 !important; }
+.admin-shell .text-stone-900,.admin-shell .text-stone-800 { color:#f7ede4 !important; }
+.admin-shell .text-stone-700,.admin-shell .text-stone-600 { color:#d5c3b5 !important; }
+.admin-shell .text-stone-500,.admin-shell .text-stone-400 { color:#ae9e92 !important; }
+.admin-shell input,.admin-shell select,.admin-shell textarea { background:#282226; border-color:#625045; color:#fff5e8; }
+.admin-shell .bg-red-50 { background:#3a2023 !important; }
+.admin-shell .text-red-700,.admin-shell .text-red-800 { color:#ffa7a7 !important; }
+.admin-shell .bg-emerald-50 { background:#173028 !important; }
+.admin-shell .text-emerald-700,.admin-shell .text-emerald-800 { color:#64dda9 !important; }
+.admin-shell .premium-titlebar h1 { color:#ffe2ac; }
+.admin-shell .premium-kpi,.admin-shell .premium-chart { background:linear-gradient(125deg,#211d1f,#151416) !important; border-color:#49382d !important; color:#f6ede5; }
+.admin-shell .premium-kpi-icon { background:radial-gradient(circle,#684629,#29211d); border:1px solid #85572a; color:#ffc66b; }
+.admin-shell .premium-donut span { background:#1b1a1d; color:#fff2df; }
+/* Warm light cashier: no changes to product/order business logic */
+.cashier-warm { background:#fcf6ee; color:#3b2218; font-family:Manrope,'Segoe UI',sans-serif; }
+.cashier-warm .cashier-categories { background:linear-gradient(165deg,#fcf0df,#f4e1ca) !important; border-color:#e7d3bb; }
+.cashier-warm .cashier-categories button { border:1px solid #edddc8; box-shadow:0 4px 12px #8d5b2810; }
+.cashier-warm .cashier-categories button.bg-stone-900 { background:linear-gradient(130deg,#784322,#462617) !important; color:#fff6e6 !important; border-color:#a56c3c; box-shadow:0 5px 18px #7543203b; }
+.cashier-warm .cashier-products { background:#fbf6ee; }
+.cashier-warm .cashier-products > div:first-child { background:#fffaf4 !important; border-color:#e9d8c3 !important; }
+.cashier-warm .cashier-product-card { background:#fffaf4 !important; border:1px solid #ebdac6 !important; box-shadow:0 8px 23px #7953361a !important; padding:12px !important; }
+.cashier-warm .cashier-product-card:hover { border-color:#ad6c36 !important; box-shadow:0 12px 25px #79533630 !important; }
+.cashier-warm .cashier-product-card .text-stone-900 { color:#3d271b !important; }
+.cashier-warm .cashier-product-card .text-amber-700 { color:#8e4e23 !important; font-weight:800; }
+.cashier-warm .cashier-product-card img { border:1px solid #f2e3d2; }
+.cashier-warm .cashier-checkout { background:linear-gradient(180deg,#fffdf9,#f9eddf) !important; border-color:#e5cfb7 !important; box-shadow:-7px 0 22px #8c5b2512; }
+.cashier-warm .cashier-checkout input { border-color:#e8d2bb; background:#fffcf7; color:#382016; }
+.cashier-warm .cashier-checkout .bg-stone-900 { background:linear-gradient(130deg,#864a28,#55301e) !important; }
+@media(max-width:767px) { .cashier-warm .cashier-products { min-height:0; } }

@@ -72,7 +72,7 @@ export default function Payroll() {
               <th className="p-2">{t('Xodim')}</th><th className="p-2">{t('Oylik stavka')}</th>
               <th className="p-2">{t('Me’yor kun')}</th><th className="p-2">{t('Ishlangan kun')}</th>
               <th className="p-2">{t('Ushlanmalar')}</th><th className="p-2">{t('Hisoblangan')}</th>
-              <th className="p-2">{t('To‘langan')}</th><th className="p-2">{t('Qoldiq')}</th><th className="p-2">{t('Amal')}</th>
+              <th className="p-2">{t('staff:To‘langan')}</th><th className="p-2">{t('Qoldiq')}</th><th className="p-2">{t('Amal')}</th>
             </tr>
           </thead>
           <tbody>{rows.map(r => {

@@ -110,8 +110,8 @@ def test_inventory_and_losses():
 
 def test_expense_isolation_and_permissions():
     with TestClient(app) as c:
-        a = c.post("/api/auth/register", json={"companyName": "Coffee A", "slug": "company-a", "ownerName": "A", "ownerPin": "4567"})
-        b = c.post("/api/auth/register", json={"companyName": "Coffee B", "slug": "company-b", "ownerName": "B", "ownerPin": "5678"})
+        a = c.post("/api/auth/register", json={"companyName": "Coffee A", "slug": "company-a", "ownerName": "Owner A", "ownerPin": "4567"})
+        b = c.post("/api/auth/register", json={"companyName": "Coffee B", "slug": "company-b", "ownerName": "Owner B", "ownerPin": "5678"})
         assert a.status_code == 200 and b.status_code == 200
         ah = {"Authorization": "Bearer " + a.json()["token"]}
         bh = {"Authorization": "Bearer " + b.json()["token"]}

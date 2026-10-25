@@ -276,52 +276,61 @@ function Recipes({ onEdit }: { onEdit: () => void }) {
   )
 }
 
+type HistoricalOrder = Orders[number] & { shiftId?: number; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null }
+type HistoricalShift = { shift: { id: number; staff: string; openedAt: number; closedAt?: number | null } }
+const localDate = (d: Date) => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
 function Orders({ today }: { today: Orders }) {
-  const [printing, setPrinting] = useState<Orders[number] | null>(null)
+  const [from, setFrom] = useState(() => localDate(new Date()))
+  const [to, setTo] = useState(() => localDate(new Date()))
+  const [staff, setStaff] = useState('')
+  const [shiftId, setShiftId] = useState('')
+  const [shifts, setShifts] = useState<HistoricalShift[]>([])
+  const [history, setHistory] = useState<HistoricalOrder[]>(today)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [printing, setPrinting] = useState<HistoricalOrder | null>(null)
   const [actionError, setActionError] = useState('')
-  const cancel = async (o: Orders[number]) => {
+  const [busy, setBusy] = useState(false)
+  const reload = async () => {
+    setBusy(true); setActionError('')
+    try {
+      const start = new Date(from + 'T00:00:00').getTime()
+      const end = new Date(to + 'T00:00:00').getTime() + 86400000
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error('Sana oralig‘ini to‘g‘ri tanlang')
+      const params = new URLSearchParams({ from_ms: String(start), to_ms: String(end) })
+      if (staff) params.set('staff', staff)
+      if (shiftId) params.set('shift_id', shiftId)
+      setHistory(await api<HistoricalOrder[]>('/api/orders/history?' + params.toString()))
+    } catch(e) { setActionError((e as Error).message) } finally { setBusy(false) }
+  }
+  useEffect(() => { void api<HistoricalShift[]>('/api/shifts').then(setShifts).catch(()=>{} ) }, [])
+  useEffect(() => { void reload() }, [from, to, staff, shiftId])
+  const list = [...history].sort((a,b)=>b.createdAt-a.createdAt)
+  const cancelled = list.filter(o=>o.status === 'cancelled')
+  const actual = list.filter(o=>o.status !== 'cancelled')
+  const cashierNames = [...new Set(shifts.map(s=>s.shift.staff).concat(history.map(o=>o.barista)).filter(Boolean))]
+  const cancel = async (o: HistoricalOrder) => {
     const reason = window.prompt('Otmena sababi (kamida 3 ta belgi):')
     if (!reason || reason.trim().length < 3) return
-    try { await api('/api/orders/' + o.id + '/cancel', { method: 'POST', body: { reason: reason.trim() } }); await sync() }
-    catch (e) { setActionError((e as Error).message) }
+    try { await api('/api/orders/' + o.id + '/cancel', { method:'POST', body:{ reason:reason.trim() } }); await sync(); await reload() }
+    catch(e) { setActionError((e as Error).message) }
   }
-  const reprint = (o: Orders[number]) => { setPrinting(o); window.setTimeout(() => window.print(), 80) }
-  const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
-  return (
-    <Card title={t('Bugungi cheklar ({n})', { n: list.length })}>
-      <div className="mb-3 inline-flex rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Otmena: {list.filter(o => o.status === 'cancelled').length} ta · {fmt(list.filter(o => o.status === 'cancelled').reduce((sum,o) => sum + o.total,0))} so‘m</div>
-      <div className="mb-3 text-right"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-cheklar', ['Raqam','Sana','Mijoz','Mahsulot','To‘lov','Summa','Holat','Otmena qilgan','Otmena sababi','Otmena vaqti'], list.map(o => [o.number,new Date(o.createdAt).toLocaleString(),o.customer,o.items.map(i=>`${i.qty}x ${i.name}`).join(', '),o.payment,o.total,o.status,o.cancelledBy || '',o.cancelReason || '',o.cancelledAt ? new Date(o.cancelledAt).toLocaleString() : '']))}>{t('Excelga eksport')}</button></div>
-      {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
-        <h2>CoffeePOS · № {printing.number}</h2>
-        <p>{new Date(printing.createdAt).toLocaleString()}</p>
-        {printing.items.map((it, i) => <div key={i}>{it.qty} × {it.name}: {fmt(it.qty * it.unitPrice)}</div>)}
-        <b>{t('JAMI')}: {fmt(printing.total)} {t("so'm")}</b>
-      </div>}
-      {actionError && <p role="alert" className="text-red-600">{actionError}</p>}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead className="text-left text-stone-500">
-            <tr><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">{t('Vaqt')}</th><th className="pb-2 font-medium">{t('Mijoz')}</th><th className="pb-2 font-medium">{t('Tarkib')}</th><th className="pb-2 font-medium">{t("To'lov")}</th><th className="pb-2 text-right font-medium">{t('Summa')}</th><th className="pb-2 pl-4 font-medium">{t('Holat')}</th><th>{t('Amallar')}</th></tr>
-          </thead>
-          <tbody>
-            {list.map((o) => (
-              <tr key={o.id} className={`border-t align-top ${o.status === 'cancelled' ? 'border-red-300 bg-red-50 text-red-900' : 'border-stone-100'}`}>
-                <td className="py-2 font-semibold">{o.number}</td>
-                <td className="py-2 text-stone-500">{time(o.createdAt)}</td>
-                <td className="py-2">{o.customer || '—'}</td>
-                <td className="py-2 text-stone-600">{o.items.map((it) => `${it.qty}× ${it.name}${it.size ? ' ' + it.size : ''}`).join(', ')}</td>
-                <td className="py-2">{t(PAYMENT_LABEL[o.payment])}</td>
-                <td className="py-2 text-right font-semibold tabular-nums">{fmt(o.total)}</td>
-                <td className="py-2 pl-4"><span title={o.status === 'cancelled' ? `${o.cancelledBy || '—'} · ${o.cancelReason || '—'}` : undefined} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${o.status === 'cancelled' ? 'bg-red-600 text-white' : 'bg-stone-100'}`}>{o.status === 'cancelled' ? t('Bekor qilingan') : t(STATUS_LABEL[o.status])}</span></td>
-                <td className="py-2"><div className="flex gap-2">
-                  <button className="rounded-lg border px-2 py-1" onClick={() => reprint(o)}>{t('Perechek')}</button>
-                  {o.status === 'new' && <button className="rounded-lg border border-red-200 px-2 py-1 text-red-700" onClick={() => cancel(o)}>{t('Otmena')}</button>}
-                </div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  )
+  const reprint = (o: HistoricalOrder) => { setPrinting(o); window.setTimeout(()=>window.print(),100) }
+  return <Card title="Cheklar tarixi · batafsil hisobot">
+    <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <label className="text-sm">Boshlanish sanasi<input aria-label="Boshlanish sanasi" className="mt-1 w-full rounded-lg border p-2" type="date" value={from} onChange={e=>setFrom(e.target.value)} /></label>
+      <label className="text-sm">Tugash sanasi<input aria-label="Tugash sanasi" className="mt-1 w-full rounded-lg border p-2" type="date" value={to} onChange={e=>setTo(e.target.value)} /></label>
+      <label className="text-sm">Kassir / xodim<select className="mt-1 w-full rounded-lg border p-2" value={staff} onChange={e=>setStaff(e.target.value)}><option value="">Barcha xodimlar</option>{cashierNames.map(n=><option key={n}>{n}</option>)}</select></label>
+      <label className="text-sm">Smena<select className="mt-1 w-full rounded-lg border p-2" value={shiftId} onChange={e=>setShiftId(e.target.value)}><option value="">Barcha smenalar</option>{shifts.map(s=><option key={s.shift.id} value={s.shift.id}>№{s.shift.id} · {s.shift.staff} · {new Date(s.shift.openedAt).toLocaleDateString()}</option>)}</select></label>
+    </div>
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="rounded-lg bg-stone-100 px-3 py-2 text-sm font-semibold">Cheklar: {list.length} ta</span>
+      <span className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">Sotuv: {fmt(actual.reduce((v,o)=>v+o.total,0))} so‘m</span>
+      <span className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Otmena: {cancelled.length} ta · {fmt(cancelled.reduce((v,o)=>v+o.total,0))} so‘m</span>
+      <button disabled={busy} onClick={()=>void reload()} className="rounded-lg border px-3 py-2 text-sm">{busy?'Yuklanmoqda…':'Yangilash'}</button>
+      <button className="rounded-lg border px-3 py-2 text-sm" onClick={()=>exportExcel('coffeepos-cheklar-tarixi',['Chek','Sana','Kassir','Smena','Mijoz','Mahsulotlar','To‘lov','Summa','Status','Otmena xodimi','Sabab'],list.map(o=>[o.number,new Date(o.createdAt).toLocaleString(),o.barista,o.shiftId||'',o.customer,o.items.map(i=>i.qty+' × '+i.name+' '+i.size).join('; '),o.payment,o.total,o.status,o.cancelledBy||'',o.cancelReason||'']))}>Excelga eksport</button>
+    </div>
+    {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black"><h2>CoffeePOS · №{printing.number}</h2><p>{new Date(printing.createdAt).toLocaleString()}</p>{printing.items.map((i,k)=><p key={k}>{i.qty} × {i.name} {i.size} — {fmt(i.qty*i.unitPrice)}</p>)}<b>Jami: {fmt(printing.total)} so‘m</b></div>}
+    {actionError && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-2 text-red-700">{actionError}</p>}
+    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-stone-500"><th className="p-2">№</th><th className="p-2">Sana, vaqt</th><th className="p-2">Kassir / Smena</th><th className="p-2">Mijoz</th><th className="p-2">Summa</th><th className="p-2">Holat</th><th className="p-2">Amallar</th></tr></thead><tbody>{list.map(o=><><tr key={o.id} className={o.status==='cancelled'?'border-b border-red-200 bg-red-50 text-red-900':'border-b border-stone-100'}><td className="p-2 font-bold">№{o.number}</td><td className="p-2">{new Date(o.createdAt).toLocaleString()}</td><td className="p-2">{o.barista||'—'}<span className="block text-xs opacity-70">Smena №{o.shiftId||'—'}</span></td><td className="p-2">{o.customer||'—'}</td><td className="p-2 font-semibold">{fmt(o.total)}</td><td className="p-2">{o.status==='cancelled'?<span className="rounded-full bg-red-600 px-2 py-1 text-white">OTMENA</span>:t(STATUS_LABEL[o.status])}</td><td className="p-2"><div className="flex gap-2"><button className="rounded-lg border px-2 py-1" onClick={()=>setSelected(selected===o.id?null:o.id)}>Batafsil</button><button className="rounded-lg border px-2 py-1" onClick={()=>reprint(o)}>Perechek</button>{o.status==='new'&&!o.pendingSync&&<button className="rounded-lg border border-red-300 px-2 py-1 text-red-700" onClick={()=>void cancel(o)}>Otmena</button>}</div></td></tr>{selected===o.id&&<tr key={o.id+'-details'}><td colSpan={7} className="border-b bg-stone-50 p-4"><div className="mb-2 font-semibold">Chek №{o.number} · To‘lov: {t(PAYMENT_LABEL[o.payment])} · Jami: {fmt(o.total)} so‘m</div><div className="space-y-1">{o.items.map((item,i)=><div key={i} className="flex flex-wrap justify-between gap-2 border-b border-stone-200 py-1"><span>{item.qty} × {item.name} {item.size} {item.mods?.join(', ')}</span><span>{fmt(item.unitPrice)} × {item.qty} = {fmt(item.unitPrice*item.qty)} so‘m</span></div>)}</div><div className="mt-2 text-sm">Chegirma: {fmt(o.discount)} so‘m · Tannarx: {fmt(o.cost)} so‘m</div>{o.status==='cancelled'&&<div className="mt-2 rounded-lg bg-red-100 p-2 text-red-800">Otmena qilgan: {o.cancelledBy||'—'} · {o.cancelReason||'Sabab ko‘rsatilmagan'} · {o.cancelledAt?new Date(o.cancelledAt).toLocaleString():''}</div>}</td></tr>}</>)}</tbody></table>{!busy&&list.length===0&&<p className="p-5 text-center text-stone-500">Tanlangan filtr bo‘yicha cheklar topilmadi.</p>}</div>
+  </Card>
 }

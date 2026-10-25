@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
 import { exportExcel } from './exportExcel'
-import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, Clock3, Trophy, CreditCard, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
+import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
 import type { Payment } from './data'
 import { api } from './api'

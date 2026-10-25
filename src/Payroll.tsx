@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { exportExcel } from './exportExcel'
 import { som } from './data'
 import { t } from './i18n'
 
@@ -59,8 +60,13 @@ export default function Payroll() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="text-lg font-semibold">{t('Oylik hisobi')}</h2>
           <p className="text-sm text-stone-500">{t('Ishlangan kunlar qo‘lda belgilanadi. Avans va to‘lovlar qoldiqdan ayriladi.')}</p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => exportExcel('coffeepos-oylik-' + month,
+            ['Xodim','Lavozim','Oylik stavka','Me‘yor kun','Ishlangan kun','Ushlanmalar','Hisoblangan','To‘langan','Qoldiq'],
+            rows.map(r => [r.name,r.role,r.monthlySalary,r.standardDays,r.workedDays,r.deductions,Math.round(r.monthlySalary*r.workedDays/(r.standardDays||1)),r.paid,Math.round(r.monthlySalary*r.workedDays/(r.standardDays||1))-r.deductions-r.paid]))}
+            className="rounded-lg border px-3 py-2 text-sm">{t('Excelga eksport')}</button>
         <label className="text-sm">{t('Oy')}<input type="month" className="ml-2 rounded-lg border p-2" value={month}
-          onChange={e=>setMonth(e.target.value)} /></label>
+          onChange={e=>setMonth(e.target.value)} /></label></div>
       </div>
       {error && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}
     </section>

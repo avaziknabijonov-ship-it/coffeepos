@@ -383,6 +383,7 @@ def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGE
     p = get_row(ctx.db, Product, ctx.cid, key)
     validate_product(ctx, body)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
+    p.image_url = body.imageUrl
     p.sizes, p.active = [s.model_dump() for s in body.sizes], body.active
     ctx.db.commit()
     return product_out(p)

@@ -49,7 +49,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 
   const products = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q ? PRODUCTS.filter((p) => p.name.toLowerCase().includes(q)) : PRODUCTS.filter((p) => p.cat === cat)
+    return q ? PRODUCTS.filter((p) => (p.name.toLowerCase().includes(q) || tCatalogName(p.name).toLowerCase().includes(q))) : PRODUCTS.filter((p) => p.cat === cat)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat, query, menuVersion])
 
@@ -180,7 +180,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { addToCart(it); setModal(null) }} />}
       {paying && <PaymentModal total={total} onClose={() => setPaying(false)} onConfirm={confirmPayment} />}
       {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
-      {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</h2><button onClick={() => setHistoryOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">{t('Otmena')}: {orders.filter(o => o.status === 'cancelled').length}</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `${t('Otmena')} · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>i.name).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">{t('Perechek')}</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">{t('Otmena')}</button>}</div>)}</div></div></div>}
+      {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</h2><button onClick={() => setHistoryOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">{t('Otmena')}: {orders.filter(o => o.status === 'cancelled').length}</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `${t('Otmena')} · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>tCatalogName(i.name)).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">{t('Perechek')}</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">{t('Otmena')}</button>}</div>)}</div></div></div>}
       {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
     </div>
   )
@@ -240,7 +240,7 @@ function Cart(props: {
           <div key={it.key} className="rounded-xl border border-stone-200 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-semibold">{it.name}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
+                <div className="font-semibold">{tCatalogName(it.name)}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
                 {it.mods.length > 0 && <div className="mt-0.5 text-sm text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
               </div>
               <div className="shrink-0 font-semibold">{fmt(it.unitPrice * it.qty)}</div>
@@ -463,7 +463,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.items.map((it) => (
             <div key={it.key} className="mb-1">
-              <div className="flex justify-between gap-2"><span>{it.qty}× {it.name} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
+              <div className="flex justify-between gap-2"><span>{it.qty}× {tCatalogName(it.name)} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
               {it.mods.length > 0 && <div className="pl-3 text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
             </div>
           ))}

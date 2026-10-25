@@ -69,7 +69,7 @@ export default function Admin() {
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
           {view === 'menu' && <MenuEditor />}
-          {view === 'recipes' && <Recipes />}
+          {view === 'recipes' && <Recipes onEdit={() => setView('menu')} />}
           {view === 'orders' && <Orders today={today} />}
           {view === 'staff' && <StaffView />}
           {view === 'shifts' && <ShiftsView />}
@@ -224,13 +224,13 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   )
 }
 
-function Recipes() {
+function Recipes({ onEdit }: { onEdit: () => void }) {
   const [pid, setPid] = useState('cappuccino')
   const p = PRODUCTS.find((x) => x.id === pid) ?? PRODUCTS[0]
   if (!p) return <Card><p className="text-stone-500">{t("Menyu bo'sh.")}</p></Card>
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-texkarta',
+      <div className="flex justify-end gap-2"><button onClick={onEdit} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white">{t('Texkartani qo‘lda tahrirlash')}</button><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-texkarta',
         ['Mahsulot','O‘lcham','Hajm','Xomashyo','Miqdor','Birlik','Xomashyo tannarxi','Sotuv narxi'],
         PRODUCTS.flatMap(product => product.sizes.flatMap(size => size.recipe.map(line =>
           [product.name,size.label,size.volume ?? '',ING[line.ing]?.name ?? line.ing,line.qty,

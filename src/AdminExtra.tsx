@@ -138,7 +138,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
     if (ok) onClose()
   }
   const remove = async () => {
-    if (product && confirm(t("{name} o'chirilsinmi?", { name: product.name })) && (await run(() => api(`/api/products/${product.id}`, { method: 'DELETE' })))) onClose()
+    if (product && confirm(t("{name} o'chirilsinmi?", { name: tCatalogName(product.name) })) && (await run(() => api(`/api/products/${product.id}`, { method: 'DELETE' })))) onClose()
   }
 
   return (

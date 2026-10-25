@@ -15,6 +15,14 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Kassirlar hisoboti": "Отчёт кассиров",
+  "Kassir bo‘yicha sotuvlar, smenalar, otmenalar va to‘lov usullari. Otmena summalari sotuvdan chiqarilgan.": "Продажи, смены, отмены и способы оплаты по каждому кассиру. Отменённые чеки не включаются в выручку.",
+  "Dan": "С",
+  "Gacha": "По",
+  "To‘lovlar": "Способы оплаты",
+  "Tanlangan sanada savdo topilmadi.": "За выбранный период продаж нет.",
+  "Sotuv": "Продажи",
+  "Cheklar tarixi · batafsil hisobot": "История чеков · подробный отчёт",
   "Bozorlik — kirim nakladnoyi": "Приходная накладная",
   "Nakladnoy raqami": "Номер накладной",
   "Yetkazib beruvchi": "Поставщик",

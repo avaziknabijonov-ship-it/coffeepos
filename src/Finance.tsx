@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { exportExcel } from './exportExcel'
 import { som, PAYMENT_LABEL } from './data'
 import type { Payment } from './data'
 import { t } from './i18n'
@@ -44,6 +45,9 @@ export default function Finance() {
             <option value={7}>{t('Oxirgi 7 kun')}</option><option value={30}>{t('Oxirgi 30 kun')}</option>
             <option value={90}>{t('Oxirgi 90 kun')}</option>
           </select>
+          <button disabled={!report} onClick={() => report && exportExcel('coffeepos-moliya-' + days, ['Sana','Cheklar','Tushum','Tannarx','Yalpi foyda','Xarajat','Oylik-avans','Operatsion qoldiq'],
+            report.daily.map(d => [new Date(d.day).toLocaleDateString(),d.orders,d.revenue,d.cogs,d.grossProfit,d.expenses,d.staffPayments,d.operatingBalance]))}
+            className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">{t('Excelga eksport')}</button>
           <button disabled={loading} onClick={refresh} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">{t('Yangilash')}</button>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, Lay
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
 import type { Payment } from './data'
 import { api } from './api'
-import { startOfToday, useAppState, sync } from './store'
+import { startOfToday, useAppState, sync, refreshMenu } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
 import Expenses from './Expenses'
 import BonusSettings from './BonusSettings'
@@ -89,6 +89,15 @@ export default function Admin() {
 
 function StockOverview() {
   const { stock } = useAppState()
+  const [removeError, setRemoveError] = useState('')
+  const [removing, setRemoving] = useState<string | null>(null)
+  const remove = async (id: string, name: string) => {
+    if (!window.confirm(t('Mahsulot o‘chirilsinmi?') + ' ' + name)) return
+    setRemoving(id); setRemoveError('')
+    try { await api('/api/ingredients/' + encodeURIComponent(id), { method: 'DELETE' }); await refreshMenu() }
+    catch (e) { setRemoveError((e as Error).message) }
+    finally { setRemoving(null) }
+  }
   const download = () => exportExcel('coffeepos-ombor', ['Xomashyo', 'Birlik', 'Qoldiq', 'Minimal qoldiq', 'Tannarx', 'Qoldiq qiymati'],
     INGREDIENTS.map(i => [i.name, UNIT_LABEL[i.unit], stock[i.id] ?? 0, i.min, i.cost, Math.round((stock[i.id] ?? 0) * i.cost)]))
   return <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
@@ -97,13 +106,15 @@ function StockOverview() {
       <button onClick={download} className="rounded-lg border px-3 py-2 text-sm font-semibold">{t('Excelga eksport')}</button>
     </div>
     <div className="overflow-x-auto"><table className="w-full min-w-[530px] text-sm">
-      <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th></tr></thead>
+      <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th><th>{t('Amallar')}</th></tr></thead>
       <tbody>{INGREDIENTS.map(i => <tr key={i.id} className="border-t">
         <td className="py-2 font-medium">{i.name}</td><td>{t(UNIT_LABEL[i.unit])}</td>
         <td className={(stock[i.id] ?? 0) < i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
-        <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td>
+        <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td><td><button type="button" title={t('Mahsulotni o‘chirish')} aria-label={t('Mahsulotni o‘chirish')} disabled={removing !== null || Math.abs(stock[i.id] ?? 0) > 0.000001} onClick={() => void remove(i.id, i.name)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-30">{t('O‘chirish')}</button></td>
       </tr>)}</tbody>
     </table></div>
+    {removeError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{removeError}</p>}
+    <p className="mt-2 text-xs text-stone-500">{t('Faqat qoldig‘i nol bo‘lgan, tarix va texkartalarda ishlatilmagan tovarni o‘chirish mumkin.')}</p>
   </section>
 }
 

@@ -6,7 +6,7 @@ import { ApiError, api, getToken, setToken } from './api'
 import { getLang, setLangValue } from './i18n'
 import type { Lang } from './i18n'
 
-export interface Session { staff: { id: number; name: string; role: Role; canBarista?: boolean }; company: { slug: string; name: string } }
+export interface Session { staff: { id: number; name: string; role: Role; canBarista?: boolean; canCancelOrders?: boolean; canReprintReceipts?: boolean }; company: { slug: string; name: string } }
 export interface ShiftInfo {
   shift: { id: number; staff: string; openedAt: number; openingCash: number; closedAt?: number | null; closingCash?: number | null; expectedCash?: number | null }
   orders: number

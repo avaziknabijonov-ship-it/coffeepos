@@ -122,6 +122,8 @@ const RU: Record<string, string> = {
   "Bluetooth printerni Windows yoki Android sozlamalarida juftlang. Avtomatik chop etish uchun Bluetooth ruxsati va nativ printer integratsiyasi kerak.": "Подключите Bluetooth-принтер в настройках Windows или Android. Автопечать требует разрешений Bluetooth и нативной интеграции.",
   'Rasm URL (https://...)': 'Ссылка на фото (https://...)',
   'Bu savdodan bonus': 'Бонусы за эту покупку',
+  'Ishchi kassa oynasi': 'Рабочая касса',
+  'Admin boshqaruviga qaytish': 'Вернуться в панель администратора',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

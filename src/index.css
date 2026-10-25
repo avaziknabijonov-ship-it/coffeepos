@@ -10,3 +10,24 @@ button:disabled { cursor: not-allowed; }
   .print-area, .print-area * { visibility: visible; }
   .print-area { position: absolute; left: 0; top: 0; width: var(--receipt-width, 80mm); max-height: none !important; overflow: visible !important; margin: 0 !important; }
 }
+
+/* CoffeePOS: premium admin theme, separate from the high-contrast cashier workflow. */
+html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
+[data-theme="dark"] .admin-shell { background: #0b0b0d !important; color: #f5f1eb; }
+[data-theme="dark"] .admin-shell .bg-white { background-color: #1b1a1d !important; }
+[data-theme="dark"] .admin-shell .bg-stone-50 { background-color: #151416 !important; }
+[data-theme="dark"] .admin-shell .bg-stone-100 { background-color: #272327 !important; }
+[data-theme="dark"] .admin-shell .border-stone-200,
+[data-theme="dark"] .admin-shell .border-stone-100 { border-color: #3a3230 !important; }
+[data-theme="dark"] .admin-shell .text-stone-900,
+[data-theme="dark"] .admin-shell .text-stone-800 { color: #f7f0e6 !important; }
+[data-theme="dark"] .admin-shell .text-stone-700,
+[data-theme="dark"] .admin-shell .text-stone-600 { color: #d0c5b8 !important; }
+[data-theme="dark"] .admin-shell .text-stone-500,
+[data-theme="dark"] .admin-shell .text-stone-400 { color: #ac9f92 !important; }
+[data-theme="dark"] .admin-shell button[aria-current="page"] { background: linear-gradient(100deg, #53321d, #302019) !important; color: #ffde9a !important; border: 1px solid #be8739; }
+[data-theme="dark"] .admin-shell input,
+[data-theme="dark"] .admin-shell select,
+[data-theme="dark"] .admin-shell textarea { background: #292529; color: #f7f0e6; border-color: #54483f; }
+[data-theme="dark"] .admin-shell input::placeholder { color: #aa9d93; }
+[data-theme="dark"] .admin-shell .shadow-sm { box-shadow: 0 4px 24px rgb(0 0 0 / .23) !important; }

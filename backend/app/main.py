@@ -458,6 +458,27 @@ def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*
     return ingredient_out(i)
 
 
+@app.delete("/api/ingredients/{key}")
+def delete_ingredient(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Delete only an unused zero-stock ingredient; preserve financial history."""
+    db = ctx.db
+    ing = get_row(db, Ingredient, ctx.cid, key)
+    if abs(ing.stock) > 0.000001:
+        raise HTTPException(409, "Avval mahsulot qoldig'ini 0 qiling")
+    purchases = db.scalars(select(PurchaseInvoice).where(PurchaseInvoice.company_id == ctx.cid)).all()
+    if any(line.get("ing") == key for purchase in purchases for line in purchase.lines):
+        raise HTTPException(409, "Mahsulot kirim hujjatlarida bor, tarixni saqlash uchun o'chirib bo'lmaydi")
+    moves = db.scalars(select(StockMove).where(StockMove.company_id == ctx.cid, StockMove.ingredient == key)).first()
+    if moves is not None:
+        raise HTTPException(409, "Mahsulot ombor harakatlari tarixida bor")
+    products = db.scalars(select(Product).where(Product.company_id == ctx.cid)).all()
+    if any(ingredient.get("ing") == key for product in products for size in product.sizes for ingredient in size.get("recipe", [])):
+        raise HTTPException(409, "Mahsulot texkartada ishlatiladi; avval texkartadan olib tashlang")
+    db.delete(ing)
+    db.commit()
+    return {"ok": True}
+
+
 WRITEOFF_NOTES = ("spill", "expired", "staff", "broken", "other")
 
 

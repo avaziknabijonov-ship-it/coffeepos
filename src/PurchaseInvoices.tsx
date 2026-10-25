@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { exportExcel } from './exportExcel'
 import { INGREDIENTS, UNIT_LABEL, fmt } from './data'
 import { refreshMenu, sync, useAppState } from './store'
 import { t } from './i18n'
@@ -26,6 +27,11 @@ export default function PurchaseInvoices() {
   const [printing, setPrinting] = useState<Invoice | null>(null)
   const load = () => api<Invoice[]>('/api/purchases').then(setHistory).catch((e: Error) => setError(e.message))
   useEffect(() => { void load() }, [])
+  const download = () => exportExcel('coffeepos-prixod', ['Sana', 'Nakladnoy', 'Yetkazib beruvchi', 'To‘lov', 'Holat', 'Mahsulot', 'Miqdor', 'Birlik', 'Birlik narxi', 'Summa'],
+    history.flatMap(p => p.lines.map(line => [
+      new Date(p.receivedAt).toLocaleDateString(), p.number, p.supplier,
+      p.paymentStatus, p.status, line.name, line.qty, line.unit, line.unitPrice, line.subtotal
+    ])))
   const amount = (l: Line) => Number(l.qty) * Number(l.unitPrice)
   const total = useMemo(() => lines.reduce((s, l) => s + (Number.isFinite(amount(l)) ? amount(l) : 0), 0), [lines])
   const edit = (idx: number, patch: Partial<Line>) => setLines(v => v.map((l, i) => i === idx ? { ...l, ...patch } : l))
@@ -60,6 +66,7 @@ export default function PurchaseInvoices() {
   const printInvoice = (p: Invoice) => { setPrinting(p); setTimeout(() => window.print(), 80) }
   const input = 'w-full min-w-0 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500'
   return <div className="space-y-5">
+    <div className="flex justify-end"><button onClick={download} className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-semibold">{t('Excelga eksport')}</button></div>
     {printing && <div className="print-area hidden print:block bg-white p-5 text-black"><h1>{t('Kirim nakladnoyi')} № {printing.number}</h1><p>{printing.supplier} · {new Date(printing.receivedAt).toLocaleDateString()}</p><table className="w-full"><tbody>{printing.lines.map((l,i) => <tr key={i}><td>{l.name}</td><td>{l.qty} {l.unit}</td><td>{fmt(l.subtotal)}</td></tr>)}</tbody></table><h2>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</h2></div>}
     <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-5 flex items-center gap-2"><FileText className="size-5 text-amber-600" /><h2 className="text-lg font-bold">{t('Bozorlik — kirim nakladnoyi')}</h2></div>

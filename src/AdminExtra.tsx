@@ -123,6 +123,7 @@ const emptySize = (): Size => ({ code: '-', label: '', price: 0, recipe: [] })
 
 function ProductForm({ product, canDelete, onClose }: { product: Product | null; canDelete: boolean; onClose: () => void }) {
   const [name, setName] = useState(product?.name ?? '')
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? '')
   const [cat, setCat] = useState(product?.cat ?? CATEGORIES[0]?.id ?? '')
   const [mods, setMods] = useState<ModGroupId[]>(product?.mods ?? [])
   const [sizes, setSizes] = useState<Size[]>(product?.sizes.map((s) => ({ ...s, recipe: s.recipe.map((l) => ({ ...l })) })) ?? [emptySize()])
@@ -131,7 +132,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
   const updSize = (i: number, patch: Partial<Size>) => setSizes((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)))
   const save = async () => {
     setBusy(true)
-    const body = { name, cat, mods, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
+    const body = { name, cat, imageUrl: imageUrl.trim(), mods, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
     const ok = await run(() => (product ? api(`/api/products/${product.id}`, { method: 'PUT', body }) : api('/api/products', { body })))
     setBusy(false)
     if (ok) onClose()
@@ -150,6 +151,8 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
         <div className="space-y-4 overflow-y-auto px-5 py-4">
           <div className="grid gap-2 sm:grid-cols-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nomi')} className={input} />
+            <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder={t('Rasm URL (https://...)')} className={input} maxLength={512} />
+            {imageUrl.startsWith('https://') && <img alt={name} src={imageUrl} className="h-20 w-20 rounded-lg object-cover" />}
             <select value={cat} onChange={(e) => setCat(e.target.value)} className={input}>
               {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>

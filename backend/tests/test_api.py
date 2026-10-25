@@ -232,7 +232,7 @@ def test_cashier_void_permission_and_history():
     with TestClient(app) as c:
         owner, cashier = login(c, "1111"), login(c, "2222")
         shift = c.get("/api/shifts/current", headers=owner).json()
-        if not shift.get("shift"):
+        if shift is None or not shift.get("shift"):
             assert c.post("/api/shifts/open", json={"openingCash": 0}, headers=owner).status_code == 200
         order = c.post("/api/orders", json={
             "items": [{"productId": "espresso", "size": "-", "qty": 1}],

@@ -1,6 +1,10 @@
 name: Android APK (online CoffeePOS)
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-apk.yml'
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -21,7 +25,8 @@ jobs:
           test -d "${ANDROID_HOME:-/opt/android-sdk}" || { echo "Android SDK not available"; exit 1; }
           java -version
       - run: npm ci
-      - run: npm run build
+      - name: Verify TypeScript and build Android web assets
+        run: npm run build
       - name: Install Capacitor tools
         run: npm install --no-save --package-lock=false @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
       - name: Generate Android project

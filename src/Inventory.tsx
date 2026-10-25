@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { t } from './i18n'
+import { t, tCatalogName } from './i18n'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { ING, INGREDIENTS, UNIT_LABEL, fmt, som, time } from './data'
 import type { Unit } from './data'
@@ -114,10 +114,10 @@ function CountForm({ onSaved }: { onSaved: () => void }) {
               const diff = filled ? Number(counts[i.id]) - expected : 0
               return (
                 <tr key={i.id} className="border-t border-stone-100">
-                  <td className="py-2">{i.name}</td>
+                  <td className="py-2">{tCatalogName(i.name)}</td>
                   <td className="py-2 text-right tabular-nums text-stone-500">{qty(expected)} {t(UNIT_LABEL[i.unit])}</td>
                   <td className="py-2 pl-4">
-                    <input inputMode="decimal" aria-label={`${i.name} sanaldi`} value={counts[i.id] ?? ''} placeholder={t(UNIT_LABEL[i.unit])}
+                    <input inputMode="decimal" aria-label={`${tCatalogName(i.name)} ${t('Sanalgan')}`} value={counts[i.id] ?? ''} placeholder={t(UNIT_LABEL[i.unit])}
                       onChange={(e) => setCounts((c) => ({ ...c, [i.id]: e.target.value.replace(',', '.').replace(/[^\d.]/g, '') }))}
                       className="w-28 rounded-lg border border-stone-200 px-2 py-1.5 outline-none focus:border-amber-500" />
                   </td>
@@ -169,7 +169,7 @@ function WriteOff() {
       <Section title={t('Hisobdan chiqarish')} hint={t("To'kilgan, buzilgan yoki muddati o'tgan xomashyoni sababi bilan yozing.")}>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label={t('Xomashyo')} value={ing} onChange={(e) => setIng(e.target.value)} className={`${input} min-w-0 flex-1`}>
-            {INGREDIENTS.map((x) => <option key={x.id} value={x.id}>{x.name} ({qty(stock[x.id] ?? 0)} {t(UNIT_LABEL[x.unit])})</option>)}
+            {INGREDIENTS.map((x) => <option key={x.id} value={x.id}>{tCatalogName(x.name)} ({qty(stock[x.id] ?? 0)} {t(UNIT_LABEL[x.unit])})</option>)}
           </select>
           <input aria-label={t('Miqdor')} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))}
             placeholder={i ? t(UNIT_LABEL[i.unit]) : ''} className={`${input} w-28`} />

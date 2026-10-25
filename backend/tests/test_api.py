@@ -226,3 +226,39 @@ def test_category_name_edit():
         assert result.status_code == 200, result.text
         after = c.get("/api/menu", headers=h).json()
         assert after["categories"][0]["name"] == "Yangilangan kategoriya"
+
+
+def test_cashier_void_permission_and_history():
+    with TestClient(app) as c:
+        owner, cashier = login(c, "1111"), login(c, "2222")
+        shift = c.get("/api/shifts/current", headers=owner).json()
+        if not shift.get("shift"):
+            assert c.post("/api/shifts/open", json={"openingCash": 0}, headers=owner).status_code == 200
+        order = c.post("/api/orders", json={
+            "items": [{"productId": "espresso", "size": "-", "qty": 1}],
+            "payment": "naqd"
+        }, headers=cashier)
+        assert order.status_code == 200, order.text
+        oid = order.json()["id"]
+        endpoint = f"/api/orders/{oid}/cancel"
+        assert c.post(endpoint, json={"reason": "Sinov buyurtma"}, headers=cashier).status_code == 403
+        staff = c.get("/api/staff", headers=owner).json()
+        employee = next(v for v in staff if v["role"] == "kassir")
+        edited = c.put(f"/api/staff/{employee['id']}", json={
+            "name": employee["name"], "role": "kassir", "active": True,
+            "canBarista": employee["canBarista"], "canCancelOrders": True, "canReprintReceipts": True
+        }, headers=owner)
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["canCancelOrders"] is True
+        assert c.post(endpoint, json={"reason": "Sinov buyurtma"}, headers=cashier).status_code == 200
+        # Date windows must be bounded; use the order timestamp for a narrow query.
+        date = order.json()["createdAt"]
+        result = c.get("/api/orders/history", params={
+            "from_ms": date - 1000, "to_ms": date + 86400000
+        }, headers=owner)
+        assert result.status_code == 200, result.text
+        cancelled = next(v for v in result.json() if v["id"] == oid)
+        assert cancelled["status"] == "cancelled"
+        assert cancelled["cancelReason"] == "Sinov buyurtma"
+        assert cancelled["cancelledBy"]
+        assert c.post(endpoint, json={"reason": "Second cancellation"}, headers=cashier).status_code == 409

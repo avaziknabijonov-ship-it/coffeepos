@@ -121,6 +121,7 @@ const RU: Record<string, string> = {
   "Printerni Wi-Fi yoki LAN tarmog‘iga ulang. Avtomatik ESC/POS chop etish uchun mahalliy print bridge kerak; brauzer faqat chop etish oynasini ochadi.": "Подключите принтер к Wi-Fi или LAN. Для прямой печати ESC/POS нужен локальный модуль печати; браузер открывает диалог печати.",
   "Bluetooth printerni Windows yoki Android sozlamalarida juftlang. Avtomatik chop etish uchun Bluetooth ruxsati va nativ printer integratsiyasi kerak.": "Подключите Bluetooth-принтер в настройках Windows или Android. Автопечать требует разрешений Bluetooth и нативной интеграции.",
   'Rasm URL (https://...)': 'Ссылка на фото (https://...)',
+  'Bu savdodan bonus': 'Бонусы за эту покупку',
   Kassa: 'Касса', Barista: 'Бариста', 'Mijoz ekrani': 'Экран клиента', Admin: 'Админ', 'Yuklanmoqda…': 'Загрузка…',
   "Server bilan aloqa yo'q": 'Нет связи с сервером', "Aloqa yo'q": 'Нет связи', 'Smena ochiq': 'Смена открыта', 'Smena yopiq': 'Смена закрыта',
   'Tizimdan chiqilsinmi?': 'Выйти из системы?', Chiqish: 'Выход',

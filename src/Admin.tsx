@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
 import { exportExcel } from './exportExcel'
-import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
+import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, Clock3, Trophy, CreditCard, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
 import type { Payment } from './data'
 import { api } from './api'
@@ -152,7 +152,8 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
   const payments = (Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => ({ p, sum: active.filter((o) => o.payment === p).reduce((s, o) => s + o.total, 0) }))
 
   return (
-    <div className="space-y-5">
+    <div className="premium-dashboard space-y-5">
+      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · ANALYTICS</p><h1 className="text-2xl font-extrabold">{t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
@@ -161,24 +162,25 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: t('Bugungi tushum'), value: som(revenue) },
-          { label: t('Buyurtmalar'), value: String(active.length) },
-          { label: t("O'rtacha chek"), value: som(avg) },
-          { label: t('Yalpi foyda'), value: som(profit), sub: `${t('marja')} ${pct(profit, revenue)}%` },
+          { label: t('Bugungi tushum'), value: som(revenue), icon: CircleDollarSign },
+          { label: t('Buyurtmalar'), value: String(active.length), icon: ShoppingCart },
+          { label: t("O'rtacha chek"), value: som(avg), icon: Receipt },
+          { label: t('Yalpi foyda'), value: som(profit), icon: TrendingUp, sub: `${t('marja')} ${pct(profit, revenue)}%` },
         ].map((m) => (
-          <div key={m.label} className="rounded-2xl border border-stone-200 bg-white p-4">
+          <div key={m.label} className="premium-kpi rounded-2xl border border-stone-200 bg-white p-4">
+            <div className="premium-kpi-icon"><m.icon className="size-6"/></div>
             <div className="text-sm text-stone-500">{m.label}</div>
-            <div className="mt-1 text-xl font-bold sm:text-2xl">{m.value}</div>
-            {m.sub && <div className="text-sm text-emerald-700">{m.sub}</div>}
+            <div className="mt-2 text-xl font-extrabold tracking-tight sm:text-2xl">{m.value}</div>
+            {m.sub && <div className="mt-2 text-sm font-semibold text-emerald-700">{m.sub}</div>}
           </div>
         ))}
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card title={t("Soatlar bo'yicha tushum (bugun)")}>
-          <div className="flex h-44 items-end gap-1">
+        <Card title={t("Soatlar bo'yicha tushum (bugun)")} className="premium-chart premium-chart-hour">
+          <div className="premium-plot flex h-52 items-end gap-1">
             {byHour.map((v, i) => (
               <div key={hours[i]} className="group relative flex h-full flex-1 flex-col justify-end">
-                <div className="rounded-t bg-amber-500 group-hover:bg-amber-600" style={{ height: `${(v / maxHour) * 100}%`, minHeight: v ? 3 : 0 }} title={`${hours[i]}:00 — ${som(v)}`} />
+                <div className="premium-bar rounded-t bg-amber-500 group-hover:bg-amber-600" style={{ height: `${(v / maxHour) * 100}%`, minHeight: v ? 3 : 0 }} title={`${hours[i]}:00 — ${som(v)}`} />
               </div>
             ))}
           </div>
@@ -186,19 +188,19 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
             {hours.map((h) => <span key={h} className="flex-1 text-center">{h % 2 === 0 ? h : ''}</span>)}
           </div>
         </Card>
-        <Card title={t('Haftalik tushum')}>
-          <div className="flex h-44 items-end gap-2">
+        <Card title={t('Haftalik tushum')} className="premium-chart premium-chart-week">
+          <div className="premium-plot flex h-52 items-end gap-2">
             {week.map((w) => (
               <div key={w.label} className="flex h-full flex-1 flex-col justify-end text-center">
                 <span className="mb-1 text-[10px] text-stone-500">{fmt(w.value / 1000)}k</span>
-                <div className={`rounded-t ${w.label === t('Bugun') ? 'bg-amber-500' : 'bg-stone-300'}`} style={{ height: `${(w.value / maxWeek) * 100}%` }} />
+                <div className={`premium-bar rounded-t ${w.label === t('Bugun') ? 'bg-amber-500' : 'bg-stone-300'}`} style={{ height: `${(w.value / maxWeek) * 100}%` }} />
               </div>
             ))}
           </div>
           <div className="mt-1 flex gap-2 text-xs text-stone-500">{week.map((w) => <span key={w.label} className="flex-1 text-center">{w.label}</span>)}</div>
           <p className="mt-2 text-xs text-stone-400">{t("O'tgan kunlar — namuna ma'lumot.")}</p>
         </Card>
-        <Card title={t('Top mahsulotlar (bugun)')}>
+        <Card title={t('Top mahsulotlar (bugun)')} className="premium-chart premium-top">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-stone-500"><tr><th className="pb-2 font-medium">{t('Mahsulot')}</th><th className="pb-2 text-right font-medium">{t('Soni')}</th><th className="pb-2 text-right font-medium">{t('Tushum')}</th><th className="pb-2 text-right font-medium">{t('Foyda')}</th></tr></thead>
@@ -212,15 +214,15 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
             </table>
           </div>
         </Card>
-        <Card title={t("To'lov turlari (bugun)")}>
-          <div className="space-y-3">
+        <Card title={t("To'lov turlari (bugun)")} className="premium-chart premium-payments">
+          <div className="premium-payments-layout"><div className="premium-donut" style={{ background: revenue ? `conic-gradient(#eeb458 0 ${pct(payments[0].sum,revenue)}%, #b8753c ${pct(payments[0].sum,revenue)}% ${pct(payments[0].sum+payments[1].sum,revenue)}%, #f5dfb6 ${pct(payments[0].sum+payments[1].sum,revenue)}% ${pct(payments[0].sum+payments[1].sum+payments[2].sum,revenue)}%, #696263 ${pct(payments[0].sum+payments[1].sum+payments[2].sum,revenue)}% 100%)` : undefined }}><span>{som(revenue)}</span></div><div className="space-y-3 flex-1">
             {payments.map(({ p, sum }) => (
               <div key={p}>
                 <div className="mb-1 flex justify-between text-sm"><span>{t(PAYMENT_LABEL[p])}</span><span className="text-stone-500">{som(sum)} · {pct(sum, revenue)}%</span></div>
                 <div className="h-2.5 rounded-full bg-stone-100"><div className="h-full rounded-full bg-stone-800" style={{ width: `${pct(sum, revenue)}%` }} /></div>
               </div>
             ))}
-          </div>
+          </div></div>
         </Card>
       </div>
     </div>

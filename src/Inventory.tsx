@@ -212,6 +212,11 @@ function History() {
   useEffect(() => { api<Inv[]>('/api/inventories?days=365').then(setList).catch((e: Error) => { alert(e.message); setList([]) }) }, [])
   return (
     <Section title={t('Inventarizatsiyalar tarixi')}>
+      <div className="mb-3 text-right"><button disabled={!list?.length}
+        className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
+        onClick={() => list && exportExcel('coffeepos-inventarizatsiya', ['Sana','Xodim','Izoh','Xomashyo','Birlik','Dasturda','Sanaldi','Farq','Qiymat'],
+          list.flatMap(i => i.lines.map(l => [date(i.createdAt),i.staff,i.note,l.name,l.unit,l.expected,l.counted,l.diff,l.value])))}>
+        {t('Excelga eksport')}</button></div>
       {list === null && <p className="text-stone-500">{t('Yuklanmoqda…')}</p>}
       {list?.length === 0 && <p className="py-4 text-center text-stone-500">{t("Hali inventarizatsiya o'tkazilmagan.")}</p>}
       <div className="divide-y divide-stone-100">
@@ -276,6 +281,10 @@ function Report() {
 
   return (
     <div className="space-y-4">
+      <div className="mb-3 flex justify-end"><button disabled={!data} onClick={() => data && exportExcel('coffeepos-kamomad',
+        ['Xomashyo','Birlik','Chiqarilgan miqdor','Chiqarilgan qiymat','Sanash farqi','Sanash qiymati'],
+        data.items.map(i => [i.name,i.unit,i.writeoffQty,i.writeoffValue,i.countQty,i.countValue]))}
+        className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">{t('Excelga eksport')}</button></div>
       <div className="flex gap-2">
         {[7, 30, 90].map((d) => (
           <button key={d} onClick={() => { setCustom(false); setDateError(''); setDays(d) }} className={`rounded-full px-3 py-1.5 text-sm font-medium ${!custom && days === d ? 'bg-amber-600 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{t('{n} kun', { n: d })}</button>

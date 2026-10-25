@@ -15,6 +15,12 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Prixod va yetkazib beruvchilar": "Приход и поставщики",
+  "Yangi nakladnoy kiriting yoki oldingi hujjatlarni tekshiring. Ombor qoldig‘i alohida bo‘limda.": "Создавайте приходные накладные и проверяйте историю. Остатки находятся в разделе «Склад».",
+  "Hujjatlar": "Документы",
+  "Faol": "Активные",
+  "Kirim hujjatlari": "Приходные документы",
+  "Admin bo‘limlari": "Разделы администратора",
   "Yangi tovar nomini kiriting.": "Введите название нового товара.",
   "Bu nomdagi tovar allaqachon mavjud.": "Товар с таким названием уже существует.",
   "Minimal qoldiq va tannarx manfiy bo‘lishi mumkin emas.": "Минимальный остаток и себестоимость не могут быть отрицательными.",

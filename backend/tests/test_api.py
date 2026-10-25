@@ -88,6 +88,15 @@ def test_inventory_and_losses():
         h = {"Authorization": f"Bearer {r.json()['token']}"}
         ings = {i["id"]: i for i in c.get("/api/menu", headers=h).json()["ingredients"]}
         beans, milk = ings["beans"], ings["milk"]
+        # New cafés intentionally start with zero stock. Receive test inventory first.
+        incoming = {"number": "INV-TEST-1", "supplier": "Test", "received_at": 1780000000000,
+                    "payment_status": "paid", "lines": [
+                        {"ing": "beans", "qty": 1000, "unit_price": 100},
+                        {"ing": "milk", "qty": 1000, "unit_price": 20}]}
+        received = c.post("/api/purchases", json=incoming, headers=h)
+        assert received.status_code == 200, received.text
+        ings = {i["id"]: i for i in c.get("/api/menu", headers=h).json()["ingredients"]}
+        beans, milk = ings["beans"], ings["milk"]
 
         assert c.post("/api/stock", json={"ing": "beans", "qty": 100, "reason": "writeoff", "note": "bad"}, headers=h).status_code == 422
         r = c.post("/api/stock", json={"ing": "beans", "qty": 100, "reason": "writeoff", "note": "spill"}, headers=h)

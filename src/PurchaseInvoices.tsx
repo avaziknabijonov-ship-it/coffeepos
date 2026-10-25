@@ -47,6 +47,16 @@ export default function PurchaseInvoices() {
       setShowNewProduct(false); setNewProductName(''); setNewProductCost('0'); setNewProductMin('0')
     } catch (e) { setError((e as Error).message) } finally { setCreatingProduct(false) }
   }
+  const removeProduct = async (ingredientId: string) => {
+    const ingredient = INGREDIENTS.find(i => i.id === ingredientId)
+    if (!ingredient || !window.confirm(t('Mahsulot o‘chirilsinmi?') + ' ' + ingredient.name)) return
+    setBusy(true); setError('')
+    try {
+      await api('/api/ingredients/' + encodeURIComponent(ingredientId), { method: 'DELETE' })
+      setLines(v => v.map(l => l.ing === ingredientId ? { ...l, ing: '' } : l))
+      await refreshMenu()
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
   const download = () => exportExcel('coffeepos-prixod', ['Sana', 'Nakladnoy', 'Yetkazib beruvchi', 'To‘lov', 'Holat', 'Mahsulot', 'Miqdor', 'Birlik', 'Birlik narxi', 'Summa'],
     history.flatMap(p => p.lines.map(line => [
       new Date(p.receivedAt).toLocaleDateString(), p.number, p.supplier,
@@ -110,7 +120,7 @@ export default function PurchaseInvoices() {
           <thead><tr className="border-b text-left text-stone-500"><th className="p-2">{t("Mahsulot")}</th><th className="p-2">{t("Miqdor")}</th><th className="p-2">{t("Narx / birlik (so‘m)")}</th><th className="p-2 text-right">{t("Summa")}</th><th className="p-2"></th></tr></thead>
           <tbody>{lines.map((l, idx) => {
             const ing = INGREDIENTS.find(i => i.id === l.ing)
-            return <tr key={idx} className="border-b border-stone-100"><td className="p-2"><select className={input} value={l.ing} onChange={e => { if (e.target.value === "__new__") { setNewProductLine(idx); setShowNewProduct(true); return } edit(idx, { ing: e.target.value }) }}><option value="">{t("Tanlang")}</option><option value="__new__">+ {t("Yangi tovar yaratish")}</option>{INGREDIENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></td><td className="p-2"><div className="flex items-center gap-1"><input className={input} type="number" min="0.001" step="any" value={l.qty} onChange={e => edit(idx, { qty: e.target.value })} /><span className="text-stone-400">{ing ? t(UNIT_LABEL[ing.unit]) : ''}</span></div></td><td className="p-2"><input className={input} type="number" min="0" step="any" value={l.unitPrice} onChange={e => edit(idx, { unitPrice: e.target.value })} /></td><td className="p-2 text-right font-semibold">{fmt(amount(l) || 0)}</td><td className="p-2"><button aria-label={t("Satrni olib tashlash")} disabled={lines.length === 1} onClick={() => setLines(v => v.filter((_, i) => i !== idx))} className="rounded-lg p-2 text-red-600 disabled:opacity-30"><Trash2 className="size-4" /></button></td></tr>
+            return <tr key={idx} className="border-b border-stone-100"><td className="p-2"><div className="flex items-center gap-1"><select className={input} value={l.ing} onChange={e => { if (e.target.value === "__new__") { setNewProductLine(idx); setShowNewProduct(true); return } edit(idx, { ing: e.target.value }) }}><option value="">{t("Tanlang")}</option><option value="__new__">+ {t("Yangi tovar yaratish")}</option>{INGREDIENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select><button type="button" disabled={!l.ing || busy} onClick={() => void removeProduct(l.ing)} title={t("Mahsulotni o‘chirish")} aria-label={t("Mahsulotni o‘chirish")} className="rounded-lg border border-red-200 p-2 text-red-600 disabled:opacity-30"><Trash2 className="size-4" /></button></div></td><td className="p-2"><div className="flex items-center gap-1"><input className={input} type="number" min="0.001" step="any" value={l.qty} onChange={e => edit(idx, { qty: e.target.value })} /><span className="text-stone-400">{ing ? t(UNIT_LABEL[ing.unit]) : ''}</span></div></td><td className="p-2"><input className={input} type="number" min="0" step="any" value={l.unitPrice} onChange={e => edit(idx, { unitPrice: e.target.value })} /></td><td className="p-2 text-right font-semibold">{fmt(amount(l) || 0)}</td><td className="p-2"><button aria-label={t("Satrni olib tashlash")} disabled={lines.length === 1} onClick={() => setLines(v => v.filter((_, i) => i !== idx))} className="rounded-lg p-2 text-red-600 disabled:opacity-30"><Trash2 className="size-4" /></button></td></tr>
           })}</tbody>
         </table>
       </div>}

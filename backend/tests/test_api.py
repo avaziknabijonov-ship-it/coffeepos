@@ -262,3 +262,24 @@ def test_cashier_void_permission_and_history():
         assert cancelled["cancelReason"] == "Sinov buyurtma"
         assert cancelled["cancelledBy"]
         assert c.post(endpoint, json={"reason": "Second cancellation"}, headers=cashier).status_code == 409
+
+
+def test_new_cafe_starts_with_empty_stock_but_sample_recipes():
+    with TestClient(app) as c:
+        created = c.post("/api/auth/register", json={
+            "companyName": "Fresh Menu Cafe", "slug": "fresh-menu-cafe",
+            "ownerName": "Test Owner", "ownerPin": "7641"
+        })
+        assert created.status_code == 200, created.text
+        headers = {"Authorization": "Bearer " + created.json()["token"]}
+        menu = c.get("/api/menu", headers=headers)
+        assert menu.status_code == 200, menu.text
+        data = menu.json()
+        assert data["products"], "Sample menu must be present"
+        assert data["ingredients"], "Recipe ingredients must be present"
+        assert all(item["stock"] == 0 for item in data["ingredients"])
+        history = c.get("/api/orders/history", headers=headers,
+            params={"from_ms": 1, "to_ms": 86400001})
+        assert history.status_code == 200 and history.json() == []
+        staff = c.get("/api/staff", headers=headers).json()
+        assert len(staff) == 1 and staff[0]["role"] == "owner"

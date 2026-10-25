@@ -5,6 +5,13 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/android-apk.yml'
+      - 'src/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.json'
+      - 'vite.config.ts'
+      - 'index.html'
 jobs:
   apk:
     runs-on: ubuntu-latest

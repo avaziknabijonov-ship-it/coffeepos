@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
+import { useAppState } from './store'
 type Subscription = { plan: string; status: string; expiresAt: number }
 type Company = { id: number; slug: string; name: string; createdAt: number; subscription: Subscription | null }
 type Result = { items: Company[]; offset: number; limit: number }
 type Action = 'grant' | 'renew' | 'suspend'
 
 export default function Superadmin() {
+  const { lang } = useAppState()
+  void lang
   const [key, setKey] = useState('')
   const [authenticated, setAuthenticated] = useState(false)
   const [companies, setCompanies] = useState<Company[]>([])

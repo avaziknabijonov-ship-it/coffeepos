@@ -125,7 +125,7 @@ export default function PurchaseInvoices() {
         </table>
       </div>}
       {!editId && <button onClick={() => setLines(v => [...v, newLine()])} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Plus className="size-4" /> {t("Mahsulot qo‘shish")}</button>}
-      <label className="mt-4 block space-y-1 text-sm">{t("Izoh")}<input className={input} value={note} onChange={e => setNote(e.target.value)} placeholder="Ixtiyoriy izoh" /></label>
+      <label className="mt-4 block space-y-1 text-sm">{t("Izoh")}<input className={input} value={note} onChange={e => setNote(e.target.value)} placeholder={t("Ixtiyoriy izoh")} /></label>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="text-lg font-bold">{t('Jami')}: {fmt(total)} {t("so'm")}</div><div className="flex flex-wrap gap-2">{editId && <button onClick={cancelEdit} className="rounded-xl border px-4 py-3">{t('Bekor qilish')}</button>}<button disabled={busy} onClick={save} className="rounded-xl bg-stone-900 px-5 py-3 font-semibold text-white disabled:opacity-50">{busy ? t('Saqlanmoqda...') : editId ? t('O‘zgarishlarni saqlash') : t('Nakladnoyni saqlash va omborga kirim qilish')}</button></div></div>
       {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </section>

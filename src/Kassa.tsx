@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from './api'
 import CashExpense from './CashExpense'
-import { t } from './i18n'
+import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
@@ -113,7 +113,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
           return (
             <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
               className={`flex items-center gap-3 rounded-xl px-3 py-4 text-left font-medium ${active ? 'bg-stone-900 text-white shadow' : 'bg-white text-stone-700 hover:bg-stone-200'}`}>
-              <Icon className="size-5 shrink-0" />{c.name}
+              <Icon className="size-5 shrink-0" />{tCatalogName(c.name)}
             </button>
           )
         })}
@@ -147,11 +147,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
                 className="cashier-product-card group relative flex min-h-60 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
-                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
+                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={tCatalogName(p.name)} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
                    <span className="cashier-product-fallback mb-2 grid h-36 w-full place-items-center rounded-xl"><span className={`cashier-fallback-icon grid size-16 place-items-center rounded-full ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-9" /></span></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
-                  <span className="block text-[15px] font-bold leading-tight text-stone-900">{p.name}</span>
+                  <span className="block text-[15px] font-bold leading-tight text-stone-900">{tCatalogName(p.name)}</span>
                   <span className="mt-1 block text-sm font-medium text-amber-700">
                     {p.sizes.length > 1 ? t('{p} dan', { p: fmt(minPrice) }) : som(minPrice)}
                     {p.sizes.length > 1 && <span className="ml-1 text-xs text-stone-400">· {p.sizes.map((s) => s.label).join('/')}</span>}
@@ -241,7 +241,7 @@ function Cart(props: {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-semibold">{it.name}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
-                {it.mods.length > 0 && <div className="mt-0.5 text-sm text-stone-500">{it.mods.join(', ')}</div>}
+                {it.mods.length > 0 && <div className="mt-0.5 text-sm text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
               </div>
               <div className="shrink-0 font-semibold">{fmt(it.unitPrice * it.qty)}</div>
             </div>
@@ -327,7 +327,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
               <div className="grid grid-cols-2 gap-2">
                 {group('milk').map((m) => (
                   <Chip key={m.id} active={milk === m.id} onClick={() => setMilk(m.id)}>
-                    {m.name}{m.price > 0 && <span className="text-stone-500"> +{fmt(m.price)}</span>}
+                    {tCatalogName(m.name)}{m.price > 0 && <span className="text-stone-500"> +{fmt(m.price)}</span>}
                   </Chip>
                 ))}
               </div>
@@ -339,7 +339,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
               <div className="grid grid-cols-3 gap-2">
                 {group('syrup').map((m) => (
                   <Chip key={m.id} active={syrups.includes(m.id)} onClick={() => setSyrups((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))}>
-                    {m.name}<span className="block text-stone-500">+{fmt(m.price)}</span>
+                    {tCatalogName(m.name)}<span className="block text-stone-500">+{fmt(m.price)}</span>
                   </Chip>
                 ))}
               </div>
@@ -352,7 +352,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
                 <Chip active={shot === ''} onClick={() => setShot('')}>{t("Yo'q")}</Chip>
                 {group('shot').map((m) => (
                   <Chip key={m.id} active={shot === m.id} onClick={() => setShot(m.id)}>
-                    {m.name}<span className="block text-stone-500">+{fmt(m.price)}</span>
+                    {tCatalogName(m.name)}<span className="block text-stone-500">+{fmt(m.price)}</span>
                   </Chip>
                 ))}
               </div>
@@ -464,7 +464,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           {order.items.map((it) => (
             <div key={it.key} className="mb-1">
               <div className="flex justify-between gap-2"><span>{it.qty}× {it.name} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
-              {it.mods.length > 0 && <div className="pl-3 text-stone-500">{it.mods.join(', ')}</div>}
+              {it.mods.length > 0 && <div className="pl-3 text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
             </div>
           ))}
           <div className="my-2 border-t border-dashed border-stone-300" />

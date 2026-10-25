@@ -6,7 +6,7 @@ import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus
 import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
-import { nextNumber, placeOrder, useAppState } from './store'
+import { nextNumber, placeOrder, useAppState, sync } from './store'
 import { OpenShift } from './Shift'
 
 const CAT_ICON: Record<string, LucideIcon> = { espresso: Coffee, milk: Milk, cold: Snowflake, tea: Leaf, dessert: CakeSlice }
@@ -21,7 +21,7 @@ type BonusSnapshot = { phone: string; name: string; balance: number; enabled: bo
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
 export default function Kassa({ onShift }: { onShift: () => void }) {
-  const { shift, menuVersion } = useAppState()
+  const { shift, menuVersion, orders, session } = useAppState()
   const [cat, setCat] = useState(() => CATEGORIES.find((c) => c.id === 'milk')?.id ?? CATEGORIES[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<OrderItem[]>([])
@@ -36,6 +36,16 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [receipt, setReceipt] = useState<Order | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const canCancel = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canCancelOrders)
+  const canReprint = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canReprintReceipts)
+  const cancelReceipt = async (o: Order) => {
+    const reason = window.prompt('Otmena sababi (kamida 3 ta belgi):')
+    if (!reason || reason.trim().length < 3) return
+    try { setHistoryError(''); await api('/api/orders/' + o.id + '/cancel', { method: 'POST', body: { reason: reason.trim() } }); await sync() }
+    catch (e) { setHistoryError((e as Error).message) }
+  }
 
   const products = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -168,6 +178,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { addToCart(it); setModal(null) }} />}
       {paying && <PaymentModal total={total} onClose={() => setPaying(false)} onConfirm={confirmPayment} />}
       {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
+      {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">Cheklar tarixi · Otmena / Perechek</h2><button onClick={() => setHistoryOpen(false)} aria-label="Yopish"><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">Otmena: {orders.filter(o => o.status === 'cancelled').length} ta</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `OTMENA · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>i.name).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">Perechek</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">Otmena</button>}</div>)}</div></div></div>}
       {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
     </div>
   )

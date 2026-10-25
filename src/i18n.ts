@@ -94,7 +94,7 @@ const RU: Record<string, string> = {
   "Ishlangan kun": "Отработано дней",
   "Ushlanmalar": "Удержания",
   "Hisoblangan": "Начислено",
-  "To‘langan": "Выплачено",
+  "staff:To‘langan": "Выплачено",
   "Amal": "Действие",
   "Avans yoki oylik to‘lovi": "Аванс или выплата зарплаты",
   "Xodimni tanlang": "Выберите сотрудника",

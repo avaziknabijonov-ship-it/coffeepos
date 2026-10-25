@@ -213,3 +213,16 @@ def test_idempotent_sales_and_cashier_cash_spending():
         assert finance.status_code == 200, finance.text
         assert finance.json()["expenses"] == 7000
         assert finance.json()["orders"] == 1
+
+
+def test_category_name_edit():
+    with TestClient(app) as c:
+        r = c.post("/api/auth/register", json={"companyName":"Rename Test","slug":"rename-test-cafe","ownerName":"Owner","ownerPin":"8769"})
+        assert r.status_code == 200, r.text
+        h = {"Authorization":"Bearer "+r.json()["token"]}
+        before = c.get("/api/menu", headers=h).json()
+        key = before["categories"][0]["id"]
+        result = c.put("/api/categories/"+key, json={"name":"Yangilangan kategoriya"}, headers=h)
+        assert result.status_code == 200, result.text
+        after = c.get("/api/menu", headers=h).json()
+        assert after["categories"][0]["name"] == "Yangilangan kategoriya"

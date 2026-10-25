@@ -1,6 +1,6 @@
 /* CoffeePOS first-party offline shell. Only public static assets are cached.
    API traffic, receipts and customer data are never cached by the service worker. */
-const CACHE_NAME = 'coffeepos-static-v1'
+const CACHE_NAME = 'coffeepos-static-v2'
 const SHELL = ['/', '/favicon.svg']
 
 self.addEventListener('install', event => {
@@ -39,6 +39,7 @@ self.addEventListener('fetch', event => {
   }
   if (!url.pathname.startsWith('/assets/') && !SHELL.includes(url.pathname)) return
   event.respondWith(caches.open(CACHE_NAME).then(async cache => {
+    // Hashed assets are immutable. Fetch online if possible, use cache offline.
     const saved = await cache.match(request)
     if (saved) return saved
     const response = await fetch(request)

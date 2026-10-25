@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { t } from './i18n'
+import LangSwitch from './LangSwitch'
 type Subscription = { plan: string; status: string; expiresAt: number }
 type Company = { id: number; slug: string; name: string; createdAt: number; subscription: Subscription | null }
 type Result = { items: Company[]; offset: number; limit: number }
@@ -28,7 +30,7 @@ export default function Superadmin() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(typeof data.detail === 'string' ? data.detail : 'Xatolik: ' + res.status)
+      throw new Error(typeof data.detail === 'string' ? data.detail : t('Xatolik: ') + res.status)
     }
     return res.json() as Promise<T>
   }
@@ -59,33 +61,33 @@ export default function Superadmin() {
   const field = 'w-full min-w-0 rounded-lg border border-stone-300 bg-white p-2 text-sm'
   return <main className="min-h-screen bg-stone-100 p-4 text-stone-900">
     <div className="mx-auto max-w-6xl space-y-4">
-      <header className="flex items-center justify-between"><h1 className="text-2xl font-bold">CoffeePOS · Superadmin</h1><a className="text-sm underline" href="/#admin">CoffeePOS</a></header>
+      <header className="flex items-center justify-between"><h1 className="text-2xl font-bold">{t("CoffeePOS · Superadmin")}</h1><div className="flex items-center gap-3"><LangSwitch light /><a className="text-sm underline" href="/#admin">CoffeePOS</a></div></header>
       <section className="rounded-xl bg-white p-5">
-        <label className="block text-sm font-semibold">Maxfiy superadmin kaliti (faqat shu sahifada)</label>
-        <div className="mt-2 flex gap-2"><input className={field} type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="SUPERADMIN_KEY" /><button className="rounded-lg bg-stone-900 px-4 text-white" onClick={() => load(0)}>Kirish</button></div>
-        <p className="mt-2 text-xs text-stone-500">Kalit brauzer xotirasiga saqlanmaydi. Hech kimga yubormang.</p>
+        <label className="block text-sm font-semibold">{t("Maxfiy superadmin kaliti (faqat shu sahifada)")}</label>
+        <div className="mt-2 flex gap-2"><input className={field} type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="SUPERADMIN_KEY" /><button className="rounded-lg bg-stone-900 px-4 text-white" onClick={() => load(0)}>{t("Kirish")}</button></div>
+        <p className="mt-2 text-xs text-stone-500">{t("Kalit brauzer xotirasiga saqlanmaydi. Hech kimga yubormang.")}</p>
         {error && <p className="mt-2 text-sm text-red-600" role="alert">{error}</p>}
       </section>
       {authenticated && <>
         <section className="rounded-xl bg-white p-5">
-          <h2 className="mb-3 text-lg font-semibold">Yangi qahvaxona yaratish</h2>
+          <h2 className="mb-3 text-lg font-semibold">{t("Yangi qahvaxona yaratish")}</h2>
           <form onSubmit={e => { e.preventDefault(); void create() }} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-sm">Login<input className={field} value={slug} onChange={e => setSlug(e.target.value)} required minLength={3} maxLength={41} pattern="[a-z0-9][a-z0-9-]{2,40}" /></label>
-            <label className="text-sm">Qahvaxona nomi<input className={field} value={name} onChange={e => setName(e.target.value)} required /></label>
-            <label className="text-sm">Rahbar ismi<input className={field} value={ownerName} onChange={e => setOwnerName(e.target.value)} required /></label>
-            <label className="text-sm">Rahbar PIN<input className={field} type="password" inputMode="numeric" autoComplete="new-password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} required pattern="[0-9]{4,6}" /></label>
-            <label className="text-sm">Tarif<select className={field} value={plan} onChange={e => setPlan(e.target.value as 'monthly' | 'yearly')}><option value="monthly">Oylik</option><option value="yearly">Yillik</option></select></label>
-            <label className="text-sm">Obuna davomiyligi, kun<input className={field} type="number" min="1" max="730" value={days} onChange={e => setDays(Number(e.target.value))} required /></label>
-            <button className="self-end rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>Qahvaxona yaratish</button>
+            <label className="text-sm">{t("Login")}<input className={field} value={slug} onChange={e => setSlug(e.target.value)} required minLength={3} maxLength={41} pattern="[a-z0-9][a-z0-9-]{2,40}" /></label>
+            <label className="text-sm">{t("Qahvaxona nomi")}<input className={field} value={name} onChange={e => setName(e.target.value)} required /></label>
+            <label className="text-sm">{t("Rahbar ismi")}<input className={field} value={ownerName} onChange={e => setOwnerName(e.target.value)} required /></label>
+            <label className="text-sm">{t("Rahbar PIN")}<input className={field} type="password" inputMode="numeric" autoComplete="new-password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} required pattern="[0-9]{4,6}" /></label>
+            <label className="text-sm">{t("Tarif")}<select className={field} value={plan} onChange={e => setPlan(e.target.value as 'monthly' | 'yearly')}><option value="monthly">{t("Oylik")}</option><option value="yearly">{t("Yillik")}</option></select></label>
+            <label className="text-sm">{t("Obuna davomiyligi, kun")}<input className={field} type="number" min="1" max="730" value={days} onChange={e => setDays(Number(e.target.value))} required /></label>
+            <button className="self-end rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>{t("Qahvaxona yaratish")}</button>
           </form>
         </section>
         <section className="rounded-xl bg-white p-5">
-          <h2 className="mb-3 text-lg font-semibold">Qahvaxonalar va litsenziyalar</h2>
+          <h2 className="mb-3 text-lg font-semibold">{t("Qahvaxonalar va litsenziyalar")}</h2>
           <div className="space-y-2">{companies.map(c => <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-            <div className="text-sm"><b>{c.name}</b> <span className="text-stone-500">({c.slug})</span><p className="text-stone-500">{c.subscription ? (c.subscription.plan + ' · ' + c.subscription.status + ' · ' + new Date(c.subscription.expiresAt).toLocaleDateString()) : 'Obuna yo‘q'}</p></div>
-            <div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'grant')} disabled={busy}>Berish</button><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'renew')} disabled={busy}>Uzaytirish</button><button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700" onClick={() => update(c.slug, 'suspend')} disabled={busy || !c.subscription}>To‘xtatish</button></div>
+            <div className="text-sm"><b>{c.name}</b> <span className="text-stone-500">({c.slug})</span><p className="text-stone-500">{c.subscription ? (t(c.subscription.plan === 'monthly' ? 'Oylik' : 'Yillik') + ' · ' + (c.subscription.status === 'active' ? (t('Faol')) : c.subscription.status === 'suspended' ? t('To‘xtatish') : c.subscription.status) + ' · ' + new Date(c.subscription.expiresAt).toLocaleDateString()) : t('Obuna yo‘q')}</p></div>
+            <div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'grant')} disabled={busy}>{t("Berish")}</button><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'renew')} disabled={busy}>{t("Uzaytirish")}</button><button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700" onClick={() => update(c.slug, 'suspend')} disabled={busy || !c.subscription}>{t("To‘xtatish")}</button></div>
           </div>)}</div>
-          <div className="mt-3 flex items-center gap-3"><button disabled={offset === 0} onClick={() => load(Math.max(0, offset-limit))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Oldingi</button><span className="text-sm">{offset+1}–{offset+companies.length}</span><button disabled={companies.length < limit} onClick={() => load(offset+limit)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Keyingi</button></div>
+          <div className="mt-3 flex items-center gap-3"><button disabled={offset === 0} onClick={() => load(Math.max(0, offset-limit))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Oldingi")}</button><span className="text-sm">{offset+1}–{offset+companies.length}</span><button disabled={companies.length < limit} onClick={() => load(offset+limit)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Keyingi")}</button></div>
         </section>
       </>}
     </div>

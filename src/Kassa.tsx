@@ -105,8 +105,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   if (!shift) return <OpenShift canOpen />
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
+    <div className="cashier-warm flex h-full min-h-0">
+      <aside className="cashier-categories hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
         {CATEGORIES.map((c) => {
           const Icon = CAT_ICON[c.id] ?? Coffee
           const active = !query && cat === c.id
@@ -119,7 +119,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
         })}
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="cashier-products flex min-w-0 flex-1 flex-col">
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
           <div className="flex gap-2">
           <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
@@ -145,8 +145,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             const minPrice = Math.min(...p.sizes.map((s) => s.price))
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
-                className="group relative flex min-h-36 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
-                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="mb-2 h-24 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
+                className="cashier-product-card group relative flex min-h-44 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
+                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="mb-2 h-28 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
                    <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
@@ -163,7 +163,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
         </div>
       </main>
 
-      <aside className="hidden w-80 shrink-0 border-l border-stone-200 bg-white md:flex lg:w-96">{cartPanel}</aside>
+      <aside className="cashier-checkout hidden w-80 shrink-0 border-l border-stone-200 bg-white md:flex lg:w-96">{cartPanel}</aside>
 
       {count > 0 && !cartOpen && (
         <div className="fixed inset-x-0 bottom-0 z-30 p-3 md:hidden">

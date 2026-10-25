@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { t } from './i18n'
+import { t, tServer } from './i18n'
 import LangSwitch from './LangSwitch'
 import { useAppState } from './store'
 type Subscription = { plan: string; status: string; expiresAt: number }
@@ -33,7 +33,7 @@ export default function Superadmin() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(typeof data.detail === 'string' ? data.detail : t('Xatolik: ') + res.status)
+      throw new Error(typeof data.detail === 'string' ? tServer(data.detail) : Array.isArray(data.detail) ? t("Ma'lumotlar noto'g'ri to'ldirilgan") : t('Xatolik: ') + res.status)
     }
     return res.json() as Promise<T>
   }
@@ -56,7 +56,7 @@ export default function Superadmin() {
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   async function update(slugValue: string, action: Action) {
-    if (!window.confirm(slugValue + ' — ' + action + '?')) return
+    if (!window.confirm(slugValue + ' — ' + t(action === 'grant' ? 'Berish' : action === 'renew' ? 'Uzaytirish' : 'To‘xtatish') + '?')) return
     setBusy(true); setError('')
     try { await request('/companies/' + encodeURIComponent(slugValue) + '/subscription', 'POST', { action, plan, days }); await load() }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
@@ -87,7 +87,7 @@ export default function Superadmin() {
         <section className="rounded-xl bg-white p-5">
           <h2 className="mb-3 text-lg font-semibold">{t("Qahvaxonalar va litsenziyalar")}</h2>
           <div className="space-y-2">{companies.map(c => <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-            <div className="text-sm"><b>{c.name}</b> <span className="text-stone-500">({c.slug})</span><p className="text-stone-500">{c.subscription ? (t(c.subscription.plan === 'monthly' ? 'Oylik' : 'Yillik') + ' · ' + (c.subscription.status === 'active' ? (t('Faol')) : c.subscription.status === 'suspended' ? t('To‘xtatish') : c.subscription.status) + ' · ' + new Date(c.subscription.expiresAt).toLocaleDateString()) : t('Obuna yo‘q')}</p></div>
+            <div className="text-sm"><b>{c.name}</b> <span className="text-stone-500">({c.slug})</span><p className="text-stone-500">{c.subscription ? (t(c.subscription.plan === 'monthly' ? 'Oylik' : 'Yillik') + ' · ' + (c.subscription.status === 'active' ? (t('Faol')) : c.subscription.status === 'suspended' ? t('To‘xtatilgan') : c.subscription.status) + ' · ' + new Date(c.subscription.expiresAt).toLocaleDateString()) : t('Obuna yo‘q')}</p></div>
             <div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'grant')} disabled={busy}>{t("Berish")}</button><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'renew')} disabled={busy}>{t("Uzaytirish")}</button><button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700" onClick={() => update(c.slug, 'suspend')} disabled={busy || !c.subscription}>{t("To‘xtatish")}</button></div>
           </div>)}</div>
           <div className="mt-3 flex items-center gap-3"><button disabled={offset === 0} onClick={() => load(Math.max(0, offset-limit))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Oldingi")}</button><span className="text-sm">{offset+1}–{offset+companies.length}</span><button disabled={companies.length < limit} onClick={() => load(offset+limit)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Keyingi")}</button></div>

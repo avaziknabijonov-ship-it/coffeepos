@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { t } from './i18n'
-import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
+import { exportExcel } from './exportExcel'
+import { TriangleAlert, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { Payment } from './data'
 import { api } from './api'
@@ -14,10 +15,11 @@ import PrinterSettings from './PrinterSettings'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
+  { id: 'receiving', label: 'Prixod' },
   { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
@@ -30,7 +32,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -63,7 +65,8 @@ export default function Admin() {
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
           {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
-          {view === 'stock' && <PurchaseInvoices />}
+          {view === 'stock' && <StockOverview />}
+          {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
           {view === 'menu' && <MenuEditor />}
           {view === 'recipes' && <Recipes />}
@@ -79,6 +82,26 @@ export default function Admin() {
       </div>
     </div>
   )
+}
+
+function StockOverview() {
+  const { stock } = useAppState()
+  const download = () => exportExcel('coffeepos-ombor', ['Xomashyo', 'Birlik', 'Qoldiq', 'Minimal qoldiq', 'Tannarx', 'Qoldiq qiymati'],
+    INGREDIENTS.map(i => [i.name, UNIT_LABEL[i.unit], stock[i.id] ?? 0, i.min, i.cost, Math.round((stock[i.id] ?? 0) * i.cost)]))
+  return <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-lg font-semibold">{t('Ombor qoldiqlari')}</h2>
+      <button onClick={download} className="rounded-lg border px-3 py-2 text-sm font-semibold">{t('Excelga eksport')}</button>
+    </div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[530px] text-sm">
+      <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th></tr></thead>
+      <tbody>{INGREDIENTS.map(i => <tr key={i.id} className="border-t">
+        <td className="py-2 font-medium">{i.name}</td><td>{t(UNIT_LABEL[i.unit])}</td>
+        <td className={(stock[i.id] ?? 0) < i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
+        <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td>
+      </tr>)}</tbody>
+    </table></div>
+  </section>
 }
 
 type Orders = ReturnType<typeof useAppState>['orders']

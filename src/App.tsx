@@ -40,10 +40,13 @@ function Main({ role }: { role: Role }) {
   const { orders, shift, session, online, pendingCount, pendingError } = useAppState()
   const canBarista = Boolean(session?.staff.canBarista)
   const tabs = TABS.filter((t) => t.roles.includes(role) || (t.id === 'barista' && role === 'kassir' && canBarista))
-  const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : tabs[0].id)
+  const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : (role === 'owner' || role === 'admin' ? 'admin' : tabs[0].id))
   const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
   const [shiftOpen, setShiftOpen] = useState(false)
   const waiting = orders.filter((o) => o.status === 'new' && !o.pendingSync).length
+  const manager = role === 'owner' || role === 'admin'
+  const inAdmin = tab === 'admin' && manager
+  const visibleTabs = manager ? (inAdmin ? tabs.filter(t => t.id === 'admin') : tabs.filter(t => t.id !== 'admin')) : tabs
 
   useEffect(() => {
     const onHash = () => setTab(pick(fromHash()))
@@ -54,14 +57,14 @@ function Main({ role }: { role: Role }) {
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex shrink-0 items-center gap-2 bg-stone-900 px-3 py-2 text-white sm:gap-4 sm:px-4">
+      <header className={`flex shrink-0 items-center gap-2 px-3 py-2 text-white sm:gap-4 sm:px-4 ${inAdmin ? 'bg-slate-950' : 'bg-stone-900'}`}>
         <div className="flex items-center gap-2 font-semibold">
           <span className="grid size-8 place-items-center rounded-lg bg-amber-600"><Coffee className="size-5" /></span>
           <span className="hidden sm:inline">CoffeePOS</span>
           <span className="hidden max-w-40 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-amber-300 lg:inline">{session?.company.name}</span>
         </div>
         <nav className="flex flex-1 justify-center gap-1 sm:justify-start">
-          {tabs.map(({ id, label, icon: Icon }) => (
+          {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => { window.location.hash = id }}
@@ -75,11 +78,15 @@ function Main({ role }: { role: Role }) {
             </button>
           ))}
         </nav>
+        {manager && <button onClick={() => { window.location.hash = inAdmin ? 'kassa' : 'admin' }}
+          className="rounded-lg border border-white/30 px-2 py-2 text-xs font-semibold text-white hover:bg-white/10 sm:px-3">
+          {inAdmin ? t('Ishchi kassa oynasi') : t('Admin boshqaruviga qaytish')}
+        </button>}
         {!online && <span title={t("Server bilan aloqa yo'q")} className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">{t("Aloqa yo'q")}</span></span>}
         {pendingCount > 0 && <span className="rounded-lg bg-amber-500 px-2 py-1 text-xs font-bold text-stone-950" title={pendingError || t('Serverga yuborilmagan buyurtmalar')}>
           {t('Navbatda')}: {pendingCount}
         </span>}
-        <button onClick={() => role !== 'barista' && setShiftOpen(true)} className="hidden rounded-lg px-2 py-1 text-right text-xs leading-tight text-stone-300 hover:bg-white/10 md:block">
+        <button onClick={() => tab === 'kassa' && setShiftOpen(true)} className="hidden rounded-lg px-2 py-1 text-right text-xs leading-tight text-stone-300 hover:bg-white/10 md:block">
           <div className="flex items-center justify-end gap-1.5"><span className={`size-2 rounded-full ${shift ? 'bg-emerald-400' : 'bg-red-400'}`} />{shift ? t('Smena ochiq') : t('Smena yopiq')}</div>
           <div><span className="text-white">{session?.staff.name}</span> · {t(ROLE_LABEL[role])}</div>
         </button>
@@ -95,7 +102,7 @@ function Main({ role }: { role: Role }) {
 
         {tab === 'admin' && <Admin />}
       </div>
-      {shiftOpen && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
+      {shiftOpen && tab === 'kassa' && <CloseShiftModal onClose={() => setShiftOpen(false)} />}
     </div>
   )
 }

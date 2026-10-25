@@ -290,7 +290,7 @@ function Orders({ today }: { today: Orders }) {
   return (
     <Card title={t('Bugungi cheklar ({n})', { n: list.length })}>
       <div className="mb-3 inline-flex rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Otmena: {list.filter(o => o.status === 'cancelled').length} ta · {fmt(list.filter(o => o.status === 'cancelled').reduce((sum,o) => sum + o.total,0))} so‘m</div>
-      <div className="mb-3 text-right"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-cheklar', ['Raqam','Sana','Mijoz','Mahsulot','To‘lov','Summa','Holat'], list.map(o => [o.number,new Date(o.createdAt).toLocaleString(),o.customer,o.items.map(i=>`${i.qty}x ${i.name}`).join(', '),o.payment,o.total,o.status]))}>{t('Excelga eksport')}</button></div>
+      <div className="mb-3 text-right"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-cheklar', ['Raqam','Sana','Mijoz','Mahsulot','To‘lov','Summa','Holat','Otmena qilgan','Otmena sababi','Otmena vaqti'], list.map(o => [o.number,new Date(o.createdAt).toLocaleString(),o.customer,o.items.map(i=>`${i.qty}x ${i.name}`).join(', '),o.payment,o.total,o.status,o.cancelledBy || '',o.cancelReason || '',o.cancelledAt ? new Date(o.cancelledAt).toLocaleString() : '']))}>{t('Excelga eksport')}</button></div>
       {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
         <h2>CoffeePOS · № {printing.number}</h2>
         <p>{new Date(printing.createdAt).toLocaleString()}</p>

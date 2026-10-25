@@ -213,6 +213,7 @@ function Cart(props: {
         {props.bonusError && <p role="alert" className="text-xs text-red-600">{props.bonusError}</p>}
         {props.bonusInfo?.enabled && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 p-2 text-xs">
           <span>{t('Bonus qoldig‘i')}: {som(props.bonusInfo.balance)}</span>
+          <span>{t('Bu savdodan bonus')}: {som(Math.floor(Math.max(0, props.subtotal - props.discount - props.bonusRedeem) * props.bonusInfo.earnPercent / 100))}</span>
           <label>{t('Ishlatish')} <input className="w-24 rounded border bg-white p-1" type="number" min={0} max={props.maxRedeem} step={1} value={props.bonusRedeem} onChange={e => props.setBonusRedeem(Math.max(0, Math.min(Number(e.target.value) || 0, props.maxRedeem)))} /></label>
         </div>}
       </div>

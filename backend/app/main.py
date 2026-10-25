@@ -161,7 +161,7 @@ def order_out(o: Order) -> dict:
         "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
         "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
-        "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name,
+        "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
     }
 
 
@@ -1068,6 +1068,27 @@ class OrderIn(BaseModel):
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+
+
+@app.get("/api/orders/history")
+def orders_history(from_ms: int, to_ms: int, staff: str = "", shift_id: int | None = None,
+                   ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    """Auditable order history, filtered within one tenant. Date range max 366 days."""
+    if to_ms <= from_ms or to_ms - from_ms > 366 * 86400000:
+        raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
+    q = select(Order).where(Order.company_id == ctx.cid, Order.created_at >= from_ms,
+                            Order.created_at < to_ms)
+    if staff:
+        q = q.where(Order.staff_name == staff)
+    if shift_id is not None:
+        q = q.where(Order.shift_id == shift_id)
+    q = q.order_by(Order.created_at.desc()).limit(5000)
+    out = []
+    for order in ctx.db.scalars(q):
+        record = order_out(order)
+        record["shiftId"] = order.shift_id
+        out.append(record)
+    return out
 
 
 @app.post("/api/orders")

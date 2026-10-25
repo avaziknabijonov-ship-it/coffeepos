@@ -24,8 +24,29 @@ export default function PurchaseInvoices() {
   const [opened, setOpened] = useState<number | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
   const [printing, setPrinting] = useState<Invoice | null>(null)
+  const [showNewProduct, setShowNewProduct] = useState(false)
+  const [newProductName, setNewProductName] = useState('')
+  const [newProductUnit, setNewProductUnit] = useState<'g' | 'ml' | 'dona'>('dona')
+  const [newProductMin, setNewProductMin] = useState('0')
+  const [newProductCost, setNewProductCost] = useState('0')
+  const [creatingProduct, setCreatingProduct] = useState(false)
+  const [newProductLine, setNewProductLine] = useState(0)
   const load = () => api<Invoice[]>('/api/purchases').then(setHistory).catch((e: Error) => setError(e.message))
   useEffect(() => { void load() }, [])
+  const createProduct = async () => {
+    setError('')
+    const name = newProductName.trim()
+    if (!name) { setError('Yangi tovar nomini kiriting.'); return }
+    if (INGREDIENTS.some(i => i.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) { setError('Bu nomdagi tovar allaqachon mavjud.'); return }
+    if (Number(newProductMin) < 0 || Number(newProductCost) < 0) { setError('Minimal qoldiq va tannarx manfiy bo‘lishi mumkin emas.'); return }
+    setCreatingProduct(true)
+    try {
+      const created = await api<{ id: string }>('/api/ingredients', { body: { name, unit: newProductUnit, cost: Number(newProductCost) || 0, min: Number(newProductMin) || 0 } })
+      await refreshMenu()
+      edit(newProductLine, { ing: created.id })
+      setShowNewProduct(false); setNewProductName(''); setNewProductCost('0'); setNewProductMin('0')
+    } catch (e) { setError((e as Error).message) } finally { setCreatingProduct(false) }
+  }
   const download = () => exportExcel('coffeepos-prixod', ['Sana', 'Nakladnoy', 'Yetkazib beruvchi', 'To‘lov', 'Holat', 'Mahsulot', 'Miqdor', 'Birlik', 'Birlik narxi', 'Summa'],
     history.flatMap(p => p.lines.map(line => [
       new Date(p.receivedAt).toLocaleDateString(), p.number, p.supplier,
@@ -82,12 +103,14 @@ export default function PurchaseInvoices() {
         <label className="space-y-1 text-sm">{t("To'lov holati")}<select className={input} value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}><option value="unpaid">{t("Qarz")}</option><option value="paid">{t("To‘langan")}</option><option value="partial">{t("Qisman to‘langan")}</option></select></label>
       </div>
       {editId && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm">{t('Tahrirlash: faqat sana, raqam, yetkazib beruvchi va izoh. Mahsulot kirimi o‘zgarmaydi.')}</p>}
+      {!editId && <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-stone-600">Mavjud tovarni tanlang yoki yangi tovar yarating.</p><button type="button" onClick={() => { setNewProductLine(lines.findIndex(l => !l.ing) >= 0 ? lines.findIndex(l => !l.ing) : 0); setShowNewProduct(v => !v) }} className="inline-flex items-center gap-2 rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"><Plus className="size-4" /> Yangi tovar yaratish</button></div>}
+      {!editId && showNewProduct && <div className="mt-3 grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:grid-cols-2 lg:grid-cols-5"><label className="text-sm">Yangi tovar nomi<input className={input} value={newProductName} onChange={e => setNewProductName(e.target.value)} placeholder="Masalan: Qog‘oz stakan" /></label><label className="text-sm">O‘lchov birligi<select className={input} value={newProductUnit} onChange={e => setNewProductUnit(e.target.value as 'g' | 'ml' | 'dona')}><option value="dona">Dona</option><option value="g">Gramm</option><option value="ml">Millilitr</option></select></label><label className="text-sm">Boshlang‘ich tannarx<input className={input} type="number" min="0" step="any" value={newProductCost} onChange={e => setNewProductCost(e.target.value)} /></label><label className="text-sm">Minimal qoldiq<input className={input} type="number" min="0" step="any" value={newProductMin} onChange={e => setNewProductMin(e.target.value)} /></label><div className="flex items-end gap-2"><button type="button" disabled={creatingProduct} onClick={() => void createProduct()} className="rounded-lg bg-stone-900 px-4 py-2 font-semibold text-white disabled:opacity-50">{creatingProduct ? 'Saqlanmoqda...' : 'Tovarni yaratish'}</button><button type="button" onClick={() => setShowNewProduct(false)} className="rounded-lg border px-3 py-2">Yopish</button></div><p className="text-xs text-stone-600 sm:col-span-2 lg:col-span-5">Tovar omborga 0 qoldiq bilan qo‘shiladi. Keyin quyidagi nakladnoyda uning miqdori va xarid narxini kiriting.</p></div>}
       {!editId && <div className="mt-5 overflow-x-auto">
         <table className="w-full min-w-[650px] text-sm">
           <thead><tr className="border-b text-left text-stone-500"><th className="p-2">{t("Mahsulot")}</th><th className="p-2">{t("Miqdor")}</th><th className="p-2">{t("Narx / birlik (so‘m)")}</th><th className="p-2 text-right">{t("Summa")}</th><th className="p-2"></th></tr></thead>
           <tbody>{lines.map((l, idx) => {
             const ing = INGREDIENTS.find(i => i.id === l.ing)
-            return <tr key={idx} className="border-b border-stone-100"><td className="p-2"><select className={input} value={l.ing} onChange={e => edit(idx, { ing: e.target.value })}><option value="">{t("Tanlang")}</option>{INGREDIENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></td><td className="p-2"><div className="flex items-center gap-1"><input className={input} type="number" min="0.001" step="any" value={l.qty} onChange={e => edit(idx, { qty: e.target.value })} /><span className="text-stone-400">{ing ? t(UNIT_LABEL[ing.unit]) : ''}</span></div></td><td className="p-2"><input className={input} type="number" min="0" step="any" value={l.unitPrice} onChange={e => edit(idx, { unitPrice: e.target.value })} /></td><td className="p-2 text-right font-semibold">{fmt(amount(l) || 0)}</td><td className="p-2"><button aria-label="Satrni olib tashlash" disabled={lines.length === 1} onClick={() => setLines(v => v.filter((_, i) => i !== idx))} className="rounded-lg p-2 text-red-600 disabled:opacity-30"><Trash2 className="size-4" /></button></td></tr>
+            return <tr key={idx} className="border-b border-stone-100"><td className="p-2"><select className={input} value={l.ing} onChange={e => { if (e.target.value === "__new__") { setNewProductLine(idx); setShowNewProduct(true); return } edit(idx, { ing: e.target.value }) }}><option value="">{t("Tanlang")}</option><option value="__new__">+ Yangi tovar yaratish</option>{INGREDIENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></td><td className="p-2"><div className="flex items-center gap-1"><input className={input} type="number" min="0.001" step="any" value={l.qty} onChange={e => edit(idx, { qty: e.target.value })} /><span className="text-stone-400">{ing ? t(UNIT_LABEL[ing.unit]) : ''}</span></div></td><td className="p-2"><input className={input} type="number" min="0" step="any" value={l.unitPrice} onChange={e => edit(idx, { unitPrice: e.target.value })} /></td><td className="p-2 text-right font-semibold">{fmt(amount(l) || 0)}</td><td className="p-2"><button aria-label="Satrni olib tashlash" disabled={lines.length === 1} onClick={() => setLines(v => v.filter((_, i) => i !== idx))} className="rounded-lg p-2 text-red-600 disabled:opacity-30"><Trash2 className="size-4" /></button></td></tr>
           })}</tbody>
         </table>
       </div>}

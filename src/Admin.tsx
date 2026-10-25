@@ -93,7 +93,7 @@ function StockOverview() {
     INGREDIENTS.map(i => [i.name, UNIT_LABEL[i.unit], stock[i.id] ?? 0, i.min, i.cost, Math.round((stock[i.id] ?? 0) * i.cost)]))
   return <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-      <h2 className="text-lg font-semibold">{t('Ombor qoldiqlari')}</h2>
+      <h2 className="text-lg font-semibold">{t('Xomashyo')}</h2>
       <button onClick={download} className="rounded-lg border px-3 py-2 text-sm font-semibold">{t('Excelga eksport')}</button>
     </div>
     <div className="overflow-x-auto"><table className="w-full min-w-[530px] text-sm">

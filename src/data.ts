@@ -20,7 +20,7 @@ export interface OrderItem {
 export interface Order {
   id: string; number: number; customer: string; items: OrderItem[]
   subtotal: number; discount: number; total: number; cost: number
-  payment: Payment; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; pendingSync?: boolean
+  payment: Payment; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
 }
 
 export const fmt = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')

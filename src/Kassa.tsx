@@ -135,13 +135,13 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             const minPrice = Math.min(...p.sizes.map((s) => s.price))
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
-                className="relative flex min-h-32 disabled:opacity-40 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] hover:border-amber-400">
-                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="mb-2 h-20 w-full rounded-xl object-cover" /> :
+                className="group relative flex min-h-36 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
+                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="mb-2 h-24 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
                    <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
-                  <span className="block font-semibold leading-tight">{p.name}</span>
-                  <span className="mt-1 block text-sm text-stone-500">
+                  <span className="block text-[15px] font-bold leading-tight text-stone-900">{p.name}</span>
+                  <span className="mt-1 block text-sm font-medium text-amber-700">
                     {p.sizes.length > 1 ? t('{p} dan', { p: fmt(minPrice) }) : som(minPrice)}
                     {p.sizes.length > 1 && <span className="ml-1 text-xs text-stone-400">· {p.sizes.map((s) => s.label).join('/')}</span>}
                   </span>

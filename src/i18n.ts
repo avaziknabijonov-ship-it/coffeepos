@@ -377,3 +377,9 @@ export function tServer(msg: string): string {
   for (const [re, out] of RU_PATTERNS) if (re.test(msg)) return msg.replace(re, out)
   return msg
 }
+
+/** Translate only the default demo catalog labels. User-supplied names remain untouched. */
+const DEFAULT_CATALOG_NAMES = new Set<string>(["Kofe doni (arabika)","Sut 3,2%","Bodom suti","Kokos suti","Laktozasiz sut","Qaymoq 10%","Karamel sirop","Vanil sirop","Findiq sirop","Shokolad sousi","Matcha kukuni","Qora choy (paket)","Ko'k choy (paket)","Muz","Stakan S (250 ml)","Stakan M (350 ml)","Stakan L (450 ml)","Sovuq ichimlik stakani","Qopqoq","Trubochka","Kruassan","Chizkeyk (bo'lak)","Brauni","Espresso","Sutli kofe","Sovuq","Choy","Desert","Amerikano","Kapuchino","Latte","Flat uayt","Raf","Mokko","Ays latte","Ays amerikano","Frappe karamel","Qora choy","Ko'k choy","Matcha latte","Chizkeyk","Oddiy sut","Laktozasiz","Karamel","Vanil","Findiq","Doppio"])
+export function tCatalogName(name: string): string {
+  return DEFAULT_CATALOG_NAMES.has(name) ? t(name) : name
+}

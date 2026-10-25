@@ -49,12 +49,24 @@ def migrate() -> None:
     if "can_barista" not in staff_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE staff ADD COLUMN can_barista BOOLEAN NOT NULL DEFAULT FALSE"))
+    staff_permissions = {c["name"] for c in inspect(engine).get_columns("staff")}
+    with engine.begin() as conn:
+        if "can_cancel_orders" not in staff_permissions:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN can_cancel_orders BOOLEAN NOT NULL DEFAULT FALSE"))
+        if "can_reprint_receipts" not in staff_permissions:
+            conn.execute(text("ALTER TABLE staff ADD COLUMN can_reprint_receipts BOOLEAN NOT NULL DEFAULT FALSE"))
     product_columns = {c["name"] for c in inspect(engine).get_columns("products")}
     if "image_url" not in product_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
+        if "cancelled_at" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_at BIGINT"))
+        if "cancelled_by" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_by VARCHAR(64)"))
+        if "cancel_reason" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN cancel_reason VARCHAR(256)"))
         if "customer_id" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN customer_id INTEGER"))
         if "bonus_used" not in order_columns:
@@ -139,7 +151,7 @@ def require(*roles: str):
 # ---------- serializers ----------
 
 def staff_out(s: Staff) -> dict:
-    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista)}
+    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista), "canCancelOrders": bool(s.can_cancel_orders), "canReprintReceipts": bool(s.can_reprint_receipts)}
 
 
 def order_out(o: Order) -> dict:
@@ -148,6 +160,7 @@ def order_out(o: Order) -> dict:
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
         "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
+        "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name,
     }
 
@@ -922,6 +935,8 @@ class StaffIn(BaseModel):
     pin: str | None = Field(default=None, pattern=PIN_RE)
     active: bool = True
     canBarista: bool = False
+    canCancelOrders: bool = False
+    canReprintReceipts: bool = False
 
 
 def guard_owner(ctx: Ctx, role: str) -> None:
@@ -941,7 +956,7 @@ def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(400, "PIN kerak")
     if pin_taken(ctx.db, ctx.cid, body.pin):
         raise HTTPException(409, "Bu PIN band")
-    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active, can_barista=body.canBarista if body.role == "kassir" else False)
+    s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active, can_barista=body.canBarista if body.role == "kassir" else False, can_cancel_orders=body.canCancelOrders if body.role == "kassir" else False, can_reprint_receipts=body.canReprintReceipts if body.role == "kassir" else False)
     ctx.db.add(s)
     ctx.db.commit()
     return staff_out(s)
@@ -962,6 +977,8 @@ def update_staff(sid: int, body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))
         s.pin_hash = hash_pin(body.pin)
     s.name, s.role, s.active = body.name.strip(), body.role, body.active
     s.can_barista = body.canBarista if body.role == "kassir" else False
+    s.can_cancel_orders = body.canCancelOrders if body.role == "kassir" else False
+    s.can_reprint_receipts = body.canReprintReceipts if body.role == "kassir" else False
     ctx.db.commit()
     return staff_out(s)
 
@@ -1155,8 +1172,14 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     return order_out(order)
 
 
+class CancelOrderIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=256)
+
+
 @app.post("/api/orders/{oid}/cancel")
-def cancel_order(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dict:
+    if ctx.staff.role not in MANAGERS and not (ctx.staff.role == "kassir" and ctx.staff.can_cancel_orders):
+        raise HTTPException(403, "Otmena uchun dostup berilmagan")
     order = ctx.db.get(Order, oid)
     if order is None or order.company_id != ctx.cid:
         raise HTTPException(404, "Buyurtma topilmadi")
@@ -1190,6 +1213,9 @@ def cancel_order(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
                 ctx.db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id,
                                        order_id=order.id, amount=order.bonus_used, reason="cancel_redeem"))
     order.status = "cancelled"
+    order.cancelled_at = now_ms()
+    order.cancelled_by = ctx.staff.name
+    order.cancel_reason = body.reason.strip()
     ctx.db.commit()
     return order_out(order)
 

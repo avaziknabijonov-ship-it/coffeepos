@@ -225,7 +225,7 @@ def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin
     for i, (key, cname) in enumerate(seed.CATEGORIES):
         db.add(Category(company_id=cid, key=key, name=cname, sort=i))
     for key, iname, unit, cost, stock, mn in seed.INGREDIENTS:
-        db.add(Ingredient(company_id=cid, key=key, name=iname, unit=unit, cost=cost, stock=stock, min=mn))
+        db.add(Ingredient(company_id=cid, key=key, name=iname, unit=unit, cost=cost, stock=0, min=mn))
     for i, (key, cat, pname, mods, sizes) in enumerate(seed.PRODUCTS):
         db.add(Product(company_id=cid, key=key, cat=cat, name=pname, mods=mods, sizes=sizes, sort=i))
     for i, (key, group, mname, price, effect) in enumerate(seed.MODIFIERS):

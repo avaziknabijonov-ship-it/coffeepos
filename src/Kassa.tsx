@@ -139,15 +139,15 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             ))}
           </div>
         </div>
-        <div className="grid flex-1 grid-cols-2 content-start gap-3 overflow-y-auto p-3 pb-24 sm:grid-cols-3 md:pb-3 xl:grid-cols-4">
+        <div className="cashier-product-grid grid flex-1 grid-cols-2 content-start gap-3 overflow-y-auto p-3 pb-24 sm:grid-cols-3 md:pb-3 xl:grid-cols-4">
           {products.map((p) => {
             const Icon = CAT_ICON[p.cat] ?? Coffee
             const minPrice = Math.min(...p.sizes.map((s) => s.price))
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
-                className="cashier-product-card group relative flex min-h-44 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
-                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="mb-2 h-28 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
-                   <span className={`grid size-10 place-items-center rounded-xl ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-5" /></span>}
+                className="cashier-product-card group relative flex min-h-60 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
+                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={p.name} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
+                   <span className="cashier-product-fallback mb-2 grid h-36 w-full place-items-center rounded-xl"><span className={`cashier-fallback-icon grid size-16 place-items-center rounded-full ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-9" /></span></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>
                   <span className="block text-[15px] font-bold leading-tight text-stone-900">{p.name}</span>
@@ -155,6 +155,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
                     {p.sizes.length > 1 ? t('{p} dan', { p: fmt(minPrice) }) : som(minPrice)}
                     {p.sizes.length > 1 && <span className="ml-1 text-xs text-stone-400">· {p.sizes.map((s) => s.label).join('/')}</span>}
                   </span>
+                  <span className="cashier-add-button mt-3 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold"><Plus className="size-4" />{t("Qo'shish")}</span>
                 </span>
               </button>
             )

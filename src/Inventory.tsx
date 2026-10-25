@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { ING, INGREDIENTS, UNIT_LABEL, fmt, som, time } from './data'
 import type { Unit } from './data'
 import { api } from './api'
+import { exportExcel } from './exportExcel'
 import { refreshMenu, stockMove, sync, useAppState } from './store'
 
 type Tab = 'count' | 'writeoff' | 'history' | 'report'

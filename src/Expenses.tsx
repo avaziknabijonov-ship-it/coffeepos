@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { exportExcel } from './exportExcel'
 import { fmt } from './data'
 import { t } from './i18n'
 type Expense = { id: number; amount: number; category: string; description: string; payment: string; staff: string; createdAt: number }
@@ -34,7 +35,7 @@ export default function Expenses() {
       <button disabled={saving} onClick={save} className="mt-4 rounded-xl bg-stone-900 px-5 py-2.5 font-semibold text-white disabled:opacity-50">{t('Saqlash')}</button>
       {error && <p className="mt-2 text-red-600">{error}</p>}
     </section>
-    <section className="rounded-2xl border border-stone-200 bg-white p-5"><h2 className="mb-4 font-bold">{t('Xarajatlar tarixi')}</h2>
+    <section className="rounded-2xl border border-stone-200 bg-white p-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">{t('Xarajatlar tarixi')}</h2><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-xarajatlar',['Sana','Sabab','Summa','To‘lov','Xodim','Izoh'],items.map(x=>[new Date(x.createdAt).toLocaleString(),x.category,x.amount,x.payment,x.staff,x.description]))}>{t('Excelga eksport')}</button></div>
       <div className="space-y-2">{items.map(x=><div key={x.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm"><div><b>{t(x.category)}</b><p className="text-stone-500">{new Date(x.createdAt).toLocaleString()} · {x.description || x.staff}</p></div><b>{fmt(x.amount)} {t("so'm")}</b></div>)}</div>
     </section>
   </div>

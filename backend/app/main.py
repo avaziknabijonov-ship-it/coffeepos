@@ -49,6 +49,10 @@ def migrate() -> None:
     if "can_barista" not in staff_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE staff ADD COLUMN can_barista BOOLEAN NOT NULL DEFAULT FALSE"))
+    product_columns = {c["name"] for c in inspect(engine).get_columns("products")}
+    if "image_url" not in product_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
         if "customer_id" not in order_columns:
@@ -153,7 +157,7 @@ def ingredient_out(i: Ingredient) -> dict:
 
 
 def product_out(p: Product) -> dict:
-    return {"id": p.key, "cat": p.cat, "name": p.name, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+    return {"id": p.key, "cat": p.cat, "name": p.name, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
 
 
 def shift_out(s: Shift | None) -> dict | None:
@@ -342,12 +346,15 @@ class SizeIn(BaseModel):
 class ProductIn(BaseModel):
     cat: str
     name: str = Field(min_length=1, max_length=128)
+    imageUrl: str = Field(default="", max_length=512)
     mods: list[Literal["milk", "syrup", "shot"]] = []
     sizes: list[SizeIn] = Field(min_length=1)
     active: bool = True
 
 
 def validate_product(ctx: Ctx, body: ProductIn) -> None:
+    if body.imageUrl and not (body.imageUrl.startswith("https://") or body.imageUrl.startswith("/assets/")):
+        raise HTTPException(422, "Rasm uchun HTTPS yoki ichki /assets/ manzilini kiriting")
     get_row(ctx.db, Category, ctx.cid, body.cat)
     ing_keys = {i.key for i in rows(ctx.db, Ingredient, ctx.cid)}
     codes = [s.code for s in body.sizes]
@@ -363,7 +370,7 @@ def validate_product(ctx: Ctx, body: ProductIn) -> None:
 def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     validate_product(ctx, body)
     p = Product(
-        company_id=ctx.cid, key=slugify(body.name), cat=body.cat, name=body.name.strip(), mods=body.mods,
+        company_id=ctx.cid, key=slugify(body.name), cat=body.cat, name=body.name.strip(), image_url=body.imageUrl, mods=body.mods,
         sizes=[s.model_dump() for s in body.sizes], active=body.active, sort=len(rows(ctx.db, Product, ctx.cid)),
     )
     ctx.db.add(p)

@@ -200,19 +200,19 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
   )
 }
 
-interface StaffRow { id: number; name: string; role: Role; active: boolean; canBarista: boolean }
+interface StaffRow { id: number; name: string; role: Role; active: boolean; canBarista: boolean; canCancelOrders: boolean; canReprintReceipts: boolean }
 
 export function StaffView() {
   const me = useAppState().session?.staff
   const [list, setList] = useState<StaffRow[]>([])
-  const [form, setForm] = useState({ name: '', role: 'kassir' as Role, pin: '', canBarista: false })
+  const [form, setForm] = useState({ name: '', role: 'kassir' as Role, pin: '', canBarista: false, canCancelOrders: false, canReprintReceipts: false })
   const load = () => api<StaffRow[]>('/api/staff').then(setList).catch((e: Error) => alert(e.message))
   useEffect(() => { void load() }, [])
   const roles = (Object.keys(ROLE_LABEL) as Role[]).filter((r) => r !== 'owner' || me?.role === 'owner')
 
   const update = async (s: StaffRow, patch: Partial<StaffRow> & { pin?: string }) => {
     try {
-      await api(`/api/staff/${s.id}`, { method: 'PUT', body: { name: s.name, role: s.role, active: s.active, canBarista: s.canBarista, ...patch } })
+      await api(`/api/staff/${s.id}`, { method: 'PUT', body: { name: s.name, role: s.role, active: s.active, canBarista: s.canBarista, canCancelOrders: s.canCancelOrders, canReprintReceipts: s.canReprintReceipts, ...patch } })
       await load()
     } catch (e) {
       alert((e as Error).message)
@@ -229,6 +229,8 @@ export function StaffView() {
               {(Object.keys(ROLE_LABEL) as Role[]).map((r) => <option key={r} value={r} disabled={!roles.includes(r)}>{t(ROLE_LABEL[r])}</option>)}
             </select>
             {s.role === 'kassir' && <label className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm"><input type="checkbox" checked={s.canBarista} onChange={e => update(s, { canBarista: e.target.checked })}/>{t('Barista vazifasi ham')}</label>}
+            {s.role === 'kassir' && <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={s.canCancelOrders} onChange={e => update(s, { canCancelOrders: e.target.checked })}/>Otmena dostup</label>}
+            {s.role === 'kassir' && <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={s.canReprintReceipts} onChange={e => update(s, { canReprintReceipts: e.target.checked })}/>Perechek dostup</label>
             <button onClick={() => { const pin = prompt(t('{name} uchun yangi PIN (4–6 raqam)', { name: s.name })); if (pin) void update(s, { pin }) }} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">PIN</button>
             {s.id !== me?.id && (
               <button onClick={() => update(s, { active: !s.active })} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">{s.active ? t("staff:O'chirish") : t('Faollashtirish')}</button>
@@ -251,6 +253,8 @@ export function StaffView() {
           {roles.map((r) => <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>)}
         </select>
         {form.role === 'kassir' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.canBarista} onChange={e => setForm({ ...form, canBarista: e.target.checked })}/>{t('Barista vazifasi ham')}</label>}
+        {form.role === 'kassir' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.canCancelOrders} onChange={e => setForm({ ...form, canCancelOrders: e.target.checked })}/>Otmena dostup</label>}
+        {form.role === 'kassir' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.canReprintReceipts} onChange={e => setForm({ ...form, canReprintReceipts: e.target.checked })}/>Perechek dostup</label>
         <input required minLength={4} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })} placeholder="PIN" inputMode="numeric" className={`${input} w-24`} />
         <button className={btn}>{t("Qo'shish")}</button>
       </form>

@@ -127,6 +127,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />
             {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
+          {(canCancel || canReprint) && <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-amber-700 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950 hover:bg-amber-100">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</button>}
           <button onClick={() => setExpenseOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Xarajat')}</button>
           <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
           </div>

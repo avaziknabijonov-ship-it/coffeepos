@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { t } from './i18n'
+import { t, tCatalogName } from './i18n'
 import { exportExcel } from './exportExcel'
 import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
@@ -99,7 +99,7 @@ function StockOverview() {
     finally { setRemoving(null) }
   }
   const download = () => exportExcel('coffeepos-ombor', ['Xomashyo', 'Birlik', 'Qoldiq', 'Minimal qoldiq', 'Tannarx', 'Qoldiq qiymati'],
-    INGREDIENTS.map(i => [i.name, UNIT_LABEL[i.unit], stock[i.id] ?? 0, i.min, i.cost, Math.round((stock[i.id] ?? 0) * i.cost)]))
+    INGREDIENTS.map(i => [tCatalogName(i.name), t(UNIT_LABEL[i.unit]), stock[i.id] ?? 0, i.min, i.cost, Math.round((stock[i.id] ?? 0) * i.cost)]))
   return <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-lg font-semibold">{t('Xomashyo')}</h2>
@@ -108,7 +108,7 @@ function StockOverview() {
     <div className="overflow-x-auto"><table className="w-full min-w-[530px] text-sm">
       <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th><th>{t('Amallar')}</th></tr></thead>
       <tbody>{INGREDIENTS.map(i => <tr key={i.id} className="border-t">
-        <td className="py-2 font-medium">{i.name}</td><td>{t(UNIT_LABEL[i.unit])}</td>
+        <td className="py-2 font-medium">{tCatalogName(i.name)}</td><td>{t(UNIT_LABEL[i.unit])}</td>
         <td className={(stock[i.id] ?? 0) < i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
         <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td><td><button type="button" title={t('Mahsulotni o‘chirish')} aria-label={t('Mahsulotni o‘chirish')} disabled={removing !== null || Math.abs(stock[i.id] ?? 0) > 0.000001} onClick={() => void remove(i.id, i.name)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-30">{t('O‘chirish')}</button></td>
       </tr>)}</tbody>
@@ -168,7 +168,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
-          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
+          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.map(tCatalogName).join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
         </button>
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -254,14 +254,14 @@ function Recipes({ onEdit }: { onEdit: () => void }) {
         >{t('Excelga eksport')}</button></div>
       <div className="flex flex-wrap gap-2">
         {PRODUCTS.map((x) => (
-          <button key={x.id} onClick={() => setPid(x.id)} className={`rounded-full px-3 py-1.5 text-sm font-medium ${x.id === pid ? 'bg-stone-900 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{x.name}</button>
+          <button key={x.id} onClick={() => setPid(x.id)} className={`rounded-full px-3 py-1.5 text-sm font-medium ${x.id === pid ? 'bg-stone-900 text-white' : 'border border-stone-200 bg-white text-stone-700'}`}>{tCatalogName(x.name)}</button>
         ))}
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {p.sizes.map((s) => {
           const cost = recipeCost(s.recipe)
           return (
-            <Card key={s.code} title={`${p.name}${s.label ? ` ${s.label}` : ''}${s.volume ? ` · ${s.volume}` : ''}`}>
+            <Card key={s.code} title={`${tCatalogName(p.name)}${s.label ? ` ${s.label}` : ''}${s.volume ? ` · ${s.volume}` : ''}`}>
               <table className="w-full text-sm">
                 <tbody>
                   {s.recipe.map((l, li) => (
@@ -284,7 +284,7 @@ function Recipes({ onEdit }: { onEdit: () => void }) {
       </div>
       {p.mods.length > 0 && (
         <p className="text-sm text-stone-500">
-          {t("Qo'shimchalar texkartani avtomatik o'zgartiradi:")} {Object.values(MOD).filter((m) => p.mods.includes(m.group) && m.price > 0).map((m) => m.name).join(', ')}.
+          {t("Qo'shimchalar texkartani avtomatik o'zgartiradi:")} {Object.values(MOD).filter((m) => p.mods.includes(m.group) && m.price > 0).map((m) => tCatalogName(m.name)).join(', ')}.
           {t("Masalan, bodom suti oddiy sut o'rniga ayiriladi, sirop +15 ml, +1 shot +9 g kofe.")}
         </p>
       )}
@@ -345,8 +345,8 @@ function Orders({ today }: { today: Orders }) {
       <button disabled={busy} onClick={()=>void reload()} className="rounded-lg border px-3 py-2 text-sm">{t(busy?'Yuklanmoqda…':'Yangilash')}</button>
       <button className="rounded-lg border px-3 py-2 text-sm" onClick={()=>exportExcel('coffeepos-cheklar-tarixi',['Chek','Sana','Kassir','Smena','Mijoz','Mahsulotlar','To‘lov','Summa','Status','Otmena xodimi','Sabab'].map(label => t(label)),list.map(o=>[o.number,new Date(o.createdAt).toLocaleString(),o.barista,o.shiftId||'',o.customer,o.items.map(i=>i.qty+' × '+i.name+' '+i.size).join('; '),o.payment,o.total,o.status,o.cancelledBy||'',o.cancelReason||'']))}>{t("Excelga eksport")}</button>
     </div>
-    {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black"><h2>CoffeePOS · №{printing.number}</h2><p>{new Date(printing.createdAt).toLocaleString()}</p>{printing.items.map((i,k)=><p key={k}>{i.qty} × {i.name} {i.size} — {fmt(i.qty*i.unitPrice)}</p>)}<b>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</b></div>}
+    {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black"><h2>CoffeePOS · №{printing.number}</h2><p>{new Date(printing.createdAt).toLocaleString()}</p>{printing.items.map((i,k)=><p key={k}>{i.qty} × {tCatalogName(i.name)} {i.size} — {fmt(i.qty*i.unitPrice)}</p>)}<b>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</b></div>}
     {actionError && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-2 text-red-700">{actionError}</p>}
-    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-stone-500"><th className="p-2">№</th><th className="p-2">{t("Sana, vaqt")}</th><th className="p-2">{t("Kassir / Smena")}</th><th className="p-2">{t("Mijoz")}</th><th className="p-2">{t("Summa")}</th><th className="p-2">{t("Holat")}</th><th className="p-2">{t("Amallar")}</th></tr></thead><tbody>{list.map(o=><Fragment key={o.id}><tr className={o.status==='cancelled'?'border-b border-red-200 bg-red-50 text-red-900':'border-b border-stone-100'}><td className="p-2 font-bold">№{o.number}</td><td className="p-2">{new Date(o.createdAt).toLocaleString()}</td><td className="p-2">{o.barista||'—'}<span className="block text-xs opacity-70">{t('Smena')} №{o.shiftId||'—'}</span></td><td className="p-2">{o.customer||'—'}</td><td className="p-2 font-semibold">{fmt(o.total)}</td><td className="p-2">{o.status==='cancelled'?<span className="rounded-full bg-red-600 px-2 py-1 text-white">{t('Otmena')}</span>:t(STATUS_LABEL[o.status])}</td><td className="p-2"><div className="flex gap-2"><button className="rounded-lg border px-2 py-1" onClick={()=>setSelected(selected===o.id?null:o.id)}>{t("Batafsil")}</button><button className="rounded-lg border px-2 py-1" onClick={()=>reprint(o)}>{t("Perechek")}</button>{o.status==='new'&&!o.pendingSync&&<button className="rounded-lg border border-red-300 px-2 py-1 text-red-700" onClick={()=>void cancel(o)}>{t("Otmena")}</button>}</div></td></tr>{selected===o.id&&<tr key={o.id+'-details'}><td colSpan={7} className="border-b bg-stone-50 p-4"><div className="mb-2 font-semibold">{t('Chek')} №{o.number} · {t("To'lov")}: {t(PAYMENT_LABEL[o.payment])} · {t('Jami')}: {fmt(o.total)} {t("so'm")}</div><div className="space-y-1">{o.items.map((item,i)=><div key={i} className="flex flex-wrap justify-between gap-2 border-b border-stone-200 py-1"><span>{item.qty} × {item.name} {item.size} {item.mods?.join(', ')}</span><span>{fmt(item.unitPrice)} × {item.qty} = {fmt(item.unitPrice*item.qty)} so‘m</span></div>)}</div><div className="mt-2 text-sm">{t('Chegirma')}: {fmt(o.discount)} {t("so'm")} · {t('Tannarx')}: {fmt(o.cost)} {t("so'm")}</div>{o.status==='cancelled'&&<div className="mt-2 rounded-lg bg-red-100 p-2 text-red-800">{t('Otmena qilgan')}: {o.cancelledBy||'—'} · {o.cancelReason||t('Sabab ko‘rsatilmagan')} · {o.cancelledAt?new Date(o.cancelledAt).toLocaleString():''}</div>}</td></tr>}</Fragment>)}</tbody></table>{!busy&&list.length===0&&<p className="p-5 text-center text-stone-500">{t("Tanlangan filtr bo‘yicha cheklar topilmadi.")}</p>}</div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-stone-500"><th className="p-2">№</th><th className="p-2">{t("Sana, vaqt")}</th><th className="p-2">{t("Kassir / Smena")}</th><th className="p-2">{t("Mijoz")}</th><th className="p-2">{t("Summa")}</th><th className="p-2">{t("Holat")}</th><th className="p-2">{t("Amallar")}</th></tr></thead><tbody>{list.map(o=><Fragment key={o.id}><tr className={o.status==='cancelled'?'border-b border-red-200 bg-red-50 text-red-900':'border-b border-stone-100'}><td className="p-2 font-bold">№{o.number}</td><td className="p-2">{new Date(o.createdAt).toLocaleString()}</td><td className="p-2">{o.barista||'—'}<span className="block text-xs opacity-70">{t('Smena')} №{o.shiftId||'—'}</span></td><td className="p-2">{o.customer||'—'}</td><td className="p-2 font-semibold">{fmt(o.total)}</td><td className="p-2">{o.status==='cancelled'?<span className="rounded-full bg-red-600 px-2 py-1 text-white">{t('Otmena')}</span>:t(STATUS_LABEL[o.status])}</td><td className="p-2"><div className="flex gap-2"><button className="rounded-lg border px-2 py-1" onClick={()=>setSelected(selected===o.id?null:o.id)}>{t("Batafsil")}</button><button className="rounded-lg border px-2 py-1" onClick={()=>reprint(o)}>{t("Perechek")}</button>{o.status==='new'&&!o.pendingSync&&<button className="rounded-lg border border-red-300 px-2 py-1 text-red-700" onClick={()=>void cancel(o)}>{t("Otmena")}</button>}</div></td></tr>{selected===o.id&&<tr key={o.id+'-details'}><td colSpan={7} className="border-b bg-stone-50 p-4"><div className="mb-2 font-semibold">{t('Chek')} №{o.number} · {t("To'lov")}: {t(PAYMENT_LABEL[o.payment])} · {t('Jami')}: {fmt(o.total)} {t("so'm")}</div><div className="space-y-1">{o.items.map((item,i)=><div key={i} className="flex flex-wrap justify-between gap-2 border-b border-stone-200 py-1"><span>{item.qty} × {tCatalogName(item.name)} {item.size} {item.mods?.join(', ')}</span><span>{fmt(item.unitPrice)} × {item.qty} = {fmt(item.unitPrice*item.qty)} so‘m</span></div>)}</div><div className="mt-2 text-sm">{t('Chegirma')}: {fmt(o.discount)} {t("so'm")} · {t('Tannarx')}: {fmt(o.cost)} {t("so'm")}</div>{o.status==='cancelled'&&<div className="mt-2 rounded-lg bg-red-100 p-2 text-red-800">{t('Otmena qilgan')}: {o.cancelledBy||'—'} · {o.cancelReason||t('Sabab ko‘rsatilmagan')} · {o.cancelledAt?new Date(o.cancelledAt).toLocaleString():''}</div>}</td></tr>}</Fragment>)}</tbody></table>{!busy&&list.length===0&&<p className="p-5 text-center text-stone-500">{t("Tanlangan filtr bo‘yicha cheklar topilmadi.")}</p>}</div>
   </Card>
 }

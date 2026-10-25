@@ -282,6 +282,7 @@ function Orders({ today }: { today: Orders }) {
   const list = [...today].sort((a, b) => b.createdAt - a.createdAt)
   return (
     <Card title={t('Bugungi cheklar ({n})', { n: list.length })}>
+      <div className="mb-3 text-right"><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportExcel('coffeepos-cheklar', ['Raqam','Sana','Mijoz','Mahsulot','To‘lov','Summa','Holat'], list.map(o => [o.number,new Date(o.createdAt).toLocaleString(),o.customer,o.items.map(i=>`${i.qty}x ${i.name}`).join(', '),o.payment,o.total,o.status]))}>{t('Excelga eksport')}</button></div>
       {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black">
         <h2>CoffeePOS · № {printing.number}</h2>
         <p>{new Date(printing.createdAt).toLocaleString()}</p>

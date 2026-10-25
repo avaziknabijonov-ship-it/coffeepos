@@ -100,3 +100,38 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .cashier-warm .cashier-checkout input { border-color:#e8d2bb; background:#fffcf7; color:#382016; }
 .cashier-warm .cashier-checkout .bg-stone-900 { background:linear-gradient(130deg,#864a28,#55301e) !important; }
 @media(max-width:767px) { .cashier-warm .cashier-products { min-height:0; } }
+
+/* 2026 premium reference fidelity pass: structured layouts, not theme-color substitutions. */
+.app-admin .premium-app-header { min-height:76px; background:radial-gradient(ellipse at 70% 0%,#271a12,#090909 62%) !important; border-bottom:1px solid #624321; box-shadow:0 5px 22px #0008; }
+.app-cashier .premium-app-header { min-height:74px; color:#492614 !important; background:linear-gradient(95deg,#fffdf9,#f0dfce 85%,#f7e6d4) !important; border-bottom:1px solid #e4ccb1; box-shadow:0 4px 15px #78533316; }
+.premium-app-brand span:first-child { width:40px;height:40px; color:#ffd186; background:#21150f; box-shadow:0 0 20px #e59a4047;border:1px solid #e6aa4a; }
+.premium-app-brand span:nth-child(2) { font-size:23px;font-weight:800;letter-spacing:-.06em; }
+.app-cashier .premium-app-brand span:nth-child(2) {color:#5c321b;}
+.app-admin .premium-nav-tab[style],.app-cashier .premium-nav-tab[style]{transition:all .2s ease;}
+.app-admin .premium-nav-tab.bg-white { color:#f8d493 !important; background:linear-gradient(120deg,#51331f,#171315) !important;border:1px solid #ad7a38; }
+.app-cashier .premium-nav-tab.bg-white { color:#fff4e6 !important;background:linear-gradient(120deg,#74401e,#3b2015) !important;border:1px solid #9b6a42; }
+.app-cashier .premium-nav-tab.text-stone-300 {color:#5c3927 !important;}
+.app-cashier .premium-app-header button {border-color:#d0a67b;}
+.app-cashier .premium-app-header .text-stone-300 {color:#62432e !important;}
+.admin-shell > div > aside { position:relative;overflow:hidden; }
+.admin-shell > div > aside::after { content:'☕  Yaxshi qahva — yaxshi kun';display:block; margin-top:20px;padding:24px 8px 12px;color:#c68a46;font-size:13px;text-align:center;border-top:1px solid #58402b;opacity:.9; }
+.admin-shell > div > aside nav button { min-height:43px; }
+.admin-shell .premium-chart > h2::before { content:'◈';color:#e6ad50;margin-right:12px;font-size:20px; }
+.admin-shell .premium-kpi { min-height:144px; }
+.admin-shell .premium-kpi-icon { float:left;border-radius:50%;height:60px;width:60px;margin-bottom:0; }
+.admin-shell .premium-kpi .text-stone-500 {padding-top:5px;}
+.admin-shell .premium-chart {border-radius:16px;}
+.cashier-warm .cashier-categories {position:relative;}
+.cashier-warm .cashier-categories::after {content:'Yaxshi qahva — yaxshi kun'; margin-top:auto;padding:25px 8px 30px; text-align:center; font-family:Georgia,serif;font-size:16px;font-style:italic;color:#80522c;background:radial-gradient(ellipse at bottom,#dfc5a7,transparent 70%);}
+.cashier-warm .cashier-categories button {min-height:68px;font-size:15px;font-weight:750;}
+.cashier-warm .cashier-product-grid {gap:14px !important; padding:14px !important;}
+.cashier-warm .cashier-product-card { min-height:285px !important;border-radius:18px !important; }
+.cashier-warm .cashier-product-card .cashier-product-photo {height:148px !important; }
+.cashier-warm .cashier-product-fallback {background:radial-gradient(circle at 30% 25%,#f1cc9d,#a76b3c 55%,#543322 100%);border:1px solid #ddbd93;}
+.cashier-warm .cashier-fallback-icon {box-shadow:0 10px 25px #4f2b2866;background:#fff4e8 !important;color:#854a28 !important;}
+.cashier-warm .cashier-add-button {background:linear-gradient(105deg,#a36a3c,#714022); color:#fff6e8; box-shadow:0 4px 12px #4a2d1a32;}
+.cashier-warm .cashier-checkout {color:#3b2319;}
+.cashier-warm .cashier-checkout > div > div:first-child {border-color:#ecd5bd;}
+.cashier-warm .cashier-checkout button:not(:disabled):hover {filter:brightness(.96);}
+@media(min-width:1200px){.cashier-warm .cashier-categories{width:205px!important}.cashier-warm .cashier-checkout{width:390px!important}}
+@media(max-width:1100px){.cashier-warm .cashier-product-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.cashier-warm .cashier-product-card{min-height:240px!important}}

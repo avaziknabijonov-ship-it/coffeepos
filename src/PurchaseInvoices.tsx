@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { exportExcel } from './exportExcel'
 import { INGREDIENTS, UNIT_LABEL, fmt } from './data'
-import { refreshMenu, sync, useAppState } from './store'
+import { refreshMenu, sync } from './store'
 import { t } from './i18n'
 import { Plus, Trash2, FileText } from 'lucide-react'
 
@@ -12,7 +12,6 @@ const newLine = (): Line => ({ ing: '', qty: '', unitPrice: '' })
 const localDate = () => { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - offset).toISOString().slice(0, 10) }
 
 export default function PurchaseInvoices() {
-  const { stock } = useAppState()
   const [number, setNumber] = useState('')
   const [supplier, setSupplier] = useState('')
   const [date, setDate] = useState(localDate)
@@ -66,6 +65,12 @@ export default function PurchaseInvoices() {
   const printInvoice = (p: Invoice) => { setPrinting(p); setTimeout(() => window.print(), 80) }
   const input = 'w-full min-w-0 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500'
   return <div className="space-y-5">
+    <div className="rounded-2xl bg-stone-900 px-5 py-5 text-white shadow-sm sm:px-6">
+      <p className="text-xs font-bold uppercase tracking-widest text-amber-400">{t('Kirim hujjatlari')}</p>
+      <h2 className="mt-1 text-2xl font-bold">{t('Prixod va yetkazib beruvchilar')}</h2>
+      <p className="mt-1 text-sm text-stone-300">{t('Yangi nakladnoy kiriting yoki oldingi hujjatlarni tekshiring. Ombor qoldig‘i alohida bo‘limda.')}</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-lg bg-white/10 px-3 py-1.5">{t('Hujjatlar')}: {history.length}</span><span className="rounded-lg bg-white/10 px-3 py-1.5">{t('Faol')}: {history.filter(p => p.status === 'active').length}</span></div>
+    </div>
     <div className="flex justify-end"><button onClick={download} className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-semibold">{t('Excelga eksport')}</button></div>
     {printing && <div className="print-area hidden print:block bg-white p-5 text-black"><h1>{t('Kirim nakladnoyi')} № {printing.number}</h1><p>{printing.supplier} · {new Date(printing.receivedAt).toLocaleDateString()}</p><table className="w-full"><tbody>{printing.lines.map((l,i) => <tr key={i}><td>{l.name}</td><td>{l.qty} {l.unit}</td><td>{fmt(l.subtotal)}</td></tr>)}</tbody></table><h2>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</h2></div>}
     <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
@@ -97,10 +102,6 @@ export default function PurchaseInvoices() {
         <button className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpened(v => v === p.id ? null : p.id)}><span><b>№ {p.number}</b> · {p.supplier} · {new Date(p.receivedAt).toLocaleDateString()}</span><span className="font-semibold">{p.status === 'cancelled' ? t('Bekor qilingan') + ' · ' : ''}{fmt(p.total)} {t("so'm")} · {p.paymentStatus === 'paid' ? t('To‘langan') : p.paymentStatus === 'partial' ? t('Qisman to‘langan') : t('Qarz')}</span></button>
         {opened === p.id && <div className="border-t p-3 text-sm"><div className="mb-3 flex gap-2">{p.status !== 'cancelled' && <button onClick={() => beginEdit(p)} className="rounded-lg border px-3 py-2">{t('Tahrirlash')}</button>}<button onClick={() => printInvoice(p)} className="rounded-lg border px-3 py-2">{t('Chop etish')}</button>{p.status !== 'cancelled' && <button disabled={busy} onClick={() => cancelInvoice(p)} className="rounded-lg border border-red-200 px-3 py-2 text-red-700 disabled:opacity-50">{t('Nakladnoyni bekor qilish')}</button>}</div>{p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3 py-1"><span>{l.name} — {l.qty} {l.unit} × {fmt(l.unitPrice)}</span><b>{fmt(l.subtotal)}</b></div>)}{p.note && <p className="mt-2 text-stone-500">{p.note}</p>}</div>}
       </div>)}</div>}
-    </section>
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-      <h2 className="mb-3 font-semibold">{t("Ombor qoldiqlari")}</h2>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{INGREDIENTS.map(i => <div key={i.id} className="flex justify-between rounded-lg bg-stone-50 px-3 py-2 text-sm"><span>{i.name}</span><b>{fmt(stock[i.id] ?? 0)} {t(UNIT_LABEL[i.unit])}</b></div>)}</div>
     </section>
   </div>
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
 import ThemeSwitch from './ThemeSwitch'
+import UpdateNotice from './UpdateNotice'
 import { ChefHat, Coffee, LayoutDashboard, LogOut, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
@@ -95,6 +96,7 @@ function Main({ role }: { role: Role }) {
         <LangSwitch />
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
+      <UpdateNotice pendingCount={pendingCount} />
       {pendingError && pendingCount > 0 && <div role="alert" className="bg-red-50 px-3 py-2 text-center text-xs text-red-800">
         {t('Sinxronlashda xato')}: {pendingError}
       </div>}

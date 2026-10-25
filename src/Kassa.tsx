@@ -135,7 +135,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             {CATEGORIES.map((c) => (
               <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
                 className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium ${!query && cat === c.id ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}>
-                {c.name}
+                {tCatalogName(c.name)}
               </button>
             ))}
           </div>

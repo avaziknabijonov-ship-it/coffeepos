@@ -24,4 +24,5 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: node scripts/check-i18n.mjs
       - run: npm run build

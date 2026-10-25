@@ -15,6 +15,17 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+"Ro'yxatdan o'tish uchun administratorga murojaat qiling": "Для регистрации обратитесь к администратору",
+"O'lchamlar takrorlanmasin": "Размеры не должны повторяться",
+"Sana oralig'i noto'g'ri": "Неверный диапазон дат",
+"Oy YYYY-MM formatida bo'lishi kerak": "Месяц должен быть в формате YYYY-MM",
+"Yil noto'g'ri": "Неверный год",
+"Ishlangan kun me'yoridan ko'p": "Отработанных дней больше нормы",
+"Sana oralig'i 1-366 kun bo'lishi kerak": "Период должен быть от 1 до 366 дней",
+"Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring": "Повторный заказ. Проверьте перед повторной отправкой.",
+"Buyurtma holatini faqat keyingi bosqichga o'tkazish mumkin": "Заказ можно перевести только на следующий этап",
+"To‘xtatilgan": "Приостановлена",
+"Qabul qilindi": "Принято",
   "Bugungi ko‘rsatkichlar va savdo tahlili": "Сегодняшние показатели и анализ продаж",
   "Texkartani qo‘lda tahrirlash": "Редактировать техкарту вручную",
   "Sana oralig‘ini to‘g‘ri tanlang": "Выберите корректный диапазон дат",

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { t } from './i18n'
+import { t, tCatalogName } from './i18n'
 import { Pencil, Plus, Trash2, X, ChevronDown } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
 import type { ModGroupId, Payment, Product, Role, Size, Unit } from './data'
@@ -50,7 +50,7 @@ export function MenuEditor() {
                 <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-stone-700">
                   <button onClick={() => setExpandedCats(v => v.includes(c.id) ? v.filter(x => x !== c.id) : [...v, c.id])} aria-expanded={expandedCats.includes(c.id)} className="flex flex-1 items-center gap-2 text-left">
                     <ChevronDown className={`size-4 ${expandedCats.includes(c.id) ? '' : '-rotate-90'}`} />
-                    {c.name} <span className="rounded-full bg-stone-100 px-2 text-xs">{list.length}</span>
+                    {tCatalogName(c.name)} <span className="rounded-full bg-stone-100 px-2 text-xs">{list.length}</span>
                   </button>
                   <button aria-label={t('Kategoriya nomini o‘zgartirish')} title={t('Nomini o‘zgartirish')}
                     className="rounded-lg px-2 py-1 text-stone-600 hover:bg-stone-100"
@@ -65,7 +65,7 @@ export function MenuEditor() {
                 {expandedCats.includes(c.id) && <div className="divide-y divide-stone-100 border-t border-stone-100">
                   {list.map((p) => (
                     <div key={p.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
-                      <span className={`min-w-32 flex-1 font-medium ${p.active ? '' : 'text-stone-400 line-through'}`}>{p.name}</span>
+                      <span className={`min-w-32 flex-1 font-medium ${p.active ? '' : 'text-stone-400 line-through'}`}>{tCatalogName(p.name)}</span>
                       <span className="text-sm text-stone-500">{p.sizes.map((s) => `${s.label ? s.label + ' ' : ''}${fmt(s.price)}`).join(' · ')}</span>
                       <label className="flex items-center gap-1.5 text-sm">
                         <input type="checkbox" checked={!p.active} onChange={(e) => run(() => api(`/api/products/${p.id}/active`, { method: 'PATCH', body: { active: !e.target.checked } }))} className="size-4 accent-red-600" />
@@ -89,7 +89,7 @@ export function MenuEditor() {
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {MODIFIERS.filter((m) => m.id !== 'milk-regular').map((m) => (
             <label key={m.id} className="flex items-center gap-2 text-sm">
-              <span className="flex-1">{m.name} <span className="text-stone-400">({t(GROUP_LABEL[m.group])})</span></span>
+              <span className="flex-1">{tCatalogName(m.name)} <span className="text-stone-400">({t(GROUP_LABEL[m.group])})</span></span>
               <input key={m.price} defaultValue={m.price} inputMode="numeric" className={`${input} w-24`}
                 onBlur={(e) => { const price = Number(e.target.value.replace(/\D/g, '')); if (price !== m.price) void run(() => api(`/api/modifiers/${m.id}`, { method: 'PUT', body: { name: m.name, price } })) }} />
             </label>
@@ -154,7 +154,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
             <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder={t('Rasm URL (https://...)')} className={input} maxLength={512} />
             {imageUrl.startsWith('https://') && <img alt={name} src={imageUrl} className="h-20 w-20 rounded-lg object-cover" />}
             <select value={cat} onChange={(e) => setCat(e.target.value)} className={input}>
-              {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{tCatalogName(c.name)}</option>)}
             </select>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
@@ -179,7 +179,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
                 {s.recipe.map((l, li) => (
                   <div key={li} className="flex gap-2">
                     <select value={l.ing} onChange={(e) => updSize(i, { recipe: s.recipe.map((x, k) => (k === li ? { ...x, ing: e.target.value } : x)) })} className={`${input} min-w-0 flex-1`}>
-                      {INGREDIENTS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      {INGREDIENTS.map((x) => <option key={x.id} value={x.id}>{tCatalogName(x.name)}</option>)}
                     </select>
                     <input value={l.qty || ''} onChange={(e) => updSize(i, { recipe: s.recipe.map((x, k) => (k === li ? { ...x, qty: Number(e.target.value.replace(/[^\d.]/g, '')) } : x)) })} inputMode="decimal" className={`${input} w-20`} />
                     <button onClick={() => updSize(i, { recipe: s.recipe.filter((_, k) => k !== li) })} aria-label={t("Qatorni o'chirish")} className="p-1 text-stone-400 hover:text-red-600"><X className="size-4" /></button>

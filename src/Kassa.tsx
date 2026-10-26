@@ -17,6 +17,18 @@ const CAT_TINT: Record<string, string> = {
   tea: 'bg-emerald-100 text-emerald-800',
   dessert: 'bg-rose-100 text-rose-800',
 }
+type ParkedItem = { productId: string; size: string; modIds: string[]; qty: number }
+type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number }
+const parkedItems = (items: OrderItem[]): ParkedItem[] => items.map(i => ({
+  productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+}))
+const restoreParkedItems = (items: ParkedItem[]): OrderItem[] => items.map(i => {
+  const product = PRODUCTS.find(p => p.id === i.productId && p.active)
+  const size = product?.sizes.find(s => s.code === i.size)
+  if (!product || !size) throw new Error(t('Mahsulot mavjud emas yoki faol emas'))
+  return buildItem(product, size, i.modIds, i.qty)
+})
+
 type BonusSnapshot = { phone: string; name: string; balance: number; enabled: boolean; earnPercent: number; redemptionLimitPercent: number }
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
@@ -38,6 +50,48 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [draftsOpen, setDraftsOpen] = useState(false)
+  const [drafts, setDrafts] = useState<ParkedOrder[]>([])
+  const [activeDraft, setActiveDraft] = useState<ParkedOrder | null>(null)
+  const [draftError, setDraftError] = useState('')
+  const [draftBusy, setDraftBusy] = useState(false)
+  const loadDrafts = async () => {
+    setDraftError('')
+    try { setDrafts(await api<ParkedOrder[]>('/api/drafts')); setDraftsOpen(true) }
+    catch (e) { setDraftError((e as Error).message); setDraftsOpen(true) }
+  }
+  const saveDraft = async () => {
+    if (!cart.length || draftBusy) return
+    setDraftBusy(true); setDraftError('')
+    try {
+      const body = { items: parkedItems(cart), customer: customer.trim() }
+      const saved = activeDraft
+        ? await api<ParkedOrder>('/api/drafts/' + activeDraft.id, { method: 'PATCH', body: { ...body, version: activeDraft.version } })
+        : await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { ...body, clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
+      setActiveDraft(null)
+      clear()
+      setDrafts(prev => [saved, ...prev.filter(d => d.id !== saved.id)])
+      setCartOpen(false)
+    } catch (e) { setDraftError((e as Error).message) }
+    finally { setDraftBusy(false) }
+  }
+  const resumeDraft = (draft: ParkedOrder) => {
+    if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
+    try {
+      const items = restoreParkedItems(draft.items)
+      clear(); setCart(items); setCustomer(draft.customer); setActiveDraft(draft)
+      setDraftsOpen(false); setCartOpen(true); setDraftError('')
+    } catch (e) { setDraftError((e as Error).message) }
+  }
+  const removeDraft = async (draft: ParkedOrder) => {
+    setDraftBusy(true); setDraftError('')
+    try {
+      await api('/api/drafts/' + draft.id + '?version=' + draft.version, { method: 'DELETE' })
+      setDrafts(prev => prev.filter(d => d.id !== draft.id))
+      if (activeDraft?.id === draft.id) setActiveDraft(null)
+    } catch (e) { setDraftError((e as Error).message) }
+    finally { setDraftBusy(false) }
+  }
   const canCancel = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canCancelOrders)
   const canReprint = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canReprintReceipts)
   const cancelReceipt = async (o: Order) => {
@@ -85,6 +139,12 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     setCartOpen(false)
     clear()
     setReceipt(order)
+    if (activeDraft) {
+      const finished = activeDraft
+      setActiveDraft(null)
+      try { await api('/api/drafts/' + finished.id + '?version=' + finished.version, { method: 'DELETE' }) }
+      catch { /* Sale succeeded; stale parked draft can be removed from the list manually. */ }
+    }
   }
 
   const loadBonus = async () => {
@@ -98,7 +158,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
-      changeQty={changeQty} clear={clear} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
+      changeQty={changeQty} clear={() => { clear(); setActiveDraft(null) }} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )
 
@@ -177,6 +237,16 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       )}
       {cartOpen && <div className="fixed inset-0 z-40 flex bg-white md:hidden">{cartPanel}</div>}
 
+      {draftsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl">
+        <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Saqlangan buyurtmalar')}</h2><button onClick={() => setDraftsOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div>
+        {draftError && <p role="alert" className="mb-3 text-sm text-red-700">{draftError}</p>}
+        {!drafts.length && <p className="text-sm text-stone-500">{t('Saqlangan buyurtmalar yo‘q')}</p>}
+        <div className="space-y-2">{drafts.map(d => <div key={d.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3">
+          <div className="min-w-0 flex-1"><b>{d.customer || t('Mijoz')}</b><div className="text-xs text-stone-500">{d.items.length} · {new Date(d.updatedAt).toLocaleString()}</div></div>
+          <button onClick={() => resumeDraft(d)} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">{t('Davom ettirish')}</button>
+          <button disabled={draftBusy} onClick={() => removeDraft(d)} className="rounded-lg border px-3 py-2 text-sm text-red-700 disabled:opacity-40">{t('O‘chirish')}</button>
+        </div>)}</div>
+      </div></div>}
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { addToCart(it); setModal(null) }} />}
       {paying && <PaymentModal total={total} onClose={() => setPaying(false)} onConfirm={confirmPayment} />}
       {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
@@ -192,7 +262,7 @@ function Cart(props: {
   bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
   setBonusRedeem: (v: number) => void; loadBonus: () => void
   discountPct: number; setDiscountPct: (v: number) => void; subtotal: number; discount: number; total: number
-  changeQty: (key: string, d: number) => void; clear: () => void; onPay: () => void; onClose?: () => void
+  changeQty: (key: string, d: number) => void; clear: () => void; onSave: () => void; onDrafts: () => void; draftBusy: boolean; draftError: string; onPay: () => void; onClose?: () => void
 }) {
   const { cart } = props
   return (
@@ -270,6 +340,11 @@ function Cart(props: {
             <div className="flex justify-between"><span>{t('Chegirma')} {props.discountPct}%</span><span>−{som(props.discount)}</span></div>
           </div>
         )}
+        {props.draftError && <p role="alert" className="text-sm text-red-700">{props.draftError}</p>}
+        <div className="flex gap-2">
+          <button onClick={props.onDrafts} className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold">{t('Saqlangan buyurtmalar')}</button>
+          <button disabled={!cart.length || props.draftBusy} onClick={props.onSave} className="flex-1 rounded-xl border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-800 disabled:opacity-40">{t('Saqlab qo‘yish')}</button>
+        </div>
         <button disabled={cart.length === 0} onClick={props.onPay}
           className="flex w-full items-center justify-between rounded-2xl bg-amber-600 px-5 py-4 text-lg font-bold text-white shadow hover:bg-amber-700 disabled:bg-stone-300">
           <span>{t("To'lov")}</span><span>{som(props.total)}</span>

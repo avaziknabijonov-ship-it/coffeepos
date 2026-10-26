@@ -15,6 +15,13 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Mahsulot mavjud emas yoki faol emas": "Товар недоступен или неактивен",
+  "Joriy savat almashtirilsinmi?": "Заменить текущую корзину?",
+  "Saqlangan buyurtmalar": "Отложенные заказы",
+  "Saqlangan buyurtmalar yo‘q": "Нет отложенных заказов",
+  "Davom ettirish": "Продолжить",
+  "Saqlab qo‘yish": "Отложить заказ",
+  "O‘chirish": "Удалить",
   Analitika: 'Аналитика',
 "Ro'yxatdan o'tish uchun administratorga murojaat qiling": "Для регистрации обратитесь к администратору",
 "O'lchamlar takrorlanmasin": "Размеры не должны повторяться",

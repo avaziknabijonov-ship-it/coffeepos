@@ -325,6 +325,25 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
     }
 
 
+@app.get("/api/stock/alerts")
+def stock_alerts(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Current company-only low stock; min=0 disables alerts for an ingredient."""
+    items = []
+    for ingredient in rows(ctx.db, Ingredient, ctx.cid):
+        if ingredient.min <= 0 or ingredient.stock > ingredient.min:
+            continue
+        items.append({
+            "id": ingredient.key,
+            "name": ingredient.name,
+            "unit": ingredient.unit,
+            "stock": ingredient.stock,
+            "min": ingredient.min,
+            "shortfall": round(max(0.0, ingredient.min - ingredient.stock), 6),
+        })
+    items.sort(key=lambda item: (-item["shortfall"], item["name"], item["id"]))
+    return {"count": len(items), "items": items}
+
+
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 

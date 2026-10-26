@@ -46,3 +46,36 @@ def test_happy_hour():
 def test_overnight():
     now = datetime(2026, 10, 27, 18, 30, tzinfo=timezone.utc)
     assert happy_hour_active(now, time(22), time(2))
+
+
+def test_combo_total():
+    from app.operations import combo_total
+    assert combo_total([(15000, 2), (5000, 1)], 5000) == 30000
+
+
+def test_combo_overdiscount_rejected():
+    from app.operations import combo_total
+    with pytest.raises(ValueError):
+        combo_total([(10000, 1)], 10001)
+
+
+def test_stock_transfer():
+    from app.operations import transfer_quantities
+    assert transfer_quantities(10, 3, 4) == (6, 7)
+
+
+def test_stock_transfer_insufficient():
+    from app.operations import transfer_quantities
+    with pytest.raises(ValueError):
+        transfer_quantities(2, 3, 4)
+
+
+def test_bonus_redeem():
+    from app.operations import bonus_redeem
+    assert bonus_redeem(5000, 3000, 10000, 30) == 2000
+
+
+def test_bonus_limit_rejected():
+    from app.operations import bonus_redeem
+    with pytest.raises(ValueError):
+        bonus_redeem(5000, 3001, 10000, 30)

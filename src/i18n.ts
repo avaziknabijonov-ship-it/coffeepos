@@ -21,7 +21,6 @@ const RU: Record<string, string> = {
   "Saqlangan buyurtmalar yo‘q": "Нет отложенных заказов",
   "Davom ettirish": "Продолжить",
   "Saqlab qo‘yish": "Отложить заказ",
-  "O‘chirish": "Удалить",
   Analitika: 'Аналитика',
 "Ro'yxatdan o'tish uchun administratorga murojaat qiling": "Для регистрации обратитесь к администратору",
 "O'lchamlar takrorlanmasin": "Размеры не должны повторяться",

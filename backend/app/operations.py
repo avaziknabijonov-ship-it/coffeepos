@@ -46,3 +46,40 @@ def happy_hour_active(now: datetime, start: time, end: time, tz="Asia/Tashkent")
         raise ValueError("Timezone-aware datetime and nonempty interval required")
     local = now.astimezone(ZoneInfo(tz)).time().replace(tzinfo=None)
     return start <= local < end if start < end else local >= start or local < end
+
+
+def combo_total(components, discount=0):
+    """Calculate a combo's price without mutating product or stock data."""
+    if type(discount) is not int or discount < 0:
+        raise ValueError("Invalid discount")
+    if not components:
+        raise ValueError("Empty combo")
+    subtotal = 0
+    for unit_price, quantity in components:
+        if type(unit_price) is not int or type(quantity) is not int or unit_price < 0 or quantity <= 0:
+            raise ValueError("Invalid combo component")
+        subtotal += unit_price * quantity
+    if discount > subtotal:
+        raise ValueError("Discount exceeds subtotal")
+    return subtotal - discount
+
+
+def transfer_quantities(source_stock, target_stock, quantity):
+    """Return resulting quantities; caller must commit both ledger moves atomically."""
+    if any(type(v) not in (int, float) or isinstance(v, bool) for v in
+           (source_stock, target_stock, quantity)):
+        raise ValueError("Invalid transfer values")
+    if min(source_stock, target_stock) < 0 or quantity <= 0 or quantity > source_stock:
+        raise ValueError("Invalid transfer quantity")
+    return source_stock - quantity, target_stock + quantity
+
+
+def bonus_redeem(balance, requested, payable, limit_percent):
+    """Validate a loyalty redemption; caller must lock and update customer ledger."""
+    if any(type(v) is not int for v in (balance, requested, payable, limit_percent)):
+        raise ValueError("Invalid bonus values")
+    if min(balance, requested, payable, limit_percent) < 0 or limit_percent > 100:
+        raise ValueError("Invalid bonus values")
+    if requested > balance or requested > payable * limit_percent // 100:
+        raise ValueError("Bonus redemption limit exceeded")
+    return balance - requested

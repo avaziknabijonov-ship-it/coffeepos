@@ -11,7 +11,7 @@ export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
 export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
 
-export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
+export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'split'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
@@ -20,14 +20,14 @@ export interface OrderItem {
 export interface Order {
   id: string; number: number; customer: string; items: OrderItem[]
   subtotal: number; discount: number; total: number; cost: number
-  payment: Payment; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
+  payment: Payment; paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
 }
 
 export const fmt = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 export const som = (n: number) => `${fmt(n)} ${t("so'm")}`
 export const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
-export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click' }
+export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click', split: 'Aralash' }
 export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi', cancelled: 'Bekor qilingan' }
 export const UNIT_LABEL: Record<Unit, string> = { g: 'g', ml: 'ml', dona: 'dona' }
 

@@ -449,7 +449,7 @@ function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: 
   )
 }
 
-const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
+const PAY_OPTIONS: { id: Exclude<Payment, 'split'>; icon: LucideIcon }[] = [
   { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone },
 ]
 

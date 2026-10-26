@@ -132,8 +132,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
-  const confirmPayment = async (payment: Payment, cashGiven?: number) => {
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven,
+  const confirmPayment = async (payment: Payment, cashGiven?: number, paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]) => {
+    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven, paymentParts,
       customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus })
     setPaying(false)
     setCartOpen(false)
@@ -453,15 +453,25 @@ const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
   { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone },
 ]
 
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => Promise<void> }) {
-  const [method, setMethod] = useState<Payment>('karta')
+function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number, parts?: { method: Exclude<Payment, "split">; amount: number }[]) => Promise<void> }) {
+  const [method, setMethod] = useState<Exclude<Payment, 'split'>>('karta')
+  const [split, setSplit] = useState(false)
+  const [splitA, setSplitA] = useState<Exclude<Payment, 'split'>>('naqd')
+  const [splitB, setSplitB] = useState<Exclude<Payment, 'split'>>('karta')
+  const [firstAmount, setFirstAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const confirm = async () => {
     setBusy(true)
     setError('')
     try {
-      await onConfirm(method, method === 'naqd' ? given : undefined)
+      if (split) {
+        await onConfirm('split', splitCash > 0 ? given : undefined, [
+          { method: splitA, amount: first }, { method: splitB, amount: total - first },
+        ])
+      } else {
+        await onConfirm(method, method === 'naqd' ? given : undefined)
+      }
     } catch (e) {
       setError((e as Error).message)
       setBusy(false)
@@ -469,8 +479,12 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
   }
   const [cash, setCash] = useState('')
   const given = Number(cash.replace(/\D/g, '')) || 0
-  const quick = [...new Set([total, ...[50000, 100000, 200000].map((step) => Math.ceil(total / step) * step)])].sort((a, b) => a - b)
-  const ok = method !== 'naqd' || given >= total
+  const first = Number(firstAmount.replace(/\D/g, '')) || 0
+  const splitCash = split ? (splitA === 'naqd' ? first : splitB === 'naqd' ? total - first : 0) : 0
+  const cashDue = split ? splitCash : total
+  const quick = [...new Set([cashDue, ...[50000, 100000, 200000].map((step) => Math.ceil(cashDue / step) * step)])].filter(q => q > 0).sort((a, b) => a - b)
+  const ok = split ? (first > 0 && first < total && splitA !== splitB && (!splitCash || given >= splitCash))
+    : (method !== 'naqd' || given >= total)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
@@ -483,14 +497,36 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
           <button onClick={onClose} aria-label={t('Yopish')} className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>
         </div>
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => { setSplit(v => !v); setCash('') }}
+            className="w-full rounded-xl border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{split ? t('Oddiy to‘lov') : t('Bo‘lingan to‘lov')}</button>
+          {!split && <div className="grid grid-cols-2 gap-2">
             {PAY_OPTIONS.map(({ id, icon: Icon }) => (
               <Chip key={id} active={method === id} onClick={() => setMethod(id)}>
                 <span className="flex items-center gap-2 py-1 text-base"><Icon className="size-5" />{t(PAYMENT_LABEL[id])}</span>
               </Chip>
             ))}
-          </div>
-          {method === 'naqd' && (
+          </div>}
+          {split && <div className="space-y-3 rounded-xl border border-stone-200 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-stone-600">{t('Birinchi usul')}
+                <select value={splitA} onChange={e => setSplitA(e.target.value as Exclude<Payment, 'split'>)} className="mt-1 w-full rounded-lg border p-2 text-sm">
+                  {PAY_OPTIONS.map(o => <option key={o.id} value={o.id}>{t(PAYMENT_LABEL[o.id])}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-stone-600">{t('Ikkinchi usul')}
+                <select value={splitB} onChange={e => setSplitB(e.target.value as Exclude<Payment, 'split'>)} className="mt-1 w-full rounded-lg border p-2 text-sm">
+                  {PAY_OPTIONS.map(o => <option key={o.id} value={o.id}>{t(PAYMENT_LABEL[o.id])}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs text-stone-600">{t('Birinchi summa')}
+              <input inputMode="numeric" value={firstAmount} onChange={e => setFirstAmount(e.target.value.replace(/\D/g, ''))}
+                className="mt-1 w-full rounded-lg border p-2 text-base" placeholder="0" />
+            </label>
+            <p className="text-sm font-semibold">{t('Ikkinchi summa')}: {som(Math.max(0, total - first))}</p>
+            {splitA === splitB && <p role="alert" className="text-sm text-red-700">{t('Ikki xil to‘lov usulini tanlang')}</p>}
+          </div>}
+          {(split ? splitCash > 0 : method === 'naqd') && (
             <div className="space-y-2">
               <input inputMode="numeric" autoFocus value={cash ? fmt(given) : ''} onChange={(e) => setCash(e.target.value)} placeholder={t('Mijoz bergan summa')}
                 className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-3 text-lg outline-none focus:border-amber-500" />
@@ -500,13 +536,13 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
                 ))}
               </div>
               {given > 0 && (
-                <div className={`flex justify-between rounded-xl px-4 py-3 font-semibold ${given >= total ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
-                  <span>{given >= total ? t('Qaytim') : t('Yetmaydi')}</span><span>{som(Math.abs(given - total))}</span>
+                <div className={`flex justify-between rounded-xl px-4 py-3 font-semibold ${given >= cashDue ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+                  <span>{given >= cashDue ? t('Qaytim') : t('Yetmaydi')}</span><span>{som(Math.abs(given - cashDue))}</span>
                 </div>
               )}
             </div>
           )}
-          {(method === 'payme' || method === 'click') && (
+          {(split ? (splitA === 'payme' || splitA === 'click' || splitB === 'payme' || splitB === 'click') : (method === 'payme' || method === 'click')) && (
             <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">{t("To'lovni ilovada tekshirib, qo'lda tasdiqlang. QR va avtomatik tasdiqlash keyingi versiyada.")}</p>
           )}
           {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
@@ -545,11 +581,13 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.discount > 0 && <div className="flex justify-between"><span>{t('Chegirma')}</span><span>−{fmt(order.discount)}</span></div>}
           <div className="flex justify-between text-sm font-bold"><span>{t('JAMI')}</span><span>{som(order.total)}</span></div>
-          <div className="flex justify-between"><span>{t("To'lov")}</span><span>{t(PAYMENT_LABEL[order.payment])}</span></div>
+          {order.paymentParts && order.paymentParts.length > 1 ? order.paymentParts.map(p =>
+            <div key={p.method} className="flex justify-between"><span>{t(PAYMENT_LABEL[p.method])}</span><span>{som(p.amount)}</span></div>
+          ) : <div className="flex justify-between"><span>{t("To'lov")}</span><span>{t(PAYMENT_LABEL[order.payment])}</span></div>}
           {order.cashGiven != null && (
             <>
               <div className="flex justify-between"><span>{t('cash:Berildi')}</span><span>{fmt(order.cashGiven)}</span></div>
-              <div className="flex justify-between"><span>{t('Qaytim')}</span><span>{fmt(order.cashGiven - order.total)}</span></div>
+              <div className="flex justify-between"><span>{t('Qaytim')}</span><span>{fmt(order.cashGiven - (order.paymentParts?.find(p => p.method === 'naqd')?.amount ?? order.total))}</span></div>
             </>
           )}
           <div className="mt-2 text-center text-stone-500">{t('Rahmat! Yana keling.')}</div>

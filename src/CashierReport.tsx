@@ -4,7 +4,7 @@ import { exportExcel } from './exportExcel'
 import { fmt } from './data'
 import { t } from './i18n'
 
-type Sale = { id: string; number: number; barista: string; shiftId?: number; createdAt: number; total: number; status: string; payment: string; cancelledBy?: string | null }
+type Sale = { id: string; number: number; barista: string; shiftId?: number; createdAt: number; total: number; status: string; payment: string; paymentParts?: { method: string; amount: number }[]; cancelledBy?: string | null }
 const dateText = (d: Date) => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
 export default function CashierReport() {
   const [from, setFrom] = useState(() => dateText(new Date()))
@@ -33,7 +33,13 @@ export default function CashierReport() {
     const orders = sales.filter(o => o.barista === name)
     const done = orders.filter(o => o.status !== 'cancelled')
     const voids = orders.filter(o => o.status === 'cancelled')
-    const methods = [...new Set(done.map(o => o.payment))].map(p => p + ': ' + fmt(done.filter(o=>o.payment===p).reduce((a,o)=>a+o.total,0))).join('; ')
+    const byMethod = new Map<string, number>()
+    for (const sale of done) {
+      for (const part of sale.paymentParts?.length ? sale.paymentParts : [{ method: sale.payment, amount: sale.total }]) {
+        byMethod.set(part.method, (byMethod.get(part.method) ?? 0) + part.amount)
+      }
+    }
+    const methods = [...byMethod].map(([method, amount]) => method + ': ' + fmt(amount)).join('; ')
     return { name, count: done.length, revenue: done.reduce((a,o)=>a+o.total,0), shifts: new Set(orders.map(o=>o.shiftId).filter(Boolean)).size, voidCount: voids.length, voidSum: voids.reduce((a,o)=>a+o.total,0), methods }
   })
   return <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">

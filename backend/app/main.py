@@ -1462,7 +1462,7 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     )).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        add_payment_totals(by_payment, o)
 
     daily = []
     for d in range(days - 1, -1, -1):

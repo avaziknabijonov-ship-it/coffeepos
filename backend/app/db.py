@@ -268,3 +268,18 @@ class PayrollPlan(Base):
     deductions: Mapped[int] = mapped_column(BigInteger, default=0)
     note: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class DraftOrder(Base):
+    """Parked cart; never counted as a sale and never reserves stock."""
+    __tablename__ = "draft_orders"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    customer: Mapped[str] = mapped_column(String(64), default="")
+    staff_name: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

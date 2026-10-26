@@ -18,6 +18,7 @@ from . import seed
 from .db import (
     Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, engine, now_ms,
 )
+from .payment_rules import PaymentPart, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
@@ -61,6 +62,8 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
+        if "payment_parts" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN payment_parts JSON"))
         if "cancelled_at" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_at BIGINT"))
         if "cancelled_by" not in order_columns:
@@ -154,11 +157,21 @@ def staff_out(s: Staff) -> dict:
     return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista), "canCancelOrders": bool(s.can_cancel_orders), "canReprintReceipts": bool(s.can_reprint_receipts)}
 
 
+def order_payment_parts(order: Order) -> list[dict]:
+    """Legacy orders remain readable as one full-amount tender."""
+    return order.payment_parts or [{"method": order.payment, "amount": order.total}]
+
+
+def add_payment_totals(by_payment: dict[str, int], order: Order) -> None:
+    for part in order_payment_parts(order):
+        by_payment[part["method"]] = by_payment.get(part["method"], 0) + part["amount"]
+
+
 def order_out(o: Order) -> dict:
     return {
         "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
-        "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
+        "payment": o.payment, "paymentParts": order_payment_parts(o), "cashGiven": o.cash_given, "status": o.status,
         "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
@@ -1018,7 +1031,7 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     orders = db.scalars(select(Order).where(Order.shift_id == shift.id, Order.status != "cancelled")).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        add_payment_totals(by_payment, o)
     # Cash expenses reduce the physically expected register balance.
     cutoff = shift.closed_at if shift.closed_at is not None else now_ms()
     cash_spent = sum(row.amount for row in db.scalars(select(Expense).where(
@@ -1080,11 +1093,17 @@ class OrderItemIn(BaseModel):
     qty: int = 1
 
 
+class PaymentPartIn(BaseModel):
+    method: Literal["naqd", "karta", "payme", "click"]
+    amount: int = Field(gt=0)
+
+
 class OrderIn(BaseModel):
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
     discountPct: int = Field(default=0, ge=0, le=50)
-    payment: Literal["naqd", "karta", "payme", "click"]
+    payment: Literal["naqd", "karta", "payme", "click", "split"]
+    paymentParts: list[PaymentPartIn] | None = Field(default=None, max_length=4)
     cashGiven: int | None = Field(default=None, ge=0)
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
@@ -1169,7 +1188,7 @@ def update_draft(draft_id: int, body: DraftOrderUpdate,
 def delete_draft(draft_id: int, version: int,
                  ctx: Ctx = Depends(require(*CASHIERS))) -> None:
     result = ctx.db.execute(
-        __import__("sqlalchemy").delete(DraftOrder).where(
+        delete(DraftOrder).where(
             DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
             DraftOrder.version == version
         )
@@ -1262,7 +1281,23 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             raise HTTPException(409, "Bonus tizimi o'chirilgan")
     elif body.bonusRedeem:
         raise HTTPException(422, "Bonus ishlatish uchun mijoz telefoni kerak")
-    if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
+    if body.payment == "split":
+        if body.paymentParts is None or len(body.paymentParts) < 2:
+            raise HTTPException(422, "Bo‘lingan to‘lov uchun kamida 2 usul kerak")
+        methods = [p.method for p in body.paymentParts]
+        if len(set(methods)) != len(methods):
+            raise HTTPException(422, "To‘lov usullari takrorlanmasin")
+        parts = [PaymentPart(method=p.method, amount=p.amount) for p in body.paymentParts]
+        try:
+            validate_split_payment(total, parts)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        if body.paymentParts is not None:
+            raise HTTPException(422, "Oddiy to‘lovda paymentParts bo‘lmasin")
+        parts = [PaymentPart(method=body.payment, amount=total)]
+    cash_amount = next((p.amount for p in parts if p.method == "naqd"), 0)
+    if body.cashGiven is not None and (cash_amount == 0 or body.cashGiven < cash_amount):
         raise HTTPException(400, "Berilgan pul yetarli emas")
 
     day_orders = db.scalars(
@@ -1274,7 +1309,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         client_key=body.clientKey,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
-        cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
+        payment_parts=[{"method": p.method, "amount": p.amount} for p in parts],
+        cash_given=body.cashGiven if cash_amount else None, staff_name=ctx.staff.name,
     )
     db.add(order)
     db.flush()

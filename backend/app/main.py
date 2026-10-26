@@ -10,13 +10,13 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, select, text
+from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -1089,6 +1089,99 @@ class OrderIn(BaseModel):
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+
+
+# ---------- parked orders (no payment, no stock deduction) ----------
+
+class DraftOrderIn(BaseModel):
+    clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+    items: list[OrderItemIn] = Field(min_length=1, max_length=50)
+    customer: str = Field(default="", max_length=64)
+
+
+class DraftOrderUpdate(BaseModel):
+    version: int = Field(ge=1)
+    items: list[OrderItemIn] = Field(min_length=1, max_length=50)
+    customer: str = Field(default="", max_length=64)
+
+
+def draft_out(draft: DraftOrder) -> dict:
+    return {"id": draft.id, "clientKey": draft.client_key, "items": draft.items,
+            "customer": draft.customer, "staff": draft.staff_name,
+            "version": draft.version, "createdAt": draft.created_at,
+            "updatedAt": draft.updated_at}
+
+
+@app.get("/api/drafts")
+def list_drafts(ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
+    drafts = ctx.db.scalars(select(DraftOrder).where(
+        DraftOrder.company_id == ctx.cid
+    ).order_by(DraftOrder.updated_at.desc()).limit(100)).all()
+    return [draft_out(d) for d in drafts]
+
+
+@app.post("/api/drafts", status_code=201)
+def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    existing = ctx.db.scalar(select(DraftOrder).where(
+        DraftOrder.company_id == ctx.cid, DraftOrder.client_key == body.clientKey
+    ))
+    if existing:
+        if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
+            raise HTTPException(409, "Draft clientKey already used with different content")
+        return draft_out(existing)
+    draft = DraftOrder(company_id=ctx.cid, client_key=body.clientKey,
+                       items=[item.model_dump() for item in body.items],
+                       customer=body.customer, staff_name=ctx.staff.name)
+    ctx.db.add(draft)
+    try:
+        ctx.db.commit()
+    except IntegrityError:
+        ctx.db.rollback()
+        raise HTTPException(409, "Draft clientKey already exists")
+    ctx.db.refresh(draft)
+    return draft_out(draft)
+
+
+@app.patch("/api/drafts/{draft_id}")
+def update_draft(draft_id: int, body: DraftOrderUpdate,
+                 ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    result = ctx.db.execute(update(DraftOrder).where(
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+        DraftOrder.version == body.version
+    ).values(items=[item.model_dump() for item in body.items],
+             customer=body.customer, version=body.version + 1,
+             updated_at=now_ms()))
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        exists = ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+        ))
+        raise HTTPException(409 if exists else 404,
+                            "Draft changed on another device" if exists else "Draft not found")
+    ctx.db.commit()
+    draft = ctx.db.scalar(select(DraftOrder).where(
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+    ))
+    return draft_out(draft)
+
+
+@app.delete("/api/drafts/{draft_id}", status_code=204)
+def delete_draft(draft_id: int, version: int,
+                 ctx: Ctx = Depends(require(*CASHIERS))) -> None:
+    result = ctx.db.execute(
+        __import__("sqlalchemy").delete(DraftOrder).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+            DraftOrder.version == version
+        )
+    )
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        exists = ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+        ))
+        raise HTTPException(409 if exists else 404,
+                            "Draft changed on another device" if exists else "Draft not found")
+    ctx.db.commit()
 
 
 @app.get("/api/orders/history")

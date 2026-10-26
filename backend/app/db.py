@@ -136,6 +136,7 @@ class Order(Base):
     total: Mapped[int] = mapped_column(BigInteger)
     cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
+    payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
     cancelled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

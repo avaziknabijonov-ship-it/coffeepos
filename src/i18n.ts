@@ -15,6 +15,14 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Aralash": "Смешанная",
+  "Ikki xil to‘lov usulini tanlang": "Выберите два разных способа оплаты",
+  "Ikkinchi summa": "Вторая сумма",
+  "Birinchi summa": "Первая сумма",
+  "Ikkinchi usul": "Второй способ",
+  "Birinchi usul": "Первый способ",
+  "Bo‘lingan to‘lov": "Разделённая оплата",
+  "Oddiy to‘lov": "Обычная оплата",
   "Mahsulot mavjud emas yoki faol emas": "Товар недоступен или неактивен",
   "Joriy savat almashtirilsinmi?": "Заменить текущую корзину?",
   "Saqlangan buyurtmalar": "Отложенные заказы",

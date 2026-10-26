@@ -178,7 +178,7 @@ export function logout() {
 export const nextNumber = () =>
   state.orders.filter((o) => o.createdAt >= startOfToday()).reduce((m, o) => Math.max(m, o.number), 0) + 1
 
-export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
+export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; paymentParts?: { method: Exclude<Payment, 'split'>; amount: number }[]; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
   const clientKey = crypto.randomUUID()
   const payload = { ...o, clientKey, items: items.map((i) => ({
     productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,

@@ -362,7 +362,7 @@ const RU: Record<string, string> = {
   "Bunday chegirma uchun ruxsat yo'q": 'Нет прав на такую скидку', "Faqat rahbar rahbar qo'sha oladi": 'Только руководитель может добавить руководителя',
   'Kategoriyada mahsulotlar bor': 'В категории есть товары', "Ko'p urinish. 5 daqiqadan keyin qayta urining": 'Слишком много попыток. Повторите через 5 минут',
   "Kofe bar yoki PIN noto'g'ri": 'Неверная кофейня или PIN', 'Mahsulot topilmadi': 'Товар не найден', "Miqdor musbat bo'lsin": 'Количество должно быть больше нуля',
-  "Miqdor noto'g'ri": 'Неверное количество', 'O\'lchamlar takrorlanmasin': 'Размеры не должны повторяться',
+  "Miqdor noto'g'ri": 'Неверное количество', 
   "O'zingizning rolingizni o'zgartira olmaysiz": 'Нельзя изменить свою роль', "Ochiq smena yo'q": 'Нет открытой смены', 'PIN kerak': 'Нужен PIN',
   'Qaytadan kiring': 'Войдите заново', "Qoldiq manfiy bo'lmaydi": 'Остаток не может быть отрицательным', 'Smena allaqachon ochiq': 'Смена уже открыта',
   "Texkartada noma'lum xomashyo": 'В техкарте неизвестное сырьё', Topilmadi: 'Не найдено', 'Xomashyo takrorlangan': 'Сырьё повторяется',

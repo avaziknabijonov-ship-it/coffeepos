@@ -168,6 +168,8 @@ class Order(Base):
     payment: Mapped[str] = mapped_column(String(16))
     payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
     payment_status: Mapped[str] = mapped_column(String(16), default="paid")
+    service: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    table_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     promotion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
@@ -276,6 +278,7 @@ class Customer(Base):
     analytics_consent: Mapped[bool] = mapped_column(Boolean, default=False)
     consent_updated_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     consent_actor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    erased_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
@@ -323,6 +326,8 @@ class DraftOrder(Base):
     client_key: Mapped[str] = mapped_column(String(64))
     items: Mapped[list] = mapped_column(JSON, default=list)
     customer: Mapped[str] = mapped_column(String(64), default="")
+    table_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    service: Mapped[str] = mapped_column(String(16), default="takeaway")
     staff_name: Mapped[str] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
@@ -347,6 +352,7 @@ class OrderRefund(Base):
     restocked: Mapped[bool] = mapped_column(Boolean, default=False)
     cost_reversed: Mapped[int] = mapped_column(BigInteger, default=0)
     bonus_reversed: Mapped[int] = mapped_column(BigInteger, default=0)
+    bonus_restored: Mapped[int] = mapped_column(BigInteger, default=0)
     fiscal_status: Mapped[str] = mapped_column(String(16), default="nonfiscal")
 
 
@@ -393,6 +399,8 @@ class Promotion(Base):
     percent: Mapped[int] = mapped_column(Integer)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_discount: Mapped[int] = mapped_column(BigInteger, default=0)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ReceiptLink(Base):
@@ -438,3 +446,25 @@ class StockTransfer(Base):
     dispatched_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
     closed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class DiningArea(Base):
+    __tablename__ = "dining_areas"
+    __table_args__ = (UniqueConstraint("company_id", "branch_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class DiningTable(Base):
+    __tablename__ = "dining_tables"
+    __table_args__ = (UniqueConstraint("company_id", "branch_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(Integer, index=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("dining_areas.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    seats: Mapped[int] = mapped_column(Integer, default=2)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)

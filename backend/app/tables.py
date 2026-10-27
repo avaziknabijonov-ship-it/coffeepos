@@ -1,0 +1,179 @@
+"""Floor plan: areas, tables, occupancy from open drafts, move/merge and takeaway."""
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from .audit import record as audit_record
+from .core import CASHIERS, MANAGERS, Ctx, require
+from .db import DiningArea, DiningTable, DraftOrder, now_ms
+
+router = APIRouter()
+Service = Literal["takeaway", "dine_in"]
+
+
+class AreaIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    active: bool = True
+
+
+class TableIn(BaseModel):
+    areaId: int
+    name: str = Field(min_length=1, max_length=64)
+    seats: int = Field(default=2, ge=1, le=50)
+    active: bool = True
+
+
+class MoveIn(BaseModel):
+    version: int = Field(ge=1)
+    tableId: int | None = None
+    service: Service = "dine_in"
+
+
+class MergeIn(BaseModel):
+    version: int = Field(ge=1)
+    targetId: int
+    targetVersion: int = Field(ge=1)
+
+
+def table_out(t: DiningTable, drafts: list[DraftOrder]) -> dict:
+    return {"id": t.id, "areaId": t.area_id, "name": t.name, "seats": t.seats, "active": t.active,
+            "occupied": bool(drafts), "drafts": [{"id": d.id, "version": d.version, "items": len(d.items),
+                                                  "staff": d.staff_name, "updatedAt": d.updated_at} for d in drafts]}
+
+
+def branch_table(ctx: Ctx, table_id: int) -> DiningTable:
+    table = ctx.db.get(DiningTable, table_id)
+    if table is None or table.company_id != ctx.cid or table.branch_id != ctx.branch_id:
+        raise HTTPException(404, "Stol topilmadi")
+    return table
+
+
+def save(ctx: Ctx, row, action: str, after: dict):
+    try:
+        ctx.db.flush()
+    except IntegrityError:
+        ctx.db.rollback()
+        raise HTTPException(409, "Bu nom allaqachon mavjud") from None
+    audit_record(ctx, action, row.id, {}, after)
+    ctx.db.commit()
+
+
+@router.get("/api/floor")
+def floor(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    areas = ctx.db.scalars(select(DiningArea).where(DiningArea.company_id == ctx.cid,
+                                                    DiningArea.branch_id == ctx.branch_id)
+                           .order_by(DiningArea.id)).all()
+    tables = ctx.db.scalars(select(DiningTable).where(DiningTable.company_id == ctx.cid,
+                                                      DiningTable.branch_id == ctx.branch_id)
+                            .order_by(DiningTable.id)).all()
+    drafts = ctx.db.scalars(select(DraftOrder).where(DraftOrder.company_id == ctx.cid,
+                                                     DraftOrder.branch_id == ctx.branch_id)).all()
+    by_table: dict[int, list] = {}
+    takeaway = []
+    for d in drafts:
+        if d.table_id is None:
+            takeaway.append({"id": d.id, "version": d.version, "items": len(d.items), "staff": d.staff_name})
+        else:
+            by_table.setdefault(d.table_id, []).append(d)
+    return {"branchId": ctx.branch_id,
+            "areas": [{"id": a.id, "name": a.name, "active": a.active} for a in areas],
+            "tables": [table_out(t, by_table.get(t.id, [])) for t in tables],
+            "takeaway": takeaway}
+
+
+@router.post("/api/areas", status_code=201)
+def add_area(body: AreaIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    area = DiningArea(company_id=ctx.cid, branch_id=ctx.branch_id, name=body.name.strip(), active=body.active)
+    ctx.db.add(area)
+    save(ctx, area, "area.create", {"name": area.name, "branchId": ctx.branch_id})
+    return {"id": area.id, "name": area.name, "active": area.active}
+
+
+@router.post("/api/tables", status_code=201)
+def add_table(body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    area = ctx.db.get(DiningArea, body.areaId)
+    if area is None or area.company_id != ctx.cid or area.branch_id != ctx.branch_id:
+        raise HTTPException(404, "Zal topilmadi")
+    table = DiningTable(company_id=ctx.cid, branch_id=ctx.branch_id, area_id=area.id, name=body.name.strip(),
+                        seats=body.seats, active=body.active)
+    ctx.db.add(table)
+    save(ctx, table, "table.create", {"name": table.name, "branchId": ctx.branch_id})
+    return table_out(table, [])
+
+
+@router.put("/api/tables/{table_id}")
+def edit_table(table_id: int, body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    table = branch_table(ctx, table_id)
+    area = ctx.db.get(DiningArea, body.areaId)
+    if area is None or area.company_id != ctx.cid or area.branch_id != ctx.branch_id:
+        raise HTTPException(404, "Zal topilmadi")
+    occupied = ctx.db.scalars(select(DraftOrder).where(DraftOrder.company_id == ctx.cid,
+                                                       DraftOrder.table_id == table.id)).all()
+    if not body.active and occupied:
+        raise HTTPException(409, "Band stolni o‘chirib bo‘lmaydi")
+    table.area_id, table.name, table.seats, table.active = area.id, body.name.strip(), body.seats, body.active
+    save(ctx, table, "table.update", {"name": table.name, "active": table.active})
+    return table_out(table, occupied)
+
+
+def locked_draft(ctx: Ctx, draft_id: int, version: int) -> DraftOrder:
+    draft = ctx.db.scalar(select(DraftOrder).where(
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+        DraftOrder.branch_id == ctx.branch_id).with_for_update())
+    if draft is None:
+        raise HTTPException(404, "Draft not found")
+    if draft.version != version:
+        raise HTTPException(409, "Draft changed on another device")
+    return draft
+
+
+def validate_table(ctx: Ctx, table_id: int | None, service: str) -> DiningTable | None:
+    if service == "takeaway":
+        if table_id is not None:
+            raise HTTPException(422, "Olib ketish buyurtmasiga stol biriktirilmaydi")
+        return None
+    if table_id is None:
+        raise HTTPException(422, "Zalda xizmat uchun stol tanlang")
+    table = branch_table(ctx, table_id)
+    if not table.active:
+        raise HTTPException(409, "Stol faol emas")
+    return table
+
+
+@router.post("/api/drafts/{draft_id}/move")
+def move_draft(draft_id: int, body: MoveIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    draft = locked_draft(ctx, draft_id, body.version)
+    table = validate_table(ctx, body.tableId, body.service)
+    if table is not None:
+        taken = ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.company_id == ctx.cid, DraftOrder.table_id == table.id, DraftOrder.id != draft.id))
+        if taken is not None:
+            raise HTTPException(409, "Stol band; birlashtirish uchun menejer kerak")
+    before = {"id": draft.table_id}
+    draft.table_id, draft.service = (table.id if table else None), body.service
+    draft.version += 1
+    draft.updated_at = now_ms()
+    audit_record(ctx, "draft.move", draft.id, before, {"id": draft.table_id, "version": draft.version})
+    ctx.db.commit()
+    return {"id": draft.id, "tableId": draft.table_id, "service": draft.service, "version": draft.version}
+
+
+@router.post("/api/drafts/{draft_id}/merge")
+def merge_drafts(draft_id: int, body: MergeIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if draft_id == body.targetId:
+        raise HTTPException(422, "Draftni o‘ziga birlashtirib bo‘lmaydi")
+    first, second = sorted([(draft_id, body.version), (body.targetId, body.targetVersion)])
+    locked = {first[0]: locked_draft(ctx, *first), second[0]: locked_draft(ctx, *second)}
+    source, target = locked[draft_id], locked[body.targetId]
+    if len(source.items) + len(target.items) > 50:
+        raise HTTPException(422, "Buyurtmada pozitsiyalar ko‘p")
+    target.items = [*target.items, *source.items]
+    target.version += 1
+    target.updated_at = now_ms()
+    audit_record(ctx, "draft.merge", target.id, {"id": source.id}, {"id": target.id, "version": target.version})
+    ctx.db.delete(source)
+    ctx.db.commit()
+    return {"id": target.id, "tableId": target.table_id, "items": target.items, "version": target.version}

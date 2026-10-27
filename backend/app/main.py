@@ -17,11 +17,11 @@ from sqlalchemy.orm import Session
 
 from .access_logs import install_receipt_access_filter
 from .combos import resolve_combo
-from .promotions import choose_promotion, discount_amount
+from .promotions import capped_discount, choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, Branch, BranchStock, OrderPayment, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms,
+    Base, Branch, BranchStock, OrderPayment, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms, DiningTable,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
@@ -29,6 +29,7 @@ from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 from . import migrations
 from .branches import router as branches_router
+from .tables import router as tables_router, validate_table
 from .inventory_ops import refresh_low_stock, router as inventory_router
 from . import stock as branch_stock
 from .core import (
@@ -66,6 +67,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
 app.include_router(branches_router)
 app.include_router(inventory_router)
+app.include_router(tables_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -103,7 +105,7 @@ def order_out(o: Order) -> dict:
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
         "paymentStatus": o.payment_status or "paid", "paid": sum(p["amount"] for p in order_payment_parts(o)),
         "outstanding": o.total - sum(p["amount"] for p in order_payment_parts(o)) if o.payment_status == "partial" else 0,
-        "branchId": o.branch_id, "staffId": o.staff_id,
+        "branchId": o.branch_id, "staffId": o.staff_id, "service": o.service, "table": o.table_name,
     }
 
 
@@ -1001,7 +1003,7 @@ def customer_list(before_id: int | None = None, limit: int = 50,
                   ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     if not 1 <= limit <= 100 or (before_id is not None and before_id < 1):
         raise HTTPException(422, "Mijoz filtri noto‘g‘ri")
-    query = select(Customer).where(Customer.company_id == ctx.cid)
+    query = select(Customer).where(Customer.company_id == ctx.cid, Customer.erased_at.is_(None))
     if before_id is not None:
         query = query.where(Customer.id < before_id)
     customers = ctx.db.scalars(query.order_by(Customer.id.desc()).limit(limit + 1)).all()
@@ -1009,6 +1011,43 @@ def customer_list(before_id: int | None = None, limit: int = 50,
     return {"items": [{"id": c.id, "name": c.name, "phoneMasked": masked_phone(c.phone),
                        "analyticsConsent": c.analytics_consent, "consentUpdatedAt": c.consent_updated_at}
                       for c in page], "nextCursor": page[-1].id if len(customers) > limit else None}
+
+
+@app.get("/api/customers/{customer_id}/bonus-ledger")
+def customer_bonus_ledger(customer_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    customer = ctx.db.scalar(select(Customer).where(Customer.id == customer_id, Customer.company_id == ctx.cid))
+    if customer is None or customer.erased_at is not None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    entries = ctx.db.scalars(select(BonusLedger).where(
+        BonusLedger.company_id == ctx.cid, BonusLedger.customer_id == customer.id
+    ).order_by(BonusLedger.id.desc()).limit(500)).all()
+    total = ctx.db.scalar(select(func.coalesce(func.sum(BonusLedger.amount), 0)).where(
+        BonusLedger.company_id == ctx.cid, BonusLedger.customer_id == customer.id))
+    return {"customerId": customer.id, "balance": customer.bonus_balance, "ledgerTotal": int(total),
+            "consistent": int(total) == customer.bonus_balance,
+            "items": [{"id": e.id, "orderId": e.order_id, "amount": e.amount, "reason": e.reason,
+                       "createdAt": e.created_at} for e in entries]}
+
+
+@app.delete("/api/customers/{customer_id}")
+def customer_erase(customer_id: int, ctx: Ctx = Depends(require("owner"))) -> dict:
+    """Right to erasure: drop phone/name and bonus balance; sales stay for accounting without PII."""
+    customer = ctx.db.scalar(select(Customer).where(
+        Customer.id == customer_id, Customer.company_id == ctx.cid).with_for_update())
+    if customer is None or customer.erased_at is not None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    if customer.bonus_balance:
+        ctx.db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id, order_id=None,
+                               amount=-customer.bonus_balance, reason="erase"))
+    customer.bonus_balance = 0
+    customer.phone, customer.name = f"erased-{customer.id}", ""
+    customer.analytics_consent, customer.consent_updated_at = False, now_ms()
+    customer.consent_actor_id, customer.erased_at = ctx.staff.id, now_ms()
+    ctx.db.execute(update(Order).where(Order.company_id == ctx.cid, Order.customer_id == customer.id)
+                   .values(customer=""))
+    audit_record(ctx, "customer.erase", customer.id, {}, {"analyticsConsent": False})
+    ctx.db.commit()
+    return {"id": customer.id, "erased": True}
 
 
 class CustomerConsentIn(BaseModel):
@@ -1265,11 +1304,19 @@ class OrderIn(BaseModel):
 
 
 # ---------- parked orders (no payment, no stock deduction) ----------
+def draft_table_name(db: Session, draft: DraftOrder | None) -> str | None:
+    if draft is None or draft.table_id is None:
+        return None
+    table = db.get(DiningTable, draft.table_id)
+    return table.name if table is not None else None
+
 
 class DraftOrderIn(BaseModel):
     clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
+    tableId: int | None = None
+    service: Literal["takeaway", "dine_in"] = "takeaway"
 
 
 class DraftOrderUpdate(BaseModel):
@@ -1282,7 +1329,7 @@ def draft_out(draft: DraftOrder) -> dict:
     return {"id": draft.id, "clientKey": draft.client_key, "items": draft.items,
             "customer": draft.customer, "staff": draft.staff_name,
             "version": draft.version, "createdAt": draft.created_at,
-            "updatedAt": draft.updated_at}
+            "updatedAt": draft.updated_at, "tableId": draft.table_id, "service": draft.service or "takeaway"}
 
 
 @app.get("/api/drafts")
@@ -1302,9 +1349,14 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
         if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
             raise HTTPException(409, "Draft clientKey already used with different content")
         return draft_out(existing)
+    table = validate_table(ctx, body.tableId, body.service)
+    if table is not None and ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.company_id == ctx.cid, DraftOrder.table_id == table.id)) is not None:
+        raise HTTPException(409, "Stol band")
     draft = DraftOrder(company_id=ctx.cid, branch_id=ctx.branch_id, client_key=body.clientKey,
                        items=[item.model_dump() for item in body.items],
-                       customer=body.customer, staff_name=ctx.staff.name)
+                       customer=body.customer, staff_name=ctx.staff.name,
+                       table_id=table.id if table else None, service=body.service)
     ctx.db.add(draft)
     try:
         ctx.db.commit()
@@ -1319,7 +1371,7 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
 def update_draft(draft_id: int, body: DraftOrderUpdate,
                  ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     result = ctx.db.execute(update(DraftOrder).where(
-        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id,
         DraftOrder.version == body.version
     ).values(items=[item.model_dump() for item in body.items],
              customer=body.customer, version=body.version + 1,
@@ -1419,11 +1471,14 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             items.append(built)
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
-    promotion = choose_promotion(rows(db, Promotion, cid), datetime.now(TZ))
+    promotion = choose_promotion(rows(db, Promotion, cid), datetime.now(TZ), shift.branch_id)
     if promotion and body.expectedTotal is None:
         raise HTTPException(409, "Aksiya faol. Kassani yangilang va summani tekshiring")
-    effective_percent = max(body.discountPct, promotion.percent if promotion else 0)
-    discount = discount_amount(subtotal, effective_percent)
+    manual_discount = discount_amount(subtotal, body.discountPct)
+    promo_discount = capped_discount(subtotal, promotion.percent, promotion.max_discount or 0) if promotion else 0
+    if promotion and promo_discount < manual_discount:
+        promotion = None
+    discount = max(manual_discount, promo_discount)
     total = subtotal - discount
     phone = body.customerPhone.strip()
     customer = None
@@ -1490,7 +1545,10 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         client_key=body.clientKey,
         promotion_snapshot={"id": promotion.id, "name": promotion.name, "percent": promotion.percent,
-                            "timezone": str(TZ)} if promotion and promotion.percent >= body.discountPct else None,
+                            "maxDiscount": promotion.max_discount or 0, "amount": promo_discount,
+                            "timezone": str(TZ)} if promotion else None,
+        service=draft.service if draft is not None else "takeaway",
+        table_name=draft_table_name(db, draft),
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         payment_parts=[{"method": p.method, "amount": p.amount} for p in parts],
@@ -1657,7 +1715,8 @@ def refund_out(refund: OrderRefund) -> dict:
         "amount": refund.amount, "method": refund.method, "reason": refund.reason,
         "staff": refund.staff_name, "createdAt": refund.created_at,
         "items": refund.items or [], "restocked": bool(refund.restocked), "costReversed": refund.cost_reversed or 0,
-        "bonusReversed": refund.bonus_reversed or 0, "fiscalStatus": refund.fiscal_status or "nonfiscal",
+        "bonusReversed": refund.bonus_reversed or 0, "bonusRestored": refund.bonus_restored or 0,
+        "fiscalStatus": refund.fiscal_status or "nonfiscal",
     }
 
 
@@ -1761,11 +1820,17 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
                     branch_stock.adjust(ctx.db, ctx.cid, order.branch_id, ingredients[key], qty)
                     ctx.db.add(StockMove(company_id=ctx.cid, branch_id=order.branch_id, ingredient=key, qty=qty,
                                          reason="refund_return", order_id=order.id, staff_name=ctx.staff.name))
-    bonus_reversed = 0
-    if order.customer_id is not None and order.bonus_earned and order.total:
+    bonus_reversed = bonus_restored = 0
+    if order.customer_id is not None and (order.bonus_earned or order.bonus_used) and order.total:
         customer = ctx.db.scalar(select(Customer).where(
             Customer.id == order.customer_id, Customer.company_id == ctx.cid).with_for_update())
-        if customer is not None:
+        if customer is not None and customer.erased_at is None:
+            # Return the redeemed share first, then claw back earned points; never below zero.
+            bonus_restored = order.bonus_used * body.amount // order.total
+            if bonus_restored:
+                customer.bonus_balance += bonus_restored
+                ctx.db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id, order_id=order.id,
+                                       amount=bonus_restored, reason="refund_restore"))
             due = order.bonus_earned * body.amount // order.total
             bonus_reversed = min(due, max(0, customer.bonus_balance))
             if bonus_reversed:
@@ -1776,6 +1841,7 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
                          amount=body.amount, method=body.method,
                          reason=reason, staff_name=ctx.staff.name, items=returned_lines or None,
                          restocked=body.restock, cost_reversed=cost_reversed, bonus_reversed=bonus_reversed,
+                         bonus_restored=bonus_restored,
                          fiscal_status="nonfiscal")
     ctx.db.add(refund)
     try:
@@ -1930,17 +1996,20 @@ class PromotionIn(BaseModel):
     percent: int = Field(ge=1, le=50)
     priority: int = Field(default=0, ge=0, le=100)
     active: bool = True
+    maxDiscount: int = Field(default=0, ge=0, le=100_000_000)
+    branchId: int | None = None
 
 
 def promotion_out(p):
     return {"id": p.id, "name": p.name, "startTime": p.start_time, "endTime": p.end_time,
-            "weekdays": p.weekdays, "percent": p.percent, "priority": p.priority, "active": p.active}
+            "weekdays": p.weekdays, "percent": p.percent, "priority": p.priority, "active": p.active,
+            "maxDiscount": p.max_discount or 0, "branchId": p.branch_id}
 
 
 @app.get("/api/promotions/active")
 def active_promotion(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     now = datetime.now(TZ)
-    promotion = choose_promotion(rows(ctx.db, Promotion, ctx.cid), now)
+    promotion = choose_promotion(rows(ctx.db, Promotion, ctx.cid), now, ctx.branch_id)
     return {"timezone": str(TZ), "serverTime": now.isoformat(),
             "promotion": promotion_out(promotion) if promotion else None}
 
@@ -1953,9 +2022,14 @@ def list_promotions(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
 def save_promotion(body, ctx, promotion=None):
     if not body.name.strip() or body.startTime == body.endTime or any(type(d) is not int or d < 0 or d > 6 for d in body.weekdays) or len(set(body.weekdays)) != len(body.weekdays):
         raise HTTPException(422, "Aksiya jadvalini tekshiring")
+    if body.branchId is not None:
+        branch = ctx.db.get(Branch, body.branchId)
+        if branch is None or branch.company_id != ctx.cid:
+            raise HTTPException(404, "Filial topilmadi")
     if promotion is None:
         promotion = Promotion(company_id=ctx.cid)
         ctx.db.add(promotion)
+    promotion.max_discount, promotion.branch_id = body.maxDiscount, body.branchId
     promotion.name, promotion.start_time, promotion.end_time = body.name.strip(), body.startTime, body.endTime
     promotion.weekdays, promotion.percent = body.weekdays, body.percent
     promotion.priority, promotion.active = body.priority, body.active
@@ -1977,14 +2051,17 @@ def edit_promotion(pid: int, body: PromotionIn, ctx: Ctx = Depends(require(*MANA
 
 
 @app.get("/api/reports/staff")
-def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+def staff_report(from_ms: int, to_ms: int, branchId: int | None = None,
+                 ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     """Historical name snapshots; refunds attributed to the original seller by refund date."""
     if to_ms <= from_ms or to_ms - from_ms > 366 * 86400000:
         raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
     db, cid = ctx.db, ctx.cid
-    orders = db.scalars(select(Order).where(
-        Order.company_id == cid, Order.created_at >= from_ms, Order.created_at < to_ms
-    )).all()
+    branch_id = report_branch(ctx, branchId)
+    order_q = select(Order).where(Order.company_id == cid, Order.created_at >= from_ms, Order.created_at < to_ms)
+    if branch_id is not None:
+        order_q = order_q.where(Order.branch_id == branch_id)
+    orders = db.scalars(order_q).all()
     result = {}
     shifts = {}
 
@@ -2011,7 +2088,8 @@ def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS)
     refunds = db.execute(select(OrderRefund, Order.staff_name).join(
         Order, (Order.id == OrderRefund.order_id) & (Order.company_id == OrderRefund.company_id)
     ).where(OrderRefund.company_id == cid, OrderRefund.created_at >= from_ms,
-            OrderRefund.created_at < to_ms)).all()
+            OrderRefund.created_at < to_ms,
+            *([Order.branch_id == branch_id] if branch_id is not None else []))).all()
     for refund, seller in refunds:
         item = row(seller)
         item["refunds"] += refund.amount
@@ -2020,7 +2098,30 @@ def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS)
     for name, item in result.items():
         item["netRevenue"] = item["revenue"] - item["refunds"]
         item["shifts"] = len(shifts[name])
-    return {"from": from_ms, "to": to_ms, "rows": sorted(result.values(), key=lambda r: r["name"])}
+    return {"from": from_ms, "to": to_ms, "branchId": branch_id,
+            "rows": sorted(result.values(), key=lambda r: r["name"])}
+
+
+@app.get("/api/reports/staff/me")
+def my_staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(auth)) -> dict:
+    """Every role may see only its own sales, keyed by staff id (renames don't split history)."""
+    if to_ms <= from_ms or to_ms - from_ms > 92 * 86400000:
+        raise HTTPException(400, "Sana oralig'i 1-92 kun bo'lishi kerak")
+    db, cid, sid = ctx.db, ctx.cid, ctx.staff.id
+    orders = db.scalars(select(Order).where(Order.company_id == cid, Order.staff_id == sid,
+                                            Order.created_at >= from_ms, Order.created_at < to_ms)).all()
+    sold = [o for o in orders if o.status != "cancelled"]
+    refunds = db.scalars(select(OrderRefund).where(OrderRefund.company_id == cid, OrderRefund.staff_id == sid,
+                                                   OrderRefund.created_at >= from_ms,
+                                                   OrderRefund.created_at < to_ms)).all()
+    shifts = db.scalars(select(Shift.id).where(Shift.company_id == cid, Shift.staff_id == sid,
+                                               Shift.opened_at >= from_ms, Shift.opened_at < to_ms)).all()
+    revenue = sum(o.total for o in sold)
+    return {"staffId": sid, "name": ctx.staff.name, "from": from_ms, "to": to_ms, "count": len(sold),
+            "revenue": revenue, "discounts": sum(o.discount for o in sold),
+            "average": revenue // len(sold) if sold else 0,
+            "voidCount": len(orders) - len(sold), "processedRefunds": sum(r.amount for r in refunds),
+            "shifts": len(shifts)}
 
 
 def report_branch(ctx: Ctx, branch_id: int | None) -> int | None:

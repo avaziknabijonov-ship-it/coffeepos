@@ -145,11 +145,26 @@ def inventory_approval(engine) -> None:
         conn.execute(text("UPDATE inventories SET branch_id = (SELECT b.id FROM branches b WHERE b.company_id = inventories.company_id AND b.is_default = TRUE) WHERE branch_id IS NULL"))
 
 
+def experience_columns(engine) -> None:
+    add_columns(engine, {
+        "promotions": ["max_discount BIGINT DEFAULT 0", "branch_id INTEGER"],
+        "customers": ["erased_at BIGINT"],
+        "draft_orders": ["table_id INTEGER", "service VARCHAR(16) DEFAULT 'takeaway'"],
+        "orders": ["service VARCHAR(16)", "table_name VARCHAR(64)"],
+        "order_refunds": ["bonus_restored BIGINT DEFAULT 0"],
+    })
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE promotions SET max_discount = 0 WHERE max_discount IS NULL"))
+        conn.execute(text("UPDATE draft_orders SET service = 'takeaway' WHERE service IS NULL"))
+        conn.execute(text("UPDATE order_refunds SET bonus_restored = 0 WHERE bonus_restored IS NULL"))
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
     (3, "payments table and refund reversals", payments_and_refund_reversals),
     (4, "branch inventory approval", inventory_approval),
+    (5, "tables, happy hour caps, loyalty restore, customer erasure", experience_columns),
 ]
 
 

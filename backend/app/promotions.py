@@ -18,9 +18,17 @@ def is_active(rule, now):
     return day.weekday() in rule.weekdays and (current >= start or current < end)
 
 
-def choose_promotion(rules, now):
-    active = [rule for rule in rules if is_active(rule, now)]
+def choose_promotion(rules, now, branch_id=None):
+    """Company-wide rules (branch_id None) apply everywhere; branch rules only in their branch."""
+    active = [rule for rule in rules if is_active(rule, now)
+              and getattr(rule, 'branch_id', None) in (None, branch_id)]
     return min(active, key=lambda rule: (-rule.priority, rule.id)) if active else None
+
+
+def capped_discount(subtotal, percent, cap=0):
+    """Percentage discount limited by an optional absolute cap (0 = no cap)."""
+    amount = discount_amount(subtotal, percent)
+    return min(amount, cap) if cap and cap > 0 else amount
 
 
 def discount_amount(subtotal, percent):

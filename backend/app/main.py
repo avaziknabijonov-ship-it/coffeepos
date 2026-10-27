@@ -1287,6 +1287,7 @@ def shift_history(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
 # ---------- orders ----------
 
 class OrderItemIn(BaseModel):
+    guest: int = Field(default=1, ge=1, le=50)
     productId: str
     size: str
     modIds: list[str] = []
@@ -1536,6 +1537,9 @@ def checkout(body: OrderIn, ctx: Ctx) -> dict:
             raise HTTPException(400, "Mahsulot topilmadi")
         resolved = resolve_combo(product, prods, mods, ings)
         built = build_item(resolved, it.size, it.modIds, it.qty, mods, ings)
+        if it.guest > 1:
+            built["guest"] = it.guest
+            built["key"] += f"|guest:{it.guest}"
         if getattr(resolved, "combo_items", None):
             built["components"] = resolved.combo_items
         same = next((x for x in items if x["key"] == built["key"]), None)

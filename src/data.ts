@@ -14,6 +14,7 @@ export interface Menu { categories: Category[]; products: Product[]; modifiers: 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'split'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
+  guest?: number;
   components?: { productId: string; name: string; size: string; qty: number; unitPrice: number }[]
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]

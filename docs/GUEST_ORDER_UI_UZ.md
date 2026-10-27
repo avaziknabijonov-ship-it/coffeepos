@@ -1,0 +1,7 @@
+# Mehmonlar va kassa ko‘rinishi — 2026-10-27
+
+Kassada chek chapda, rasmli kategoriya kartalari o‘ngda. Kategoriyani tanlash uning mahsulotlarini ochadi; Barcha kategoriyalar tugmasi qaytaradi. Mavjud qidiruv, zal xaritasi, funksiyalar menyusi va to‘lov saqlangan.
+
+Mehmon 1 dastlab tanlangan. Mehmon qo‘shish yangi raqam ochadi, keyingi mahsulot shu mehmonga qo‘shiladi. Bir xil mahsulot turli mehmonlar uchun alohida qator bo‘ladi. Umumiy chek barcha mehmonlar summasini qamrab oladi. Mehmon raqami saqlangan draftda va yakuniy order item JSON'da saqlanadi; buyurtmani qayta ochganda mehmon raqamlari qaytadi. Bo‘sh mehmonlar qayta ochishda alohida saqlanmaydi. Shu JSON maydonlari uchun yangi ustun migratsiyasi zarur emas. Eski itemlar Mehmon 1 sifatida ishlaydi. Ko‘p mehmonli buyurtma offline navbatga yuborilmaydi; xato yuz bersa savat qoladi. Har bir mehmonning alohida chekini yopish/to‘lovini bo‘lish bu o‘zgarish doirasida mavjud emas; umumiy to‘lov va naqd/karta split payment ishlatiladi.
+
+Sinov: SQLite backend 97 passed / 3 PostgreSQL-only skipped; frontend 11/11; brauzer 17/17, jumladan ikki mehmonga bir mahsulot qo‘shish va draftdan qaytarish. Backend sinovi guest bo‘yicha ikki qatordan yagona atomik checkout, summalar va chegaralarni tekshiradi. Build, i18n o‘tdi; lint mavjud ogohlantirishlar bilan xatosiz. Browser screenshot'lar CI artifact'iga kiritiladi. Production, deploy va merge bajarilmadi.

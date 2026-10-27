@@ -146,3 +146,8 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .app-cashier .premium-app-header .text-white { color: #492614 !important; }
 
 .app-cashier .premium-app-header .admin-return { color: #492614 !important; background: #fffaf3; border-color: #a66d43; }
+
+.cashier-reference .cashier-categories { width:auto !important; flex-shrink:0; }
+.cashier-reference .cashier-categories::after { display:none; }
+.cashier-reference .cashier-categories button { min-height:110px; }
+.cashier-reference .cashier-checkout { border-left:0; border-right:1px solid #e5cfb7; }

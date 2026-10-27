@@ -20,17 +20,19 @@ const CAT_TINT: Record<string, string> = {
   tea: 'bg-emerald-100 text-emerald-800',
   dessert: 'bg-rose-100 text-rose-800',
 }
-type ParkedItem = { productId: string; size: string; modIds: string[]; qty: number }
+type ParkedItem = { guest?: number; productId: string; size: string; modIds: string[]; qty: number }
 type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number; tableId: number | null; service: 'takeaway' | 'dine_in' }
 type FloorData = { areas: { id: number; name: string; active: boolean }[]; tables: { id: number; areaId: number; name: string; active: boolean; occupied: boolean; layout?: TableLayout | null; layoutVersion?: number; drafts: { id: number; staff: string }[] }[] }
 const parkedItems = (items: OrderItem[]): ParkedItem[] => items.map(i => ({
-  productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+  productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, guest: i.guest ?? 1,
 }))
 const restoreParkedItems = (items: ParkedItem[]): OrderItem[] => items.map(i => {
   const product = PRODUCTS.find(p => p.id === i.productId && p.active)
   const size = product?.sizes.find(s => s.code === i.size)
   if (!product || !size) throw new Error(t('Mahsulot mavjud emas yoki faol emas'))
-  return buildItem(product, size, i.modIds, i.qty)
+  const item = buildItem(product, size, i.modIds, i.qty)
+  const guest = i.guest ?? 1
+  return { ...item, guest, key: guest > 1 ? item.key + '|guest:' + guest : item.key }
 })
 
 type BonusSnapshot = { phone: string; name: string; balance: number; enabled: boolean; earnPercent: number; redemptionLimitPercent: number }
@@ -38,7 +40,9 @@ const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
 export default function Kassa({ onShift }: { onShift: () => void }) {
   const { shift, menuVersion, orders, session } = useAppState()
-  const [cat, setCat] = useState(() => CATEGORIES.find((c) => c.id === 'milk')?.id ?? CATEGORIES[0]?.id ?? '')
+  const [cat, setCat] = useState('')
+  const [guest, setGuest] = useState(1)
+  const [guests, setGuests] = useState(1)
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<OrderItem[]>([])
   const [customer, setCustomer] = useState('')
@@ -92,7 +96,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       if (matches.length > 1) { setDrafts(matches); setDraftsOpen(true); setFloorOpen(false); return }
       const draft = matches[0]
       const items = draft ? restoreParkedItems(draft.items) : []
-      clear(); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
+      clear(); setGuests(Math.max(1, ...items.map(i => i.guest ?? 1))); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
       setSelectedTable({ id: table.id, name: table.name }); setFloorOpen(false)
     } catch (e) { setDraftError((e as Error).message) }
   }
@@ -121,7 +125,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
     try {
       const items = restoreParkedItems(draft.items)
-      clear(); setCart(items); setCustomer(draft.customer); setActiveDraft(draft); setSelectedTable(floor.tables.find(tb => tb.id === draft.tableId) ?? null)
+      clear(); setGuests(Math.max(1, ...items.map(i => i.guest ?? 1))); setCart(items); setCustomer(draft.customer); setActiveDraft(draft); setSelectedTable(floor.tables.find(tb => tb.id === draft.tableId) ?? null)
       setDraftsOpen(false); setCartOpen(true); setDraftError('')
     } catch (e) { setDraftError((e as Error).message) }
   }
@@ -157,15 +161,18 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const total = subtotal - discount - effectiveBonus
   const count = cart.reduce((s, i) => s + i.qty, 0)
 
-  const addToCart = (item: OrderItem) =>
+  const addToCart = (original: OrderItem) => {
+    const item = { ...original, guest, key: guest > 1 ? original.key + '|guest:' + guest : original.key }
     setCart((c) => {
       const same = c.find((x) => x.key === item.key)
       return same ? c.map((x) => (x.key === item.key ? { ...x, qty: x.qty + item.qty } : x)) : [...c, item]
     })
+  }
   const changeQty = (key: string, d: number) =>
     setCart((c) => c.map((x) => (x.key === key ? { ...x, qty: x.qty + d } : x)).filter((x) => x.qty > 0))
   const clear = () => {
     setCart([])
+    setGuest(1); setGuests(1)
     setCustomer('')
     setDiscountPct(0)
     setCustomerPhone('')
@@ -198,7 +205,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const cartPanel = (
     <Cart
-      number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
+      guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
@@ -209,23 +216,14 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   if (!shift) return <OpenShift canOpen />
 
   return (
-    <div className="cashier-warm flex h-full min-h-0">
-      <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="cashier-categories hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
-        {CATEGORIES.map((c) => {
-          const active = !query && cat === c.id
-          return (
-            <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
-              className={`flex items-center gap-3 rounded-xl px-3 py-4 text-left font-medium ${active ? 'bg-stone-900 text-white shadow' : 'bg-white text-stone-700 hover:bg-stone-200'}`}>
-              <CatalogImage src={c.imageUrl} alt={tCatalogName(c.name)} className="size-10 shrink-0 rounded-lg object-cover" />{tCatalogName(c.name)}
-            </button>
-          )
-        })}
-      </aside>
+    <div className="cashier-warm cashier-reference flex h-full min-h-0">
+
 
       <main className="cashier-products flex min-w-0 flex-1 flex-col">
         {promotion && <p className="bg-amber-100 p-2 text-sm font-semibold">{t('Happy Hour')}: {promotion.name} · {promotion.percent}% · {t('Chegirmalar qo‘shilmaydi; kattarog‘i olinadi')}</p>}
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
           <div className="flex flex-wrap gap-2">
+          <button onClick={() => { setCat(''); setQuery('') }} className="rounded-xl border px-3 py-2 text-sm font-bold">{t('Barcha kategoriyalar')}</button>
           <button onClick={openFloor} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white">{t('Zal xaritasi')}</button>
           <button onClick={() => setFunctionsOpen(true)} className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold">{t('Funksiyalar')}</button>
           {selectedTable && <span className="self-center rounded-lg bg-sky-100 px-3 py-2 text-sm font-bold text-sky-900">{t('Stol')}: {selectedTable.name}</span>}
@@ -247,6 +245,17 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             ))}
           </div>
         </div>
+      {!cat && !query && <>      <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="cashier-categories grid grid-cols-2 gap-3 border-b border-stone-200 bg-stone-100 p-3 sm:grid-cols-3 lg:grid-cols-4">
+        {CATEGORIES.map((c) => {
+          const active = !query && cat === c.id
+          return (
+            <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
+              className={`flex flex-col items-start gap-2 overflow-hidden rounded-xl p-2 text-left font-medium ${active ? 'bg-stone-900 text-white shadow' : 'bg-white text-stone-700 hover:bg-stone-200'}`}>
+              <CatalogImage src={c.imageUrl} alt={tCatalogName(c.name)} className="h-20 w-full rounded-lg object-cover" />{tCatalogName(c.name)}
+            </button>
+          )
+        })}
+      </aside></>}
         <div className="cashier-product-grid grid flex-1 grid-cols-2 content-start gap-3 overflow-y-auto p-3 pb-24 sm:grid-cols-3 md:pb-3 xl:grid-cols-4">
           {products.map((p) => {
             const Icon = CAT_ICON[p.cat] ?? Coffee
@@ -268,11 +277,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
               </button>
             )
           })}
-          {products.length === 0 && <p className="col-span-full py-12 text-center text-stone-500">{t('Hech narsa topilmadi.')}</p>}
+          {products.length === 0 && cat && <p className="col-span-full py-12 text-center text-stone-500">{t('Hech narsa topilmadi.')}</p>}
         </div>
       </main>
 
-      <aside className="cashier-checkout hidden w-80 shrink-0 border-l border-stone-200 bg-white md:flex lg:w-96">{cartPanel}</aside>
+      <aside className="cashier-checkout order-first hidden w-80 shrink-0 border-l border-stone-200 bg-white md:flex lg:w-96">{cartPanel}</aside>
 
       {count > 0 && !cartOpen && (
         <div className="fixed inset-x-0 bottom-0 z-30 p-3 md:hidden">
@@ -318,6 +327,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 }
 
 function Cart(props: {
+  guest: number; guests: number; setGuest: (n: number) => void; addGuest: () => void
   number: number; cart: OrderItem[]; customer: string; setCustomer: (v: string) => void
   customerPhone: string; setCustomerPhone: (v: string) => void
   bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
@@ -361,6 +371,7 @@ function Cart(props: {
           <label>{t('Ishlatish')} <input className="w-24 rounded border bg-white p-1" type="number" min={0} max={props.maxRedeem} step={1} value={props.bonusRedeem} onChange={e => props.setBonusRedeem(Math.max(0, Math.min(Number(e.target.value) || 0, props.maxRedeem)))} /></label>
         </div>}
       </div>
+      <div className="flex flex-wrap gap-2 border-b px-4 py-3">{Array.from({ length: props.guests }, (_, index) => index + 1).map(n => <button key={n} onClick={() => props.setGuest(n)} className={`rounded-lg px-3 py-2 text-sm font-bold ${n === props.guest ? 'bg-sky-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{t('Mehmon')} {n}</button>)}<button disabled={props.guests >= 50} onClick={props.addGuest} className="rounded-lg border px-3 py-2 text-sm font-bold text-sky-700">+ {t('Mehmon qo‘shish')}</button></div>
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {cart.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-10 text-center text-stone-400">
@@ -371,7 +382,7 @@ function Cart(props: {
           <div key={it.key} className="rounded-xl border border-stone-200 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-semibold">{tCatalogName(it.name)}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
+                <div className="text-xs text-sky-700">{t('Mehmon')} {it.guest ?? 1}</div><div className="font-semibold">{tCatalogName(it.name)}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
                 {it.mods.length > 0 && <div className="mt-0.5 text-sm text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
               </div>
               <div className="shrink-0 font-semibold">{fmt(it.unitPrice * it.qty)}</div>
@@ -635,7 +646,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.items.map((it) => (
             <div key={it.key} className="mb-1">
-              <div className="flex justify-between gap-2"><span>{it.qty}× {tCatalogName(it.name)} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
+              <div className="flex justify-between gap-2"><span>{t('Mehmon')} {it.guest ?? 1} · {it.qty}× {tCatalogName(it.name)} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
               {it.mods.length > 0 && <div className="pl-3 text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
             </div>
           ))}

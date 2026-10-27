@@ -196,13 +196,13 @@ export const nextNumber = () =>
 export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; expectedTotal?: number; automaticDiscount?: boolean; payment: Payment; paymentParts?: { method: Exclude<Payment, 'split'>; amount: number }[]; cashGiven?: number; customerPhone?: string; bonusRedeem?: number; draftId?: number; draftVersion?: number }) {
   const clientKey = crypto.randomUUID()
   const payload = { ...o, clientKey, items: items.map((i) => ({
-    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, guest: i.guest ?? 1,
   })) }
   let order: Order
   try {
     order = await api<Order>('/api/orders', { body: payload })
   } catch (e) {
-    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && !o.draftId && !o.automaticDiscount && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
+    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && !items.some(item => (item.guest ?? 1) > 1) && !o.draftId && !o.automaticDiscount && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
     const company = state.session.company.slug
     const sale = queueCashSale(company, {
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,

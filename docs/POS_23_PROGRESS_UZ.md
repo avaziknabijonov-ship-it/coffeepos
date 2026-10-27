@@ -17,7 +17,7 @@ Mezon (o‘zgarmagan): 0 — dalil yo‘q; 20 — scaffold; 40 — API/UI/testla
 | Frontend `npm test` / `lint` / `build` | 5/5 o‘tdi; lint 0 xato (faqat ogohlantirishlar); build o‘tdi |
 | Lokal staging `scripts/staging_smoke.py` (HTTP, nginx+API+PostgreSQL) | 23/23 o‘tdi |
 | Shifrlangan backup + restore drill (throwaway PostgreSQL) | o‘tdi |
-| GitHub Actions (backend×2, frontend, staging-smoke) | PR ochilgach alohida tasdiqlanadi |
+| GitHub Actions (backend SQLite, backend PostgreSQL, frontend, staging-smoke + backup/restore drill), commit `dc0efb8` | 4/4 o‘tdi: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40477480648 |
 
 Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 
@@ -63,4 +63,4 @@ Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 
 ## Real sinovga tayyorlik
 
-**Hali "real sinovga tayyor" emas.** Sabablar: CI natijasi PR'da tasdiqlanishi kerak; fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.
+**Hali "real sinovga tayyor" emas.** Sabablar: fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.

@@ -49,6 +49,18 @@ Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 | 22 | Updates | 40% | Semver, deterministik staged rollout, rollback, min backend/client (426); `test_reliability`, smoke 23 | **Bloklangan:** APK build/imzo va tarqatish infratuzilmasi |
 | 23 | Loyalty | 60% | Ledger, accrual/redeem/refund reversal, lock bilan parallel himoya, ledger mosligi; `test_experience`, `test_api` | — |
 
+## Bloklangan qismlar uchun kerakli kirish / qurilmalar
+
+| Modul | Kerak bo‘ladigan narsa |
+|---|---|
+| 7 Fiscal, 16 E-receipt QR | Sertifikatlangan OFD/fiskal provayder shartnomasi, sandbox va production API hujjati, kalitlar, kompaniya STIR va terminal ID, fiskal modul (uskuna) yoki virtual kassa |
+| 8 Backup | Offsite storage (S3/Backblaze/Google Drive, rclone remote) uchun kirish ma’lumoti, shifrlash passphrase saqlash joyi, alert kanali (Telegram yoki email) |
+| 15 Telegram director | BotFather orqali bot token, direktor chat ID, server'dan `api.telegram.org` ga chiqish ruxsati |
+| 22 Updates | Android APK build pipeline, imzolash keystore, APK tarqatish URL/hosting, test qurilmalari |
+| 20 Offline, 21 Devices | Kamida 2 ta real POS qurilma yoki planshet, ko‘p qurilmali offline/qayta ulanish sinovi |
+| 1–2 To‘lovlar | Payme/Click/terminal merchant sandbox kalitlari (avtomatik refund uchun) |
+| Hammasi (80%) | Production'dan alohida real staging server va domen (masalan, staging.mcoffeepos.uz) |
+
 ## Real sinovga tayyorlik
 
 **Hali "real sinovga tayyor" emas.** Sabablar: CI natijasi PR'da tasdiqlanishi kerak; fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.

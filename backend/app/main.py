@@ -1407,20 +1407,34 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
     """
     if not body.externalConfirmed:
         raise HTTPException(422, "Pul qaytarilgani tashqarida tasdiqlanishi kerak")
+    reason = body.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(422, "Qaytarish sababini kiriting")
+
+    def replay(existing: OrderRefund) -> dict:
+        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
+            oid, body.amount, body.method, reason
+        ):
+            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
+        return refund_out(existing)
+
     existing = ctx.db.scalar(select(OrderRefund).where(
         OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
     ))
     if existing:
-        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
-            oid, body.amount, body.method, body.reason.strip()
-        ):
-            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
-        return refund_out(existing)
+        return replay(existing)
     order = ctx.db.scalar(select(Order).where(
         Order.id == oid, Order.company_id == ctx.cid
     ).with_for_update())
     if order is None:
         raise HTTPException(404, "Buyurtma topilmadi")
+    # Another request with the same key may have committed while we waited for
+    # the order lock. Recheck before calculating the remaining refundable sum.
+    existing = ctx.db.scalar(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
+    ))
+    if existing:
+        return replay(existing)
     if order.status == "cancelled":
         raise HTTPException(409, "Bekor qilingan buyurtma uchun refund mumkin emas")
     paid = {part["method"]: part["amount"] for part in order_payment_parts(order)}
@@ -1436,7 +1450,7 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
         raise HTTPException(422, str(exc)) from exc
     refund = OrderRefund(company_id=ctx.cid, order_id=oid, client_key=body.clientKey,
                          amount=body.amount, method=body.method,
-                         reason=body.reason.strip(), staff_name=ctx.staff.name)
+                         reason=reason, staff_name=ctx.staff.name)
     ctx.db.add(refund)
     try:
         ctx.db.commit()
@@ -1455,8 +1469,11 @@ class CancelOrderIn(BaseModel):
 def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dict:
     if ctx.staff.role not in MANAGERS and not (ctx.staff.role == "kassir" and ctx.staff.can_cancel_orders):
         raise HTTPException(403, "Otmena uchun dostup berilmagan")
-    order = ctx.db.get(Order, oid)
-    if order is None or order.company_id != ctx.cid:
+    # Serialize cancellation with refunds and other cancellations for this order.
+    order = ctx.db.scalar(select(Order).where(
+        Order.id == oid, Order.company_id == ctx.cid
+    ).with_for_update())
+    if order is None:
         raise HTTPException(404, "Buyurtma topilmadi")
     if order.status != "new":
         raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")

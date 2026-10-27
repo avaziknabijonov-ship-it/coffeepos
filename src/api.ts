@@ -42,3 +42,6 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   }
   return res.json() as Promise<T>
 }
+
+// Resolve generated receipt paths against the same API backend as authenticated calls.
+export const publicApiUrl = (path: string) => new URL(`${BASE}${path}`, window.location.origin).href

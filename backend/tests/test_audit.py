@@ -22,11 +22,12 @@ def test_audit_transaction_replay_privacy_and_pagination():
         assert c.post(url, headers=h, json=body).status_code == 201
         assert c.post(url, headers=h, json=body).status_code == 201
         assert c.post(url, headers=h, json={**body, 'clientKey': uuid4().hex, 'amount': 99999999}).status_code == 422
-        page = c.get('/api/audit', headers=h).json()
+        page = c.get('/api/audit?action=order.refund', headers=h).json()
         assert len(page['items']) == 1  # Retry and rejected operation do not add events.
         event = page['items'][0]
         assert event['action'] == 'order.refund'
-        assert event['after'] == {'orderId': int(order['id']), 'amount': 1000, 'method': 'karta'}
+        assert event['after'] == {'orderId': int(order['id']), 'amount': 1000, 'method': 'karta', 'items': [],
+                                  'restocked': False, 'costReversed': 0, 'bonusReversed': 0}
         assert '998901234567' not in str(page)
         assert event['actorId'] > 0 and event['actor'] == 'Owner'
         assert c.get('/api/audit', headers=other).json()['items'] == []
@@ -34,7 +35,7 @@ def test_audit_transaction_replay_privacy_and_pagination():
         assert c.get('/api/audit', headers=login(c, '2222')).status_code == 403
         assert c.get('/api/audit?limit=101', headers=h).status_code == 422
         assert c.get('/api/audit?action=order.cancel', headers=h).json()['items'] == []
-        assert c.get(f"/api/audit?before_id={event['id']}", headers=h).json()['items'] == []
+        assert [e['action'] for e in c.get(f"/api/audit?before_id={event['id']}", headers=h).json()['items']] == ['shift.open']
         # A second, separate refund creates another immutable record.
         assert c.post(url, headers=h, json={**body, 'clientKey': uuid4().hex}).status_code == 201
         page = c.get('/api/audit?limit=1', headers=h).json()
@@ -74,7 +75,7 @@ def test_cancel_and_inventory_audit_and_failed_inventory_rollback():
             'lines': [{'ing': 'beans', 'counted': 10}],
         }).status_code == 200
         records = c.get('/api/audit', headers=h).json()['items']
-        assert {r['action'] for r in records} == {'order.cancel', 'inventory.count'}
+        assert {r['action'] for r in records} - {'shift.open'} == {'order.cancel', 'inventory.count'}
         cancel = next(r for r in records if r['action'] == 'order.cancel')
         assert cancel['before'] == {'status': 'new'}
         assert cancel['after']['status'] == 'cancelled'

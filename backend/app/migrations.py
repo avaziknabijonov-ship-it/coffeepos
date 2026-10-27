@@ -113,9 +113,33 @@ def branches_and_attribution(engine) -> None:
                 WHERE s.company_id = {table}.company_id AND s.name = {table}.{name_col}) = 1"""))
 
 
+def payments_and_refund_reversals(engine) -> None:
+    add_columns(engine, {
+        "orders": ["payment_status VARCHAR(16) DEFAULT 'paid'"],
+        "order_refunds": ["items JSON", "restocked BOOLEAN DEFAULT FALSE", "cost_reversed BIGINT DEFAULT 0",
+                          "bonus_reversed BIGINT DEFAULT 0", "fiscal_status VARCHAR(16) DEFAULT 'nonfiscal'"],
+    })
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE orders SET payment_status = 'paid' WHERE payment_status IS NULL"))
+        legacy = conn.execute(text("""SELECT o.id, o.company_id, o.branch_id, o.shift_id, o.payment, o.total,
+            o.payment_parts, o.staff_id, o.staff_name, o.created_at FROM orders o
+            WHERE NOT EXISTS (SELECT 1 FROM order_payments p WHERE p.order_id = o.id)""")).all()
+        for row in legacy:
+            parts = row.payment_parts
+            if isinstance(parts, str):
+                parts = __import__("json").loads(parts)
+            for index, part in enumerate(parts or [{"method": row.payment, "amount": row.total}]):
+                conn.execute(text("""INSERT INTO order_payments (company_id, branch_id, order_id, shift_id, method,
+                    amount, client_key, staff_id, staff_name, created_at) VALUES (:c, :b, :o, :s, :m, :a, :k, :sid, :n, :t)"""),
+                    {"c": row.company_id, "b": row.branch_id, "o": row.id, "s": row.shift_id, "m": part["method"],
+                     "a": part["amount"], "k": f"legacy-{row.id}-{index}", "sid": row.staff_id, "n": row.staff_name,
+                     "t": row.created_at})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
+    (3, "payments table and refund reversals", payments_and_refund_reversals),
 ]
 
 

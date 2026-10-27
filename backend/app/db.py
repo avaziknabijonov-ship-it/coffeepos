@@ -167,6 +167,7 @@ class Order(Base):
     cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
     payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    payment_status: Mapped[str] = mapped_column(String(16), default="paid")
     promotion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
@@ -335,6 +336,28 @@ class OrderRefund(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     method: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(String(256))
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    items: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    restocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    cost_reversed: Mapped[int] = mapped_column(BigInteger, default=0)
+    bonus_reversed: Mapped[int] = mapped_column(BigInteger, default=0)
+    fiscal_status: Mapped[str] = mapped_column(String(16), default="nonfiscal")
+
+
+class OrderPayment(Base):
+    """One captured tender; client_key blocks duplicates from retries or a second device."""
+    __tablename__ = "order_payments"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    shift_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    method: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    client_key: Mapped[str] = mapped_column(String(80))
+    staff_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
 

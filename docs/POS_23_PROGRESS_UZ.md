@@ -63,7 +63,7 @@ Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 
 ## Real sinovga tayyorlik
 
-**Hali "real sinovga tayyor" emas.** Sabablar: fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.
+**Hali "real sinovga tayyor" emas.** Sabablar: fiskal provayder, Telegram, offsite backup va APK bloklangan; barcha 23 modulning to‘liq UI end-to-end sinovi hali ochiq (quyidagi brauzer regression natijalarini qarang); real staging serveri yo‘q.
 
 ## 2026-10-27: Codex davom ettirish tekshiruvi
 
@@ -115,3 +115,32 @@ Dalil: `backend/tests/test_branch_drafts.py` da 4 yangi test, mahalliy backend
 **94 passed / 3 PostgreSQL-only skipped**. Frontend **11/11**, build va i18n
 tekshiruvi o‘tdi. PostgreSQL/staging va migratsiya GitHub CI’da qayta sinaladi.
 Acceptance hali **56%**, bu tuzatishlar real pilot yoki foydalanuvchi qabuli emas.
+
+## 2026-10-27: brauzer regression sinovi bajarildi
+
+Oldingi Chromium arxiv muammosi boshqa mahalliy paket orqali hal qilindi.
+`scripts/run_browser_regression.py` alohida vaqtinchalik SQLite bazasi va faqat
+localhost API/Vite serverlarini ishga tushiradi; testdan keyin ularni yopadi.
+`scripts/browser_regression.mjs` Playwright bilan **14/14** tekshiruvdan o‘tdi:
+
+- UZ/RU × light/dark: band stol, qurilma token banneri va kassa — 12 holat.
+- Ikki mustaqil brauzer konteksida naqd offline savdo, durable navbat va API
+  ishlamaganda sahifani qayta ochish — 1 holat.
+- Ulanish tiklanganda va sync takrorlanganda aynan ikki server buyurtmasi — 1 holat.
+
+Brauzerda haqiqiy CSS kontrasti tekshirildi: umumiy admin !important qoidasi
+oldingi text-stone-900 tuzatishini bosib ketayotgan edi. Band stol va token
+banneri uchun alohida operations-highlight qoidasi qo‘shildi; stol kontrasti
+UZ/RU light/dark holatlarida taxminan **16.86:1**, oldin taxminan 1.1:1 edi.
+Kassa headeridagi oq yozuv och fonda o‘qilmasligi tuzatildi. Mavzu tugmasi,
+uning tooltip’i va admin/kassa dekorativ matni til bilan almashadi.
+
+Frontend 11/11 unit/regression test, build va i18n o‘tdi; lint xatosiz (mavjud
+ogohlantirishlar saqlanadi). CI’ga alohida browser-regression job va tokenlar
+maskalangan screenshot artefaktlari qo‘shildi.
+
+Chegara: bu API uzilishini va sahifa qayta yuklanishini tekshiradi; UI assetlari
+ham butunlay mavjud bo‘lmagan to‘liq tarmoqsiz qayta ochish sinovi emas.
+Ikki brauzer konteksti ikki haqiqiy POS uskuna sinovi degani emas. Barcha
+23 modulning to‘liq UI oqimi, real provider/hardware/staging hali ochiq.
+Acceptance o‘rtacha **56% o‘zgarmaydi**, 0/23 qabul qilingan.

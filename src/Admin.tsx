@@ -63,7 +63,7 @@ export default function Admin() {
   return (
     <div className="admin-shell h-full overflow-y-auto bg-stone-50">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-3 md:flex-row md:gap-5 md:p-5">
-        <aside className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
+        <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
           <div className="mb-3 hidden px-3 pt-2 md:block">
             <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">{t('Boshqaruv')}</p>
             <h2 className="mt-1 text-lg font-bold text-stone-900">{t('Admin panel')}</h2>

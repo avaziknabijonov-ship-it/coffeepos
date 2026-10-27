@@ -15,6 +15,12 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Yaxshi qahva — yaxshi kun": "Хороший кофе — хороший день",
+  "Kun": "Светлая",
+  "Tun": "Тёмная",
+  "Avto": "Авто",
+  "Rejimni almashtirish": "Сменить тему",
+
   "Qoralama kaliti boshqa buyurtmaga tegishli": "Ключ черновика относится к другому заказу",
   "Qoralama kaliti allaqachon mavjud": "Ключ черновика уже существует",
   "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring": "Черновик изменён на другом устройстве. Обновите и проверьте снова",

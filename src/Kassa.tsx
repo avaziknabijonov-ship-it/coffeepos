@@ -177,7 +177,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 
   return (
     <div className="cashier-warm flex h-full min-h-0">
-      <aside className="cashier-categories hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
+      <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="cashier-categories hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
         {CATEGORIES.map((c) => {
           const Icon = CAT_ICON[c.id] ?? Coffee
           const active = !query && cat === c.id

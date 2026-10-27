@@ -114,7 +114,7 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .app-cashier .premium-app-header button {border-color:#d0a67b;}
 .app-cashier .premium-app-header .text-stone-300 {color:#62432e !important;}
 .admin-shell > div > aside { position:relative;overflow:hidden; }
-.admin-shell > div > aside::after { content:'☕  Yaxshi qahva — yaxshi kun';display:block; margin-top:20px;padding:24px 8px 12px;color:#c68a46;font-size:13px;text-align:center;border-top:1px solid #58402b;opacity:.9; }
+.admin-shell > div > aside::after { content:attr(data-motto);display:block; margin-top:20px;padding:24px 8px 12px;color:#c68a46;font-size:13px;text-align:center;border-top:1px solid #58402b;opacity:.9; }
 .admin-shell > div > aside nav button { min-height:43px; }
 .admin-shell .premium-chart > h2::before { content:'◈';color:#e6ad50;margin-right:12px;font-size:20px; }
 .admin-shell .premium-kpi { min-height:144px; }
@@ -122,7 +122,7 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .admin-shell .premium-kpi .text-stone-500 {padding-top:5px;}
 .admin-shell .premium-chart {border-radius:16px;}
 .cashier-warm .cashier-categories {position:relative;}
-.cashier-warm .cashier-categories::after {content:'Yaxshi qahva — yaxshi kun'; margin-top:auto;padding:25px 8px 30px; text-align:center; font-family:Georgia,serif;font-size:16px;font-style:italic;color:#80522c;background:radial-gradient(ellipse at bottom,#dfc5a7,transparent 70%);}
+.cashier-warm .cashier-categories::after {content:attr(data-motto); margin-top:auto;padding:25px 8px 30px; text-align:center; font-family:Georgia,serif;font-size:16px;font-style:italic;color:#80522c;background:radial-gradient(ellipse at bottom,#dfc5a7,transparent 70%);}
 .cashier-warm .cashier-categories button {min-height:68px;font-size:15px;font-weight:750;}
 .cashier-warm .cashier-product-grid {gap:14px !important; padding:14px !important;}
 .cashier-warm .cashier-product-card { min-height:285px !important;border-radius:18px !important; }
@@ -135,3 +135,12 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .cashier-warm .cashier-checkout button:not(:disabled):hover {filter:brightness(.96);}
 @media(min-width:1200px){.cashier-warm .cashier-categories{width:205px!important}.cashier-warm .cashier-checkout{width:390px!important}}
 @media(max-width:1100px){.cashier-warm .cashier-product-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.cashier-warm .cashier-product-card{min-height:240px!important}}
+
+/* Light status cards must retain dark text inside the premium admin surface.
+   The shared admin text utilities use !important, so a utility alone cannot fix this. */
+[data-theme] .admin-shell .operations-highlight {
+  background: #fffbeb !important;
+  color: #1c1917 !important;
+}
+
+.app-cashier .premium-app-header .text-white { color: #492614 !important; }

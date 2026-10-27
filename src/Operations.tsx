@@ -116,7 +116,7 @@ export function FloorPanel() {
       <button className={primary}>{t('Stol qo‘shish')}</button>
     </form>
     {floor.areas.map(a => <div key={a.id}><h3 className="font-semibold">{a.name}</h3>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{floor.tables.filter(tb => tb.areaId === a.id).map(tb => <div key={tb.id} className={`rounded border p-2 ${tb.occupied ? 'border-amber-500 bg-amber-50 text-stone-900' : ''}`}>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{floor.tables.filter(tb => tb.areaId === a.id).map(tb => <div key={tb.id} className={`rounded border p-2 ${tb.occupied ? 'operations-highlight border-amber-500 bg-amber-50 text-stone-900' : ''}`}>
         <div className="font-medium">{tb.name} · {tb.seats} · {tb.occupied ? t('Band') : t('Bo‘sh')}</div>{tb.drafts.map(draftRow)}
       </div>)}</div></div>)}
     {floor.takeaway.length > 0 && <div><h3 className="font-semibold">{t('Olib ketish')}</h3>{floor.takeaway.map(draftRow)}</div>}
@@ -217,7 +217,7 @@ export function DevicesPanel() {
       <select aria-label={t('Filial')} className={input} value={branchId} onChange={e => setBranchId(e.target.value)}><option value="">{t('Filialga biriktirilmagan')}</option>{branches.items.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
       <button className={primary}>{t('Ro‘yxatdan o‘tkazish')}</button>
     </form>
-    {issued && <div className="rounded border border-amber-500 bg-amber-50 p-2 text-sm text-stone-900">{t('Kalit faqat bir marta ko‘rsatiladi')}: <code className="break-all">{issued}</code>
+    {issued && <div className="operations-highlight rounded border border-amber-500 bg-amber-50 p-2 text-sm text-stone-900">{t('Kalit faqat bir marta ko‘rsatiladi')}: <code className="break-all">{issued}</code>
       <button className={'ml-2 ' + btn} onClick={() => { setDeviceToken(issued); setIssued('') }}>{t('Shu qurilmada saqlash')}</button></div>}
     {devices.map(d => <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm">
       <span>{d.name} · {d.kind.toUpperCase()} · {t('Filial')}: {d.branchId ? branches.items.find(b => b.id === d.branchId)?.name ?? '#' + d.branchId : t('Filialga biriktirilmagan')} · {t('Versiya')}: {d.appVersion || '—'} · {t('Oxirgi faollik')}: {when(d.lastSeenAt)}{d.revokedAt ? ' · ' + t('Bloklangan') : ''}</span>

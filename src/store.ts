@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from 'react'
-import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
+import { getQueuedSales, isOfflineConflict, queueCashSale, removeQueuedSale } from './offline'
 import { setMenu, discountAmount } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
-import { getLang, setLangValue } from './i18n'
+import { getLang, setLangValue, t } from './i18n'
 import type { Lang } from './i18n'
 
 export interface Session { staff: { id: number; name: string; role: Role; canBarista?: boolean; canCancelOrders?: boolean; canReprintReceipts?: boolean }; company: { slug: string; name: string } }
@@ -72,10 +72,15 @@ async function pushPendingSales() {
   try {
     for (const sale of getQueuedSales(company)) {
       try {
-        await api<Order>('/api/orders', { body: sale.body })
+        await api<Order>('/api/orders', { body: { ...sale.body, offline: true, offlineCreatedAt: sale.createdAt } })
         removeQueuedSale(company, sale.clientKey)
         set({ pendingError: '' })
       } catch (e) {
+        if (isOfflineConflict(e)) {
+          removeQueuedSale(company, sale.clientKey)
+          set({ pendingError: t('Oflayn savdo ziddiyatga tushdi, menejer tekshiradi') })
+          continue
+        }
         set({ pendingError: (e as Error).message })
         break
       }

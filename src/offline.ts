@@ -39,6 +39,13 @@ export function queueCashSale(company: string, body: QueuedSale['body']): Queued
   return item
 }
 
+/** Server accepted the replay as a reviewable conflict: it must leave the retry queue. */
+export function isOfflineConflict(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false
+  const { status, detail } = e as { status?: number; detail?: { code?: string } }
+  return status === 409 && detail?.code === 'offline_conflict'
+}
+
 export function removeQueuedSale(company: string, clientKey: string): void {
   const existing = getQueuedSales(company)
   // Acknowledge only the exact transaction returned by the backend.

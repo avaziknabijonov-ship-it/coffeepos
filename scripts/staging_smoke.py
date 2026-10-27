@@ -5,6 +5,7 @@ Usage: python3 scripts/staging_smoke.py http://127.0.0.1:8080 [SUPERADMIN_KEY]
 """
 import json
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,6 +40,12 @@ def key():
     return uuid.uuid4().hex
 
 
+for _ in range(60):  # nginx can answer before the API finished startup (502)
+    if call("GET", "/api/auth/me")[0] in (200, 401):
+        break
+    time.sleep(2)
+else:
+    sys.exit("API did not become ready")
 slug = "smoke-" + uuid.uuid4().hex[:10]
 s, reg = call("POST", "/api/auth/register", {"companyName": "Smoke", "slug": slug, "ownerName": "Owner", "ownerPin": "1111"})
 check("01 register tenant", s == 200, s)

@@ -34,10 +34,13 @@ def test_refund_limits_and_idempotency():
                 "externalConfirmed": True}
         assert c.post(url, json={**body, "externalConfirmed": False}, headers=h).status_code == 422
         assert c.post(url, json={**body, "method": "payme"}, headers=h).status_code == 422
+        assert c.post(url, json={**body, "reason": "   "}, headers=h).status_code == 422
         saved = c.post(url, json=body, headers=h)
         assert saved.status_code == 201, saved.text
         assert saved.json()["amount"] == 7000
         assert c.post(url, json=body, headers=h).json()["id"] == saved.json()["id"]
+        assert c.post(f"/api/orders/{oid}/cancel", json={"reason": "Customer cancelled"},
+                      headers=h).status_code == 409
         assert c.post(url, json={**body, "amount": 7001}, headers=h).status_code == 409
         assert c.post(url, json={**body, "clientKey": "refund_" + uuid4().hex,
                                  "amount": 3001}, headers=h).status_code == 422

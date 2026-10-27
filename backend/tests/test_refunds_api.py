@@ -77,3 +77,36 @@ def test_refunds_tenant_isolation_and_cancellation():
         assert c.post(f"/api/orders/{oid}/cancel", json={"reason": "Customer cancelled"},
                       headers=h1).status_code == 200
         assert c.post(url, json=body, headers=h1).status_code == 409
+
+
+def test_refund_today_for_historical_sale_is_reported_on_refund_date():
+    from app.db import Order, SessionLocal
+
+    with TestClient(app) as c:
+        h = company(c)
+        assert c.post('/api/shifts/open', json={'openingCash': 10000}, headers=h).status_code == 200
+        response = c.post('/api/orders', headers=h, json={
+            'items': [{'productId': 'espresso', 'size': '-', 'qty': 1}], 'payment': 'karta',
+        })
+        assert response.status_code == 200, response.text
+        order = response.json()
+        # Historical sale, current-day refund: today's net cash revenue can be negative.
+        with SessionLocal() as db:
+            stored = db.get(Order, int(order['id']))
+            stored.created_at -= 3 * 86400000
+            db.commit()
+        refund = c.post(f"/api/orders/{order['id']}/refunds", headers=h, json={
+            'clientKey': uuid4().hex, 'amount': order['total'], 'method': 'karta',
+            'reason': 'Historical sale refund', 'externalConfirmed': True,
+        })
+        assert refund.status_code == 201, refund.text
+        report = c.get('/api/reports/finance?days=1', headers=h).json()
+        assert report['revenue'] == 0
+        assert report['refunds'] == order['total']
+        assert report['netRevenue'] == -order['total']
+        assert report['cogs'] == 0
+        assert report['refundsByPayment'] == {'karta': order['total']}
+        assert report['daily'][0]['netRevenue'] == report['netRevenue']
+        period = c.get('/api/reports/finance?days=7', headers=h).json()
+        assert period['netRevenue'] == 0
+        assert sum(d['refunds'] for d in period['daily']) == order['total']

@@ -15,6 +15,18 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Narx yoki aksiya o‘zgardi. Summani yangilab qayta tekshiring": "Цена или акция изменилась. Обновите и проверьте сумму",
+  "Aksiya faol. Kassani yangilang va summani tekshiring": "Акция активна. Обновите кассу и проверьте сумму",
+  "Aksiya jadvalini tekshiring": "Проверьте расписание акции",
+  "Nofaol": "Неактивна",
+  "Hafta kunlari": "Дни недели",
+  "Ustuvorlik": "Приоритет",
+  "Tugash": "Окончание",
+  "Boshlanish": "Начало",
+  "Yarim tundan o‘tgan jadvalda hafta kuni aksiya boshlangan kunni bildiradi. Aksiya paytida offline savdo cheklangan.": "Для ночной акции день недели означает день её начала. Во время акции офлайн-продажи ограничены.",
+  "Server mahalliy vaqti qo‘llanadi. Ustuvorlik kattasi tanlanadi; teng bo‘lsa oldin yaratilgan aksiya. Chegirmalar qo‘shilmaydi.": "Используется местное время сервера. Выбирается акция с большим приоритетом, при равенстве — созданная раньше. Скидки не суммируются.",
+  "Chegirmalar qo‘shilmaydi; kattarog‘i olinadi": "Скидки не суммируются; применяется большая",
+  "Happy Hour": "Счастливые часы",
   "Elektron chek havolasi": "Ссылка на электронный чек",
   "Havola 15 daqiqa amal qiladi. Havolasi bor shaxs chekni ochishi mumkin. Fiskal chek emas.": "Ссылка действует 15 минут. Любой обладатель ссылки может открыть чек. Не является фискальным чеком.",
   "Elektron chekni ochish": "Открыть электронный чек",

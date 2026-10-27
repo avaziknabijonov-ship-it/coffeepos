@@ -15,10 +15,11 @@ from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .promotions import choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, engine, now_ms,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
@@ -65,6 +66,8 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
+        if "promotion_snapshot" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN promotion_snapshot JSON"))
         if "payment_parts" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_parts JSON"))
         if "cancelled_at" not in order_columns:
@@ -176,7 +179,7 @@ def order_out(o: Order) -> dict:
         "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "paymentParts": order_payment_parts(o), "cashGiven": o.cash_given, "status": o.status,
-        "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
+        "promotion": o.promotion_snapshot, "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
     }
@@ -1140,6 +1143,7 @@ class OrderIn(BaseModel):
     payment: Literal["naqd", "karta", "payme", "click", "split"]
     paymentParts: list[PaymentPartIn] | None = Field(default=None, max_length=4)
     cashGiven: int | None = Field(default=None, ge=0)
+    expectedTotal: int | None = Field(default=None, ge=0)
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
@@ -1288,7 +1292,11 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             items.append(built)
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
-    discount = round(subtotal * body.discountPct / 100 / 100) * 100
+    promotion = choose_promotion(rows(db, Promotion, cid), datetime.now(TZ))
+    if promotion and body.expectedTotal is None:
+        raise HTTPException(409, "Aksiya faol. Kassani yangilang va summani tekshiring")
+    effective_percent = max(body.discountPct, promotion.percent if promotion else 0)
+    discount = discount_amount(subtotal, effective_percent)
     total = subtotal - discount
     phone = body.customerPhone.strip()
     customer = None
@@ -1316,6 +1324,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             raise HTTPException(409, "Bonus tizimi o'chirilgan")
     elif body.bonusRedeem:
         raise HTTPException(422, "Bonus ishlatish uchun mijoz telefoni kerak")
+    if body.expectedTotal is not None and body.expectedTotal != total:
+        raise HTTPException(409, "Narx yoki aksiya o‘zgardi. Summani yangilab qayta tekshiring")
     if body.payment == "split":
         if body.paymentParts is None or len(body.paymentParts) < 2:
             raise HTTPException(422, "Bo‘lingan to‘lov uchun kamida 2 usul kerak")
@@ -1342,6 +1352,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         client_key=body.clientKey,
+        promotion_snapshot={"id": promotion.id, "name": promotion.name, "percent": promotion.percent,
+                            "timezone": str(TZ)} if promotion and promotion.percent >= body.discountPct else None,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         payment_parts=[{"method": p.method, "amount": p.amount} for p in parts],
@@ -1626,6 +1638,60 @@ def audit_history(before_id: int | None = None, limit: int = 50, action: str = "
                        "action": e.action, "entityId": e.entity_id, "before": e.before,
                        "after": e.after, "createdAt": e.created_at} for e in page],
             "nextCursor": page[-1].id if len(events) > limit else None}
+
+
+class PromotionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    startTime: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    endTime: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    weekdays: list[int] = Field(min_length=1, max_length=7)
+    percent: int = Field(ge=1, le=50)
+    priority: int = Field(default=0, ge=0, le=100)
+    active: bool = True
+
+
+def promotion_out(p):
+    return {"id": p.id, "name": p.name, "startTime": p.start_time, "endTime": p.end_time,
+            "weekdays": p.weekdays, "percent": p.percent, "priority": p.priority, "active": p.active}
+
+
+@app.get("/api/promotions/active")
+def active_promotion(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    now = datetime.now(TZ)
+    promotion = choose_promotion(rows(ctx.db, Promotion, ctx.cid), now)
+    return {"timezone": str(TZ), "serverTime": now.isoformat(),
+            "promotion": promotion_out(promotion) if promotion else None}
+
+
+@app.get("/api/promotions")
+def list_promotions(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [promotion_out(p) for p in rows(ctx.db, Promotion, ctx.cid)]
+
+
+def save_promotion(body, ctx, promotion=None):
+    if not body.name.strip() or body.startTime == body.endTime or any(type(d) is not int or d < 0 or d > 6 for d in body.weekdays) or len(set(body.weekdays)) != len(body.weekdays):
+        raise HTTPException(422, "Aksiya jadvalini tekshiring")
+    if promotion is None:
+        promotion = Promotion(company_id=ctx.cid)
+        ctx.db.add(promotion)
+    promotion.name, promotion.start_time, promotion.end_time = body.name.strip(), body.startTime, body.endTime
+    promotion.weekdays, promotion.percent = body.weekdays, body.percent
+    promotion.priority, promotion.active = body.priority, body.active
+    ctx.db.commit()
+    return promotion_out(promotion)
+
+
+@app.post("/api/promotions", status_code=201)
+def add_promotion(body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    return save_promotion(body, ctx)
+
+
+@app.put("/api/promotions/{pid}")
+def edit_promotion(pid: int, body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    promotion = ctx.db.scalar(select(Promotion).where(Promotion.id == pid, Promotion.company_id == ctx.cid))
+    if promotion is None:
+        raise HTTPException(404, "Topilmadi")
+    return save_promotion(body, ctx, promotion)
 
 
 @app.get("/api/reports/staff")

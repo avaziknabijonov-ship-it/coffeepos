@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
-import { setMenu } from './data'
+import { setMenu, discountAmount } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
 import { getLang, setLangValue } from './i18n'
@@ -178,7 +178,7 @@ export function logout() {
 export const nextNumber = () =>
   state.orders.filter((o) => o.createdAt >= startOfToday()).reduce((m, o) => Math.max(m, o.number), 0) + 1
 
-export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; paymentParts?: { method: Exclude<Payment, 'split'>; amount: number }[]; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
+export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; expectedTotal?: number; automaticDiscount?: boolean; payment: Payment; paymentParts?: { method: Exclude<Payment, 'split'>; amount: number }[]; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
   const clientKey = crypto.randomUUID()
   const payload = { ...o, clientKey, items: items.map((i) => ({
     productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
@@ -187,14 +187,14 @@ export async function placeOrder(items: OrderItem[], o: { customer: string; disc
   try {
     order = await api<Order>('/api/orders', { body: payload })
   } catch (e) {
-    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
+    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && !o.automaticDiscount && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
     const company = state.session.company.slug
     const sale = queueCashSale(company, {
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,
-      payment: 'naqd', cashGiven: o.cashGiven,
+      payment: 'naqd', cashGiven: o.cashGiven, expectedTotal: o.expectedTotal,
     })
     const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
-    const discount = Math.round(subtotal * o.discountPct / 100 / 100) * 100
+    const discount = discountAmount(subtotal, o.discountPct)
     order = {
       id: 'offline:' + clientKey, number: nextNumber(), customer: o.customer,
       items, subtotal, discount, total: subtotal - discount,

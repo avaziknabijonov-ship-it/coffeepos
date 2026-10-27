@@ -137,6 +137,7 @@ class Order(Base):
     cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
     payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    promotion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
     cancelled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -313,3 +314,16 @@ class AuditEvent(Base):
     before: Mapped[dict] = mapped_column(JSON, default=dict)
     after: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class Promotion(Base):
+    __tablename__ = 'promotions'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    start_time: Mapped[str] = mapped_column(String(5))
+    end_time: Mapped[str] = mapped_column(String(5))
+    weekdays: Mapped[list] = mapped_column(JSON)
+    percent: Mapped[int] = mapped_column(Integer)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)

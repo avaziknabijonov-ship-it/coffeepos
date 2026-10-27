@@ -77,3 +77,5 @@ export function buildItem(p: Product, size: Size, modIds: string[], qty: number)
     consumption,
   }
 }
+
+export { discountAmount } from './pricing'

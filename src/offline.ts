@@ -8,6 +8,7 @@ export interface QueuedSale {
     items: { productId: string; size: string; modIds: string[]; qty: number }[]
     discountPct: number
     payment: 'naqd'
+    expectedTotal?: number
     cashGiven?: number
     clientKey: string
   }

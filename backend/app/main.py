@@ -1460,6 +1460,10 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
         raise HTTPException(404, "Buyurtma topilmadi")
     if order.status != "new":
         raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")
+    if ctx.db.scalar(select(OrderRefund.id).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == order.id
+    )):
+        raise HTTPException(409, "Qisman yoki to‘liq refund qayd etilgan buyurtmani bekor qilib bo‘lmaydi")
     shift = open_shift(ctx.db, ctx.cid)
     if shift is None or order.shift_id != shift.id:
         raise HTTPException(409, "Yopilgan smenadagi buyurtmani bekor qilib bo'lmaydi")

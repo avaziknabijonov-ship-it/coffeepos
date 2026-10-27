@@ -7,7 +7,7 @@ Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irl
 
 Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
 
-Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40467127704 — backend SQLite, PostgreSQL va frontend muvaffaqiyatli. Bu barcha 23 modul uchun staging dalili emas.
+Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40471662665 — backend SQLite, PostgreSQL va frontend muvaffaqiyatli. Bu barcha 23 modul uchun staging dalili emas.
 
 | № | Modul | Baho | Dalil / ochiq ish |
 |---|---|---:|---|
@@ -26,7 +26,7 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 13 | Cash variance | 40% | Smena balansi/API/UI/test; staging yo‘q |
 | 14 | Staff analytics | 40% | Server API/UI, discount/refund/net, RBAC va tenant test; ism kolliziyasi va staging ochiq |
 | 15 | Telegram director | 0% | Opt-in digest/retry integratsiyasi yo‘q |
-| 16 | Electronic receipt | 40% | Signed 15-min nonfiscal link/API/UI, privacy va token testlari; QR/revoke/log redaction/staging ochiq |
+| 16 | Electronic receipt | 40% | Signed 15-min nonfiscal link/API/UI, privacy va token testlari; DB grant/revoke/audit va Uvicorn log redaction testlari qo‘shildi; QR, proxy loglari va staging ochiq |
 | 17 | Happy Hour | 40% | Schedule DB/API/admin/kassa, expectedTotal, snapshot va testlar; filial/staging/offline konflikt yechimi ochiq |
 | 18 | Customer analytics | 40% | Consent/audit, masked list, gross cohorts/history API/UI/Excel va testlar; retention/deletion/filial/staging ochiq |
 | 19 | Combo | 40% | DB/API/admin/kassa, recipe deduction va cancel ledger testlari; item-return/filial/staging ochiq |
@@ -36,3 +36,5 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 23 | Loyalty | 40% | Ledger/API/UI bor; refund reversal va concurrency to‘liq emas |
 
 Productionga tegilmadi. Foiz faqat yangi dalil yoki bajarilgan qabul mezoni bilan o‘zgartiriladi.
+
+2026-10-27 keyingi tekshiruv: receipt grant/revoke va access log himoyasi uchun 68 backend testi o‘tdi, 3 PostgreSQL-only test mahalliy muhitda skip; Node 2/2, build/i18n o‘tdi. Yangi commit CI natijasi alohida tasdiqlanadi. Umumiy baho 30% saqlanadi.

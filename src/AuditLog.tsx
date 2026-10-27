@@ -4,7 +4,7 @@ import { t } from './i18n'
 
 type Event = { id: number; actorId: number; actor: string; action: string; entityId: number; before: unknown; after: unknown; createdAt: number }
 type Page = { items: Event[]; nextCursor: number | null }
-const labels: Record<string, string> = { 'customer.analytics_consent': 'Mijoz roziligini boshqarish', 'order.refund': 'Pul qaytarish', 'order.cancel': 'Buyurtmani bekor qilish', 'inventory.count': 'Inventarizatsiya' }
+const labels: Record<string, string> = { 'receipt.issue': 'Elektron chek havolasini yaratish', 'receipt.revoke': 'Elektron chek havolalarini bekor qilish', 'customer.analytics_consent': 'Mijoz roziligini boshqarish', 'order.refund': 'Pul qaytarish', 'order.cancel': 'Buyurtmani bekor qilish', 'inventory.count': 'Inventarizatsiya' }
 export default function AuditLog() {
   const [cursor, setCursor] = useState<number | null>(null)
   const [page, setPage] = useState<Page>({ items: [], nextCursor: null })

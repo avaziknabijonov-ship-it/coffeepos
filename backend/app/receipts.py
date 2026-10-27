@@ -1,4 +1,5 @@
 """Short-lived, audience-scoped links to privacy-minimized non-fiscal receipts."""
+import hashlib
 import secrets
 import time
 from datetime import datetime
@@ -7,6 +8,7 @@ from html import escape
 import jwt
 
 from .security import secret_key
+from .db import ReceiptLink, now_ms
 
 AUDIENCE = 'coffeepos-public-receipt'
 TTL = 15 * 60
@@ -14,9 +16,15 @@ TTL = 15 * 60
 
 def make_receipt_token(db, order):
     now = int(time.time())
-    return jwt.encode({'aud': AUDIENCE, 'purpose': 'receipt', 'oid': order.id,
+    jti = secrets.token_hex(16)
+    grant = ReceiptLink(id=hashlib.sha256(jti.encode()).hexdigest(),
+                        company_id=order.company_id, order_id=order.id,
+                        expires_at=(now + TTL) * 1000)
+    db.add(grant)
+    token = jwt.encode({'aud': AUDIENCE, 'purpose': 'receipt', 'oid': order.id,
                        'cid': order.company_id, 'iat': now, 'exp': now + TTL,
-                       'jti': secrets.token_hex(16)}, secret_key(db), algorithm='HS256')
+                       'jti': jti}, secret_key(db), algorithm='HS256')
+    return token, grant
 
 
 def read_receipt_token(db, token):
@@ -26,6 +34,12 @@ def read_receipt_token(db, token):
         claims = jwt.decode(token, secret_key(db), algorithms=['HS256'], audience=AUDIENCE,
                             options={'require': ['exp', 'iat', 'aud', 'jti', 'oid', 'cid', 'purpose']})
         if claims['purpose'] != 'receipt' or type(claims['oid']) is not int or type(claims['cid']) is not int:
+            return None
+        if not isinstance(claims['jti'], str):
+            return None
+        grant = db.get(ReceiptLink, hashlib.sha256(claims['jti'].encode()).hexdigest())
+        if (grant is None or grant.revoked_at is not None or grant.expires_at <= now_ms()
+                or grant.order_id != claims['oid'] or grant.company_id != claims['cid']):
             return None
         return claims
     except jwt.PyJWTError:

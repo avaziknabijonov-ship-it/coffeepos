@@ -15,12 +15,13 @@ from sqlalchemy import delete, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .access_logs import install_receipt_access_filter
 from .combos import resolve_combo
 from .promotions import choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
@@ -116,6 +117,7 @@ def init_db() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    install_receipt_access_filter()
     init_db()
     yield
 
@@ -1570,11 +1572,31 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
 
 @app.post("/api/orders/{oid}/receipt-link")
 def receipt_link(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid))
+    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid).with_for_update())
     if order is None:
         raise HTTPException(404, "Buyurtma topilmadi")
-    token = make_receipt_token(ctx.db, order)
-    return {"path": "/api/public/receipts/" + token, "expiresIn": RECEIPT_TTL, "fiscal": False}
+    token, grant = make_receipt_token(ctx.db, order)
+    audit_record(ctx, "receipt.issue", order.id, {}, {"status": "active"})
+    ctx.db.commit()
+    return {"path": "/api/public/receipts/" + token, "linkId": grant.id,
+            "expiresIn": RECEIPT_TTL, "fiscal": False}
+
+
+@app.delete("/api/orders/{oid}/receipt-links")
+def revoke_receipt_links(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    # Serialize issue/revoke through the order row on PostgreSQL.
+    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    result = ctx.db.execute(update(ReceiptLink).where(
+        ReceiptLink.order_id == oid, ReceiptLink.company_id == ctx.cid,
+        ReceiptLink.revoked_at.is_(None), ReceiptLink.expires_at > now_ms()
+    ).values(revoked_at=now_ms()))
+    count = result.rowcount
+    if count:
+        audit_record(ctx, "receipt.revoke", oid, {"status": "active"}, {"status": "revoked"})
+    ctx.db.commit()
+    return {"revoked": count}
 
 
 @app.get("/api/public/receipts/{token}", response_class=HTMLResponse)

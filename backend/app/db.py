@@ -331,3 +331,14 @@ class Promotion(Base):
     percent: Mapped[int] = mapped_column(Integer)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ReceiptLink(Base):
+    """Revocable receipt grants; bearer tokens are never stored."""
+    __tablename__ = 'receipt_links'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey('orders.id'), index=True)
+    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

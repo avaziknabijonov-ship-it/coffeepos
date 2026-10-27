@@ -15,6 +15,10 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  'Elektron chek havolasini yaratish': 'Создание ссылки на электронный чек',
+  'Elektron chek havolalarini bekor qilish': 'Отзыв ссылок на электронный чек',
+  'Chekning barcha faol havolalari bekor qilindi': 'Все активные ссылки на чек отозваны',
+  'Chekning barcha havolalarini bekor qilish': 'Отозвать все ссылки на чек',
   "Kategoriya": "Категория",
   "Bu mahsulot combo emas": "Этот товар не является комбо",
   "Combo nomi va tarkibini tekshiring": "Проверьте название и состав комбо",

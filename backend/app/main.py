@@ -21,88 +21,28 @@ from .promotions import choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms,
+    Base, Branch, BranchStock, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
-
-TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
-Role = Literal["owner", "admin", "kassir", "barista"]
-MANAGERS = ("owner", "admin")
-CASHIERS = ("owner", "admin", "kassir")
-BARISTAS = ("owner", "admin", "barista")
-
-
+from . import migrations
+from .branches import router as branches_router
+from . import stock as branch_stock
+from .core import (
+    BARISTAS, CASHIERS, MANAGERS, TZ, Ctx, Role, auth, get_db, get_row, open_shift, require, rows,
+    start_of_day_ms,
+)
 
 def migrate() -> None:
-    """Add columns introduced after a table was first created (no Alembic yet)."""
-    have = {c["name"] for c in inspect(engine).get_columns("stock_moves")}
-    with engine.begin() as conn:
-        if "note" not in have:
-            conn.execute(text("ALTER TABLE stock_moves ADD COLUMN note VARCHAR(32)"))
-        if "inventory_id" not in have:
-            conn.execute(text("ALTER TABLE stock_moves ADD COLUMN inventory_id INTEGER"))
-    purchase_columns = {c["name"] for c in inspect(engine).get_columns("purchase_invoices")}
-    with engine.begin() as conn:
-        if "status" not in purchase_columns:
-            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'"))
-        if "cancelled_at" not in purchase_columns:
-            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_at BIGINT"))
-        if "cancelled_by" not in purchase_columns:
-            conn.execute(text("ALTER TABLE purchase_invoices ADD COLUMN cancelled_by VARCHAR(64)"))
-    staff_columns = {c["name"] for c in inspect(engine).get_columns("staff")}
-    if "can_barista" not in staff_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE staff ADD COLUMN can_barista BOOLEAN NOT NULL DEFAULT FALSE"))
-    staff_permissions = {c["name"] for c in inspect(engine).get_columns("staff")}
-    with engine.begin() as conn:
-        if "can_cancel_orders" not in staff_permissions:
-            conn.execute(text("ALTER TABLE staff ADD COLUMN can_cancel_orders BOOLEAN NOT NULL DEFAULT FALSE"))
-        if "can_reprint_receipts" not in staff_permissions:
-            conn.execute(text("ALTER TABLE staff ADD COLUMN can_reprint_receipts BOOLEAN NOT NULL DEFAULT FALSE"))
-    product_columns = {c["name"] for c in inspect(engine).get_columns("products")}
-    if "combo_components" not in product_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE products ADD COLUMN combo_components JSON"))
-    if "image_url" not in product_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
-    customer_columns = {c["name"] for c in inspect(engine).get_columns("customers")}
-    with engine.begin() as conn:
-        if "analytics_consent" not in customer_columns:
-            conn.execute(text("ALTER TABLE customers ADD COLUMN analytics_consent BOOLEAN NOT NULL DEFAULT FALSE"))
-        if "consent_updated_at" not in customer_columns:
-            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_updated_at BIGINT"))
-        if "consent_actor_id" not in customer_columns:
-            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_actor_id INTEGER"))
-    order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
-    with engine.begin() as conn:
-        if "promotion_snapshot" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN promotion_snapshot JSON"))
-        if "payment_parts" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN payment_parts JSON"))
-        if "cancelled_at" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_at BIGINT"))
-        if "cancelled_by" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_by VARCHAR(64)"))
-        if "cancel_reason" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN cancel_reason VARCHAR(256)"))
-        if "customer_id" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN customer_id INTEGER"))
-        if "bonus_used" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_used BIGINT NOT NULL DEFAULT 0"))
-        if "bonus_earned" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN bonus_earned BIGINT NOT NULL DEFAULT 0"))
-        if "client_key" not in order_columns:
-            conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
-        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
+    """Additive legacy column upgrades (kept for callers predating versioned migrations)."""
+    migrations.legacy_columns(engine)
 
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
-    migrate()
+    migrations.run(engine)
     install_guards(engine)
     if os.environ.get("SEED_DEMO", "1") != "1":
         return
@@ -123,6 +63,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
+app.include_router(branches_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -132,50 +73,10 @@ app.add_middleware(
 limiter = LoginLimiter()
 
 
-def get_db() -> Iterator[Session]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-class Ctx:
-    def __init__(self, db: Session, staff: Staff, company: Company):
-        self.db, self.staff, self.company = db, staff, company
-
-    @property
-    def cid(self) -> int:
-        return self.company.id
-
-
-def auth(db: Session = Depends(get_db), authorization: str = Header(default="")) -> Ctx:
-    claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
-    if not claims:
-        raise HTTPException(401, "Qaytadan kiring")
-    staff = db.get(Staff, int(claims["sub"]))
-    if not staff or not staff.active or staff.company_id != claims["cid"]:
-        raise HTTPException(401, "Qaytadan kiring")
-    if os.environ.get("ENFORCE_LICENSES", "0") == "1":
-        subscription = db.get(Subscription, staff.company_id)
-        if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
-            raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
-
-
-def require(*roles: str):
-    def dep(ctx: Ctx = Depends(auth)) -> Ctx:
-        if ctx.staff.role not in roles:
-            raise HTTPException(403, "Bu amal uchun ruxsat yo'q")
-        return ctx
-
-    return dep
-
-
 # ---------- serializers ----------
 
 def staff_out(s: Staff) -> dict:
-    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista), "canCancelOrders": bool(s.can_cancel_orders), "canReprintReceipts": bool(s.can_reprint_receipts)}
+    return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista), "canCancelOrders": bool(s.can_cancel_orders), "canReprintReceipts": bool(s.can_reprint_receipts), "branchId": s.branch_id}
 
 
 def order_payment_parts(order: Order) -> list[dict]:
@@ -223,26 +124,6 @@ def slugify(text: str) -> str:
     return f"{base or 'item'}-{secrets.token_hex(2)}"
 
 
-def rows(db: Session, model, cid: int):
-    return db.scalars(select(model).where(model.company_id == cid).order_by(model.id)).all()
-
-
-def get_row(db: Session, model, cid: int, key: str):
-    row = db.scalar(select(model).where(model.company_id == cid, model.key == key))
-    if not row:
-        raise HTTPException(404, "Topilmadi")
-    return row
-
-
-def open_shift(db: Session, cid: int) -> Shift | None:
-    return db.scalar(select(Shift).where(Shift.company_id == cid, Shift.closed_at.is_(None)))
-
-
-def start_of_day_ms(days_ago: int = 0) -> int:
-    d = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_ago)
-    return int(d.timestamp() * 1000)
-
-
 def pin_taken(db: Session, cid: int, pin: str, exclude: int | None = None) -> bool:
     for s in rows(db, Staff, cid):
         if s.id != exclude and s.active and check_pin(pin, s.pin_hash):
@@ -255,6 +136,7 @@ def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin
     db.add(company)
     db.flush()
     cid = company.id
+    db.add(Branch(company_id=cid, name="Asosiy filial", is_default=True))
     db.add(Staff(company_id=cid, name=owner_name, role="owner", pin_hash=hash_pin(owner_pin)))
     for i, (key, cname) in enumerate(seed.CATEGORIES):
         db.add(Category(company_id=cid, key=key, name=cname, sort=i))
@@ -327,7 +209,8 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 
 @app.get("/api/me")
 def me(ctx: Ctx = Depends(auth)) -> dict:
-    return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name}}
+    return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name},
+            "branch": {"id": ctx.branch.id, "name": ctx.branch.name} if ctx.branch else None}
 
 
 # ---------- menu ----------
@@ -911,9 +794,9 @@ def expenses(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
 
 @app.post("/api/expenses")
 def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
-    if ctx.staff.role == "kassir" and open_shift(ctx.db, ctx.cid) is None:
+    if ctx.staff.role == "kassir" and open_shift(ctx.db, ctx.cid, ctx.branch_id) is None:
         raise HTTPException(409, "Xarajat kiritish uchun smena ochiq bo'lishi kerak")
-    e = Expense(company_id=ctx.cid, amount=body.amount, category=body.category.strip(),
+    e = Expense(company_id=ctx.cid, branch_id=ctx.branch_id, amount=body.amount, category=body.category.strip(),
                 description=body.description.strip(), payment=body.payment, staff_name=ctx.staff.name)
     ctx.db.add(e)
     ctx.db.commit()
@@ -1244,6 +1127,7 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     cutoff = shift.closed_at if shift.closed_at is not None else now_ms()
     cash_spent = sum(row.amount for row in db.scalars(select(Expense).where(
         Expense.company_id == shift.company_id,
+        Expense.branch_id == shift.branch_id,
         Expense.payment == "cash",
         Expense.created_at >= shift.opened_at,
         Expense.created_at <= cutoff,
@@ -1251,6 +1135,8 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     cash_refunded = sum(r.amount for r in db.scalars(select(OrderRefund).where(
         OrderRefund.company_id == shift.company_id,
         OrderRefund.method == "naqd",
+        OrderRefund.order_id.in_(select(Order.id).where(Order.company_id == shift.company_id,
+                                                        Order.branch_id == shift.branch_id)),
         OrderRefund.created_at >= shift.opened_at,
         OrderRefund.created_at <= cutoff,
     )))
@@ -1267,9 +1153,10 @@ def shift_summary(db: Session, shift: Shift) -> dict:
 
 @app.post("/api/shifts/open")
 def shift_open(body: OpenShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
-    if open_shift(ctx.db, ctx.cid):
+    if open_shift(ctx.db, ctx.cid, ctx.branch_id):
         raise HTTPException(409, "Smena allaqachon ochiq")
-    s = Shift(company_id=ctx.cid, staff_name=ctx.staff.name, opening_cash=body.openingCash)
+    s = Shift(company_id=ctx.cid, branch_id=ctx.branch_id, staff_id=ctx.staff.id, staff_name=ctx.staff.name,
+              opening_cash=body.openingCash)
     ctx.db.add(s)
     ctx.db.commit()
     return shift_out(s)
@@ -1277,13 +1164,13 @@ def shift_open(body: OpenShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dic
 
 @app.get("/api/shifts/current")
 def shift_current(ctx: Ctx = Depends(auth)) -> dict | None:
-    s = open_shift(ctx.db, ctx.cid)
+    s = open_shift(ctx.db, ctx.cid, ctx.branch_id)
     return shift_summary(ctx.db, s) if s else None
 
 
 @app.post("/api/shifts/close")
 def shift_close(body: CloseShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
-    s = open_shift(ctx.db, ctx.cid)
+    s = open_shift(ctx.db, ctx.cid, ctx.branch_id)
     if not s:
         raise HTTPException(409, "Ochiq smena yo'q")
     summary = shift_summary(ctx.db, s)
@@ -1364,7 +1251,7 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
         if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
             raise HTTPException(409, "Draft clientKey already used with different content")
         return draft_out(existing)
-    draft = DraftOrder(company_id=ctx.cid, client_key=body.clientKey,
+    draft = DraftOrder(company_id=ctx.cid, branch_id=ctx.branch_id, client_key=body.clientKey,
                        items=[item.model_dump() for item in body.items],
                        customer=body.customer, staff_name=ctx.staff.name)
     ctx.db.add(draft)
@@ -1449,7 +1336,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         ))
         if existing:
             return order_out(existing)
-    shift = open_shift(db, cid)
+    shift = open_shift(db, cid, ctx.branch_id)
     if not shift:
         raise HTTPException(409, "Avval smenani oching")
     prods = {p.key: p for p in rows(db, Product, cid)}
@@ -1526,10 +1413,12 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         raise HTTPException(400, "Berilgan pul yetarli emas")
 
     day_orders = db.scalars(
-        select(Order.number).where(Order.company_id == cid, Order.created_at >= start_of_day_ms())
+        select(Order.number).where(Order.company_id == cid, Order.branch_id == shift.branch_id,
+                                   Order.created_at >= start_of_day_ms())
     ).all()
     order = Order(
-        company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
+        company_id=cid, shift_id=shift.id, branch_id=shift.branch_id, staff_id=ctx.staff.id,
+        number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         client_key=body.clientKey,
         promotion_snapshot={"id": promotion.id, "name": promotion.name, "percent": promotion.percent,
@@ -1554,8 +1443,9 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
     for key, qty in used.items():
         if key in ings:
-            ings[key].stock -= qty
-            db.add(StockMove(company_id=cid, ingredient=key, qty=-qty, reason="sale", order_id=order.id, staff_name=ctx.staff.name))
+            branch_stock.adjust(db, cid, shift.branch_id, ings[key], -qty)
+            db.add(StockMove(company_id=cid, branch_id=shift.branch_id, ingredient=key, qty=-qty, reason="sale",
+                             order_id=order.id, staff_name=ctx.staff.name))
     try:
         db.commit()
     except IntegrityError:
@@ -1696,7 +1586,7 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
         validate_refund(paid=paid[body.method], already_refunded=already, requested=body.amount)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    refund = OrderRefund(company_id=ctx.cid, order_id=oid, client_key=body.clientKey,
+    refund = OrderRefund(company_id=ctx.cid, order_id=oid, staff_id=ctx.staff.id, client_key=body.clientKey,
                          amount=body.amount, method=body.method,
                          reason=reason, staff_name=ctx.staff.name)
     ctx.db.add(refund)
@@ -1733,7 +1623,7 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
         OrderRefund.company_id == ctx.cid, OrderRefund.order_id == order.id
     )):
         raise HTTPException(409, "Qisman yoki to‘liq refund qayd etilgan buyurtmani bekor qilib bo‘lmaydi")
-    shift = open_shift(ctx.db, ctx.cid)
+    shift = open_shift(ctx.db, ctx.cid, ctx.branch_id)
     if shift is None or order.shift_id != shift.id:
         raise HTTPException(409, "Yopilgan smenadagi buyurtmani bekor qilib bo'lmaydi")
     ingredients = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
@@ -1743,8 +1633,8 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
     for move in moves:
         item = ingredients.get(move.ingredient)
         if item is not None:
-            item.stock -= move.qty
-            ctx.db.add(StockMove(company_id=ctx.cid, ingredient=move.ingredient,
+            branch_stock.adjust(ctx.db, ctx.cid, order.branch_id, item, -move.qty)
+            ctx.db.add(StockMove(company_id=ctx.cid, branch_id=order.branch_id, ingredient=move.ingredient,
                                  qty=-move.qty, reason="return", order_id=order.id,
                                  staff_name=ctx.staff.name))
     if order.customer_id is not None:
@@ -1800,11 +1690,13 @@ def sync(since: int | None = None, ctx: Ctx = Depends(auth)) -> dict:
     """Polled by every screen: today's orders, stock levels and the open shift."""
     db, cid = ctx.db, ctx.cid
     since = since if since is not None else start_of_day_ms()
-    q = select(Order).where(Order.company_id == cid, Order.created_at >= since).order_by(Order.id)
-    shift = open_shift(db, cid)
+    q = select(Order).where(Order.company_id == cid, Order.branch_id == ctx.branch_id,
+                            Order.created_at >= since).order_by(Order.id)
+    shift = open_shift(db, cid, ctx.branch_id)
     return {
+        "branchId": ctx.branch_id,
         "orders": [order_out(o) for o in db.scalars(q)],
-        "stock": {i.key: i.stock for i in rows(db, Ingredient, cid)},
+        "stock": {key: level["stock"] for key, level in branch_stock.levels(db, cid, ctx.branch_id).items()},
         "shift": shift_summary(db, shift) if shift else None,
     }
 

@@ -15,7 +15,7 @@ def safe_snapshot(value):
 
 
 def record(ctx, action, entity_id, before, after):
-    ctx.db.add(AuditEvent(company_id=ctx.cid, actor_id=ctx.staff.id,
+    ctx.db.add(AuditEvent(company_id=ctx.cid, branch_id=getattr(ctx, 'branch_id', None), actor_id=ctx.staff.id,
                           actor_name=ctx.staff.name, action=action, entity_id=entity_id,
                           before=safe_snapshot(before), after=safe_snapshot(after)))
 

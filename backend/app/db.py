@@ -41,10 +41,35 @@ class Company(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
+class Branch(Base):
+    """A physical point of sale; every company has exactly one default branch."""
+    __tablename__ = "branches"
+    __table_args__ = (UniqueConstraint("company_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class BranchStock(Base):
+    """Stock of non-default branches; the default branch keeps Ingredient.stock/min."""
+    __tablename__ = "branch_stock"
+    __table_args__ = (UniqueConstraint("company_id", "branch_id", "ingredient"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    ingredient: Mapped[str] = mapped_column(String(64))
+    qty: Mapped[float] = mapped_column(default=0)
+    min: Mapped[float] = mapped_column(default=0)
+
+
 class Staff(Base):
     __tablename__ = "staff"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     name: Mapped[str] = mapped_column(String(64))
     role: Mapped[str] = mapped_column(String(16))
     pin_hash: Mapped[str] = mapped_column(String(128))
@@ -110,6 +135,8 @@ class Shift(Base):
     __tablename__ = "shifts"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    staff_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     staff_name: Mapped[str] = mapped_column(String(64))
     opened_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     opening_cash: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -125,6 +152,8 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    staff_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     client_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     number: Mapped[int] = mapped_column(Integer)
     customer: Mapped[str] = mapped_column(String(64), default="")
@@ -153,6 +182,7 @@ class StockMove(Base):
     __tablename__ = "stock_moves"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     ingredient: Mapped[str] = mapped_column(String(64))
     qty: Mapped[float] = mapped_column()
     reason: Mapped[str] = mapped_column(String(16))
@@ -210,6 +240,7 @@ class Expense(Base):
     __tablename__ = "expenses"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     amount: Mapped[int] = mapped_column(BigInteger)
     category: Mapped[str] = mapped_column(String(64))
     description: Mapped[str] = mapped_column(String(256), default="")
@@ -282,6 +313,7 @@ class DraftOrder(Base):
     __table_args__ = (UniqueConstraint("company_id", "client_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     client_key: Mapped[str] = mapped_column(String(64))
     items: Mapped[list] = mapped_column(JSON, default=list)
     customer: Mapped[str] = mapped_column(String(64), default="")
@@ -298,6 +330,7 @@ class OrderRefund(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    staff_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     client_key: Mapped[str] = mapped_column(String(64))
     amount: Mapped[int] = mapped_column(BigInteger)
     method: Mapped[str] = mapped_column(String(16))
@@ -311,6 +344,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     actor_id: Mapped[int] = mapped_column(Integer)
     actor_name: Mapped[str] = mapped_column(String(64))
     action: Mapped[str] = mapped_column(String(48), index=True)

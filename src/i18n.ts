@@ -15,6 +15,12 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Audit filtri noto‘g‘ri": "Неверный фильтр аудита",
+  "Buyurtmani bekor qilish": "Отмена заказа",
+  "Pul qaytarish": "Возврат средств",
+  "Oldingi yozuvlar": "Более ранние записи",
+  "Jurnal refund, otmena va inventarizatsiyani saqlaydi. Eski amallar avtomatik tiklanmaydi.": "Журнал сохраняет возвраты, отмены и инвентаризации. Прошлые операции автоматически не восстанавливаются.",
+  "Audit jurnali": "Журнал аудита",
   "Refund asl kassirga qaytarish sanasi bo‘yicha yoziladi. Bir xil ismli xodimlar birlashtiriladi.": "Возврат относится к исходному кассиру по дате возврата. Сотрудники с одинаковыми именами объединяются.",
   "Qaytarilgan mablag‘": "Возвращённые средства",
   "Qaytarishdan keyingi tushum": "Выручка после возвратов",

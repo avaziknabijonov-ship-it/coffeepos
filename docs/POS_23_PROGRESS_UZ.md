@@ -64,3 +64,35 @@ Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 ## Real sinovga tayyorlik
 
 **Hali "real sinovga tayyor" emas.** Sabablar: fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.
+
+## 2026-10-27: Codex davom ettirish tekshiruvi
+
+Boshlang‘ich commit: `f47e0c4`. Acceptance bahosi **56% o‘zgarmadi**;
+quyidagi regression tekshiruvlari real hardware/staging qabuli hisoblanmaydi.
+
+- Offline navbat endi bitta katta JSON massiv o‘rniga har bir clientKey uchun
+  alohida localStorage yozuvini saqlaydi. Boshqa tabdagi yangi savdo yoki
+  tasdiqlash mavjud savdolarni butun massiv bilan ustidan yozmaydi.
+- Eski massiv avtomatik ko‘chiriladi; ko‘chirishda joy tugasa asl massiv saqlanadi.
+  Buzilgan navbat yangi savdo bilan jim almashtirilmaydi. Bir xil clientKey
+  qayta navbatga kiritilsa, asl yozuv saqlanadi.
+- Replay yoki sync davomida logout/token almashsa, eski javob yangi sessiya
+  holatini o‘zgartirmaydi va qolgan eski navbat yangi token bilan yuborilmaydi.
+- Oxirgi konflikt navbatdan chiqarilganda ham menejer tekshirishi haqidagi
+  ogohlantirish ko‘rinib turadi.
+
+Mahalliy dalillar:
+- SQLite backend: **90 passed, 3 PostgreSQL-only skipped**.
+- Frontend: **11/11** test, shu jumladan eski navbat migratsiyasi, quota xatosi,
+  ikki tabdagi enqueue/ack va yuborish paytida logout regression testi.
+- `scripts/migration_drill.py`: eski `29bad618` sxemasidan upgrade — **15/15**.
+  Tarixiy tushum/xarajat/tannarx/bonus saqlanishi, eski savdoga refund,
+  ortiqcha refund taqiqi, qayta migratsiya tekshirildi (SQLite).
+- Build, i18n tekshiruvi o‘tdi; lint xatosiz, mavjud ogohlantirishlar bor.
+
+Bu muhitda Docker/PostgreSQL serveri mavjud emas; shu commitning PostgreSQL,
+nginx staging va backup/restore natijalari GitHub CI orqali alohida tekshiriladi.
+Playwright Chromium yuklashida arxiv xatosi bo‘ldi; brauzer UI qayta sinovi
+bajarildi deb hisoblanmaydi. Offline’ning real ikki qurilma sinovi ham ochiq.
+Fiskal/Telegram/offsite/APK va tashqi to‘lov kalitlariga bog‘liq bloklar saqlanadi.
+Production VPS/bazaga tegilmadi, merge/deploy bajarilmadi.

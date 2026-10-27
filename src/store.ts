@@ -68,39 +68,49 @@ let pushing = false
 async function pushPendingSales() {
   if (pushing || !state.session) return
   pushing = true
-  const company = state.session.company.slug
+  const session = state.session
+  const token = getToken()
+  const company = session.company.slug
+  const active = () => state.session === session && getToken() === token
   try {
     for (const sale of getQueuedSales(company)) {
+      if (!active()) break
       try {
         await api<Order>('/api/orders', { body: { ...sale.body, offline: true, offlineCreatedAt: sale.createdAt } })
         removeQueuedSale(company, sale.clientKey)
-        set({ pendingError: '' })
+        if (active()) set({ pendingError: '' })
       } catch (e) {
         if (isOfflineConflict(e)) {
           removeQueuedSale(company, sale.clientKey)
-          set({ pendingError: t('Oflayn savdo ziddiyatga tushdi, menejer tekshiradi') })
+          if (active()) set({ pendingError: t('Oflayn savdo ziddiyatga tushdi, menejer tekshiradi') })
           continue
         }
-        set({ pendingError: (e as Error).message })
+        if (active()) set({ pendingError: (e as Error).message })
         break
       }
     }
   } finally {
-    set({ pendingCount: getQueuedSales(company).length })
     pushing = false
+    if (active()) set({ pendingCount: getQueuedSales(company).length })
   }
 }
 
 export async function sync() {
+  const session = state.session
+  const token = getToken()
+  const active = () => state.session === session && getToken() === token
   try {
     await pushPendingSales()
+    if (!active()) return
     const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }>(`/api/sync?since=${startOfToday()}`)
-    const company = state.session?.company.slug
+    if (!active()) return
+    const company = session?.company.slug
     if (company) {
       try { localStorage.setItem(syncCache(company), JSON.stringify(d)) } catch { /* cache is optional */ }
     }
     set({ orders: d.orders, stock: d.stock, shift: d.shift, online: true })
   } catch (e) {
+    if (!active()) return
     if (e instanceof ApiError && e.status === 401) logout()
     else set({ online: false })
   }

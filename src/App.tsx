@@ -97,7 +97,7 @@ function Main({ role }: { role: Role }) {
         <button onClick={() => { if (confirm(t('Tizimdan chiqilsinmi?'))) logout() }} aria-label={t('Chiqish')} title={t('Chiqish')} className="rounded-lg p-2 text-stone-300 hover:bg-white/10"><LogOut className="size-5" /></button>
       </header>
       <UpdateNotice pendingCount={pendingCount} />
-      {pendingError && pendingCount > 0 && <div role="alert" className="bg-red-50 px-3 py-2 text-center text-xs text-red-800">
+      {pendingError && <div role="alert" className="bg-red-50 px-3 py-2 text-center text-xs text-red-800">
         {t('Sinxronlashda xato')}: {pendingError}
       </div>}
       <div className="min-h-0 flex-1">

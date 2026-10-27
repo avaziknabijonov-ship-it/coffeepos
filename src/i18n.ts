@@ -15,6 +15,17 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Xato": "Ошибка",
+  "Pul qaytarish yozuvlari": "Записи возвратов средств",
+  "Bu amal pul yubormaydi. Faqat tashqarida bajarilgan qaytarishni qayd etadi. Ombor va bonus avtomatik qaytarilmaydi.": "Это действие не переводит деньги. Оно фиксирует уже выполненный возврат. Склад и бонусы автоматически не восстанавливаются.",
+  "Qaytarish uchun qolgan summa": "Остаток, доступный для возврата",
+  "Pul tashqarida qaytarilganini tasdiqlayman": "Подтверждаю, что деньги уже возвращены вне системы",
+  "Avvalgi so‘rov saqlangan. Qayta urinish aynan shu yozuvni tekshiradi.": "Предыдущий запрос сохранён. Повторная попытка проверит ту же запись.",
+  "Qaytarishni qayd etish": "Зафиксировать возврат",
+  "Summa, sabab va tashqi tasdiqni tekshiring": "Проверьте сумму, причину и подтверждение возврата",
+  "Qaytarish sababini kiriting": "Укажите причину возврата",
+  "Qayta urinish": "Повторить попытку",
+
   "Aralash": "Смешанная",
   "Ikki xil to‘lov usulini tanlang": "Выберите два разных способа оплаты",
   "Ikkinchi summa": "Вторая сумма",

@@ -72,7 +72,8 @@ def resolve_branch(db: Session, staff: Staff, requested: str) -> Branch:
 
 
 def auth(db: Session = Depends(get_db), authorization: str = Header(default=""),
-         x_branch_id: str = Header(default="")) -> Ctx:
+         x_branch_id: str = Header(default=""), x_device_token: str = Header(default=""),
+         x_app_version: str = Header(default="")) -> Ctx:
     claims = read_token(db, authorization.removeprefix("Bearer ").strip()) if authorization else None
     if not claims:
         raise HTTPException(401, "Qaytadan kiring")
@@ -83,8 +84,28 @@ def auth(db: Session = Depends(get_db), authorization: str = Header(default=""),
         subscription = db.get(Subscription, staff.company_id)
         if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
             raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
-    return Ctx(db, staff, db.get(Company, staff.company_id), resolve_branch(db, staff, x_branch_id.strip()),
-               claims.get("did"))
+    from . import devices  # local import: devices depends on this module
+    minimum = os.environ.get("MIN_CLIENT_VERSION", "")
+    if minimum and x_app_version:
+        try:
+            if devices.parse(x_app_version.strip()) < devices.parse(minimum):
+                raise HTTPException(426, "Ilovani yangilang")
+        except ValueError:
+            raise HTTPException(426, "Ilova versiyasi noto‘g‘ri") from None
+    requested = x_branch_id.strip()
+    device = None
+    if x_device_token:
+        device = devices.resolve_device(db, staff.company_id, x_device_token.strip())
+        if device.branch_id is not None:
+            if requested and requested != str(device.branch_id):
+                raise HTTPException(403, "Qurilma boshqa filialga biriktirilgan")
+            requested = str(device.branch_id)
+        devices.touch(device, x_app_version.strip())
+        db.commit()
+    elif staff.role != "owner" and devices.device_required(db, staff.company_id):
+        raise HTTPException(401, "Bu kompaniyada faqat ro‘yxatdan o‘tgan qurilmalar ishlaydi")
+    return Ctx(db, staff, db.get(Company, staff.company_id), resolve_branch(db, staff, requested),
+               device.id if device else claims.get("did"))
 
 
 def require(*roles: str):

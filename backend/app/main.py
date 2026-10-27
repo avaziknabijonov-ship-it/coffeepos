@@ -21,7 +21,7 @@ from .promotions import capped_discount, choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, Branch, BranchStock, OrderPayment, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms, DiningTable,
+    Base, Branch, BranchStock, OrderPayment, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms, DiningTable, OfflineConflict,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
@@ -30,6 +30,7 @@ from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 from . import migrations
 from .branches import router as branches_router
 from .tables import router as tables_router, validate_table
+from .devices import router as devices_router
 from .integrations import fiscalize, router as integrations_router, sale_receipt
 from .inventory_ops import refresh_low_stock, router as inventory_router
 from . import stock as branch_stock
@@ -69,6 +70,7 @@ app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
 app.include_router(branches_router)
 app.include_router(inventory_router)
 app.include_router(tables_router)
+app.include_router(devices_router)
 app.include_router(integrations_router)
 app.add_middleware(
     CORSMiddleware,
@@ -1304,6 +1306,8 @@ class OrderIn(BaseModel):
     allowPartial: bool = False
     draftId: int | None = None
     draftVersion: int | None = Field(default=None, ge=1)
+    offline: bool = False
+    offlineCreatedAt: int | None = Field(default=None, ge=0)
 
 
 # ---------- parked orders (no payment, no stock deduction) ----------
@@ -1435,6 +1439,65 @@ def orders_history(from_ms: int, to_ms: int, staff: str = "", shift_id: int | No
 
 @app.post("/api/orders")
 def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    """Offline replays are cash-only; rejected replays become reviewable conflicts, never silent drops."""
+    if not body.offline:
+        return checkout(body, ctx)
+    if body.payment != "naqd" or body.bonusRedeem or body.allowPartial or not body.clientKey or body.draftId:
+        raise HTTPException(422, "Oflayn savdo faqat naqd, bonussiz va clientKey bilan bo‘ladi")
+    try:
+        return checkout(body, ctx)
+    except HTTPException as exc:
+        if exc.status_code not in (400, 404, 409, 422):
+            raise
+        ctx.db.rollback()
+        conflict = ctx.db.scalar(select(OfflineConflict).where(
+            OfflineConflict.company_id == ctx.cid, OfflineConflict.client_key == body.clientKey))
+        if conflict is None:
+            conflict = OfflineConflict(company_id=ctx.cid, branch_id=ctx.branch_id, client_key=body.clientKey,
+                                       body=body.model_dump(), reason=str(exc.detail)[:200],
+                                       staff_name=ctx.staff.name)
+            ctx.db.add(conflict)
+            try:
+                ctx.db.commit()
+            except IntegrityError:
+                ctx.db.rollback()
+                conflict = ctx.db.scalar(select(OfflineConflict).where(
+                    OfflineConflict.company_id == ctx.cid, OfflineConflict.client_key == body.clientKey))
+        raise HTTPException(409, {"code": "offline_conflict", "conflictId": conflict.id,
+                                  "reason": conflict.reason}) from exc
+
+
+def conflict_out(c: OfflineConflict) -> dict:
+    return {"id": c.id, "clientKey": c.client_key, "branchId": c.branch_id, "reason": c.reason,
+            "status": c.status, "staff": c.staff_name, "resolvedBy": c.resolved_by, "createdAt": c.created_at,
+            "items": c.body.get("items", []), "expectedTotal": c.body.get("expectedTotal"),
+            "offlineCreatedAt": c.body.get("offlineCreatedAt")}
+
+
+@app.get("/api/offline/conflicts")
+def offline_conflicts(status: Literal["open", "resolved"] = "open",
+                      ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = select(OfflineConflict).where(OfflineConflict.company_id == ctx.cid, OfflineConflict.status == status)
+    if ctx.staff.branch_id is not None:
+        q = q.where(OfflineConflict.branch_id == ctx.staff.branch_id)
+    return [conflict_out(c) for c in ctx.db.scalars(q.order_by(OfflineConflict.id.desc()).limit(200))]
+
+
+@app.post("/api/offline/conflicts/{conflict_id}/resolve")
+def resolve_offline_conflict(conflict_id: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    conflict = ctx.db.scalar(select(OfflineConflict).where(
+        OfflineConflict.id == conflict_id, OfflineConflict.company_id == ctx.cid).with_for_update())
+    if conflict is None or (ctx.staff.branch_id is not None and conflict.branch_id != ctx.staff.branch_id):
+        raise HTTPException(404, "Ziddiyat topilmadi")
+    if conflict.status != "open":
+        raise HTTPException(409, "Ziddiyat allaqachon yopilgan")
+    conflict.status, conflict.resolved_by = "resolved", ctx.staff.name
+    audit_record(ctx, "offline.resolve", conflict.id, {"status": "open"}, {"status": "resolved"})
+    ctx.db.commit()
+    return conflict_out(conflict)
+
+
+def checkout(body: OrderIn, ctx: Ctx) -> dict:
     db, cid = ctx.db, ctx.cid
     if body.clientKey:
         existing = db.scalar(select(Order).where(

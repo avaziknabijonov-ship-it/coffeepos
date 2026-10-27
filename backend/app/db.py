@@ -529,3 +529,57 @@ class OutboxMessage(Base):
     last_error: Mapped[str] = mapped_column(String(200), default="")
     sent_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Device(Base):
+    """Registered POS/KDS/APK device; only a hash of its secret is stored."""
+    __tablename__ = "devices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    name: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(16))
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    app_version: Mapped[str] = mapped_column(String(32), default="")
+    last_seen_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class DevicePolicy(Base):
+    __tablename__ = "device_policies"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    require_device: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AppRelease(Base):
+    """Platform-wide client release with staged rollout and rollback."""
+    __tablename__ = "app_releases"
+    __table_args__ = (UniqueConstraint("platform", "version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    version: Mapped[str] = mapped_column(String(32))
+    min_backend: Mapped[str] = mapped_column(String(32), default="0.0.0")
+    min_supported: Mapped[str] = mapped_column(String(32), default="0.0.0")
+    rollout_percent: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    url: Mapped[str] = mapped_column(String(512), default="")
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class OfflineConflict(Base):
+    """Offline sale the server could not accept as-is; kept for manager review, never auto-dropped."""
+    __tablename__ = "offline_conflicts"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    body: Mapped[dict] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    staff_name: Mapped[str] = mapped_column(String(64))
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

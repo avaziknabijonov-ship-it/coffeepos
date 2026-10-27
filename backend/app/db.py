@@ -1,7 +1,7 @@
 import os
 import time
 
-from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint, create_engine
+from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -170,6 +170,7 @@ class Order(Base):
     payment_status: Mapped[str] = mapped_column(String(16), default="paid")
     service: Mapped[str | None] = mapped_column(String(16), nullable=True)
     table_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fiscal_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     promotion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
@@ -468,3 +469,63 @@ class DiningTable(Base):
     name: Mapped[str] = mapped_column(String(64))
     seats: Mapped[int] = mapped_column(Integer, default=2)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FiscalConfig(Base):
+    """Per-company fiscal settings; provider credentials are stored encrypted only."""
+    __tablename__ = "fiscal_configs"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    tin: Mapped[str] = mapped_column(String(9), default="")
+    provider: Mapped[str] = mapped_column(String(32), default="")
+    terminal_id: Mapped[str] = mapped_column(String(64), default="")
+    operator: Mapped[str] = mapped_column(String(64), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mandatory: Mapped[bool] = mapped_column(Boolean, default=False)
+    credentials_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class FiscalReceipt(Base):
+    __tablename__ = "fiscal_receipts"
+    __table_args__ = (UniqueConstraint("company_id", "idempotency_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int] = mapped_column(Integer, index=True)
+    refund_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(16))
+    provider: Mapped[str] = mapped_column(String(32))
+    idempotency_key: Mapped[str] = mapped_column(String(96))
+    provider_receipt_id: Mapped[str] = mapped_column(String(128), default="")
+    fiscal_sign: Mapped[str] = mapped_column(String(128), default="")
+    qr_payload: Mapped[str] = mapped_column(String(512), default="")
+    amount: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class TelegramConfig(Base):
+    """Opt-in director digest; bot token is per tenant and encrypted at rest."""
+    __tablename__ = "telegram_configs"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    chat_id: Mapped[str] = mapped_column(String(64), default="")
+    token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class OutboxMessage(Base):
+    """At-least-once notification outbox with bounded exponential retry."""
+    __tablename__ = "outbox_messages"
+    __table_args__ = (UniqueConstraint("company_id", "dedupe_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    kind: Mapped[str] = mapped_column(String(32))
+    dedupe_key: Mapped[str] = mapped_column(String(96))
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    last_error: Mapped[str] = mapped_column(String(200), default="")
+    sent_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)

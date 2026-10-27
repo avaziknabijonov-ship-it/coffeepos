@@ -46,10 +46,17 @@ def read_receipt_token(db, token):
         return None
 
 
-def receipt_html(order, company_name, refunded, lang, tz):
+def receipt_html(order, company_name, refunded, lang, tz, fiscal=None):
     ru = lang == 'ru'
     title = 'Электронный чек' if ru else 'Elektron chek'
     warning = 'НЕ ФИСКАЛЬНЫЙ ЧЕК' if ru else 'FISKAL CHEK EMAS'
+    fiscal_block = ''
+    if fiscal is not None and fiscal.status == 'issued':
+        warning = 'ФИСКАЛЬНЫЙ ЧЕК' if ru else 'FISKAL CHEK'
+        fiscal_block = ('<p>ID: ' + escape(fiscal.provider_receipt_id) + '<br>' + escape(fiscal.fiscal_sign) +
+                        '</p><p><a href="' + escape(fiscal.qr_payload, quote=True) + '">QR</a></p>')
+    elif fiscal is not None and fiscal.status == 'sandbox':
+        warning = ('ТЕСТОВЫЙ (SANDBOX) — НЕ ФИСКАЛЬНЫЙ ЧЕК' if ru else 'TEST (SANDBOX) — FISKAL CHEK EMAS')
     total = 'Итого' if ru else 'Jami'
     discount = 'Скидка' if ru else 'Chegirma'
     returned = 'Возвращено' if ru else 'Qaytarilgan'
@@ -65,6 +72,6 @@ def receipt_html(order, company_name, refunded, lang, tz):
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
 <style>body{{font:16px system-ui;max-width:560px;margin:32px auto;padding:16px}}table{{width:100%;border-collapse:collapse}}td{{padding:8px;border-bottom:1px solid #ddd}}td:last-child{{text-align:right}}.notice{{padding:12px;border:2px solid #333;font-weight:bold}}</style>
 <h1>{escape(company_name)}</h1><h2>{title} №{order.number}</h2><p>{date}</p>
-<p class="notice">{warning}</p>{('<p>' + status + '</p>') if order.status == 'cancelled' else ''}
+<p class="notice">{warning}</p>{fiscal_block}{('<p>' + status + '</p>') if order.status == 'cancelled' else ''}
 <table>{lines}</table><p>{discount}: {amount(order.discount)} UZS</p>
 <h2>{total}: {amount(order.total)} UZS</h2><p>{returned}: {amount(refunded)} UZS</p></html>'''

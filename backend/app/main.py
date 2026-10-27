@@ -30,6 +30,7 @@ from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 from . import migrations
 from .branches import router as branches_router
 from .tables import router as tables_router, validate_table
+from .integrations import fiscalize, router as integrations_router, sale_receipt
 from .inventory_ops import refresh_low_stock, router as inventory_router
 from . import stock as branch_stock
 from .core import (
@@ -68,6 +69,7 @@ app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
 app.include_router(branches_router)
 app.include_router(inventory_router)
 app.include_router(tables_router)
+app.include_router(integrations_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -106,6 +108,7 @@ def order_out(o: Order) -> dict:
         "paymentStatus": o.payment_status or "paid", "paid": sum(p["amount"] for p in order_payment_parts(o)),
         "outstanding": o.total - sum(p["amount"] for p in order_payment_parts(o)) if o.payment_status == "partial" else 0,
         "branchId": o.branch_id, "staffId": o.staff_id, "service": o.service, "table": o.table_name,
+        "fiscalStatus": o.fiscal_status or "nonfiscal",
     }
 
 
@@ -1562,6 +1565,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         db.add(OrderPayment(company_id=cid, branch_id=shift.branch_id, order_id=order.id, shift_id=shift.id,
                             method=part.method, amount=part.amount, client_key=f"{payment_key}-p{index}",
                             staff_id=ctx.staff.id, staff_name=ctx.staff.name))
+    order.fiscal_status = fiscalize(db, cid, order.id, total, "sale", f"sale-{order.id}")
     if draft is not None:
         audit_record(ctx, "draft.checkout", draft.id, {"version": draft.version}, {"orderId": order.id})
         db.delete(draft)
@@ -1635,7 +1639,8 @@ def public_receipt(token: str, lang: Literal["uz", "ru"] = "uz", db: Session = D
         raise HTTPException(404, "Chek havolasi yaroqsiz yoki muddati tugagan")
     refunded = sum(db.scalars(select(OrderRefund.amount).where(
         OrderRefund.company_id == company.id, OrderRefund.order_id == order.id)))
-    return HTMLResponse(receipt_html(order, company.name, refunded, lang, TZ), headers={
+    fiscal = sale_receipt(db, company.id, order.id)
+    return HTMLResponse(receipt_html(order, company.name, refunded, lang, TZ, fiscal), headers={
         "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow, noarchive",
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
@@ -1846,6 +1851,8 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
     ctx.db.add(refund)
     try:
         ctx.db.flush()
+        refund.fiscal_status = fiscalize(ctx.db, ctx.cid, order.id, refund.amount, "refund",
+                                         f"refund-{refund.id}", refund.id)
         audit_record(ctx, "order.refund", refund.id, {}, {
             "orderId": oid, "amount": refund.amount, "method": refund.method,
             "items": [{"key": line["key"], "qty": line["qty"]} for line in returned_lines],

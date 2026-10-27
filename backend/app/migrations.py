@@ -159,12 +159,17 @@ def experience_columns(engine) -> None:
         conn.execute(text("UPDATE order_refunds SET bonus_restored = 0 WHERE bonus_restored IS NULL"))
 
 
+def fiscal_status_column(engine) -> None:
+    add_columns(engine, {"orders": ["fiscal_status VARCHAR(16)"]})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
     (3, "payments table and refund reversals", payments_and_refund_reversals),
     (4, "branch inventory approval", inventory_approval),
     (5, "tables, happy hour caps, loyalty restore, customer erasure", experience_columns),
+    (6, "order fiscal status", fiscal_status_column),
 ]
 
 

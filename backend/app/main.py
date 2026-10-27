@@ -29,6 +29,7 @@ from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 from . import migrations
 from .branches import router as branches_router
+from .inventory_ops import refresh_low_stock, router as inventory_router
 from . import stock as branch_stock
 from .core import (
     BARISTAS, CASHIERS, MANAGERS, TZ, Ctx, Role, auth, get_db, get_row, open_shift, require, rows,
@@ -64,6 +65,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
 app.include_router(branches_router)
+app.include_router(inventory_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -251,18 +253,22 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
 
 @app.get("/api/stock/alerts")
 def stock_alerts(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    """Current company-only low stock; min=0 disables alerts for an ingredient."""
+    """Low stock of the current branch; min=0 disables alerts for an ingredient."""
     items = []
+    levels = branch_stock.levels(ctx.db, ctx.cid, ctx.branch_id)
+    refresh_low_stock(ctx.db, ctx.cid, ctx.branch_id)
+    ctx.db.commit()
     for ingredient in rows(ctx.db, Ingredient, ctx.cid):
-        if ingredient.min <= 0 or ingredient.stock > ingredient.min:
+        level = levels[ingredient.key]
+        if level["min"] <= 0 or level["stock"] > level["min"]:
             continue
         items.append({
             "id": ingredient.key,
             "name": ingredient.name,
             "unit": ingredient.unit,
-            "stock": ingredient.stock,
-            "min": ingredient.min,
-            "shortfall": round(max(0.0, ingredient.min - ingredient.stock), 6),
+            "stock": level["stock"],
+            "min": level["min"],
+            "shortfall": round(max(0.0, level["min"] - level["stock"]), 6),
         })
     items.sort(key=lambda item: (-item["shortfall"], item["name"], item["id"]))
     return {"count": len(items), "items": items}
@@ -665,12 +671,15 @@ class CountLine(BaseModel):
 class InventoryIn(BaseModel):
     lines: list[CountLine] = Field(min_length=1)
     note: str = Field("", max_length=200)
+    requireApproval: bool = False
 
 
 def inventory_out(inv: Inventory) -> dict:
     return {
         "id": inv.id, "staff": inv.staff_name, "note": inv.note, "lines": inv.lines,
         "shortage": inv.shortage, "surplus": inv.surplus, "createdAt": inv.created_at,
+        "status": inv.status or "approved", "approvedBy": inv.approved_by, "approvedAt": inv.approved_at,
+        "branchId": inv.branch_id,
     }
 
 
@@ -680,7 +689,10 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
     if len(set(keys)) != len(keys):
         raise HTTPException(400, "Xomashyo takrorlangan")
     ings = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
-    inv = Inventory(company_id=ctx.cid, staff_name=ctx.staff.name, note=body.note.strip(), lines=[])
+    inv = Inventory(company_id=ctx.cid, branch_id=ctx.branch_id, staff_id=ctx.staff.id, staff_name=ctx.staff.name,
+                    note=body.note.strip(), lines=[], status="pending" if body.requireApproval else "approved",
+                    approved_by=None if body.requireApproval else ctx.staff.name,
+                    approved_at=None if body.requireApproval else now_ms())
     ctx.db.add(inv)
     ctx.db.flush()
     lines, shortage, surplus = [], 0, 0
@@ -688,16 +700,18 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
         i = ings.get(line.ing)
         if not i:
             raise HTTPException(404, f"Xomashyo topilmadi: {line.ing}")
-        diff = line.counted - i.stock
+        expected = branch_stock.get(ctx.db, ctx.cid, ctx.branch_id, i, lock=True)
+        diff = line.counted - expected
         value = round(diff * i.cost)
         if value < 0:
             shortage += -value
         else:
             surplus += value
-        lines.append({"ing": i.key, "name": i.name, "unit": i.unit, "expected": i.stock, "counted": line.counted, "diff": diff, "value": value})
-        if diff:
-            ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=diff, reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
-        i.stock = line.counted
+        lines.append({"ing": i.key, "name": i.name, "unit": i.unit, "expected": expected, "counted": line.counted, "diff": diff, "value": value})
+        if diff and not body.requireApproval:
+            branch_stock.adjust(ctx.db, ctx.cid, ctx.branch_id, i, diff)
+            ctx.db.add(StockMove(company_id=ctx.cid, branch_id=ctx.branch_id, ingredient=i.key, qty=diff,
+                                 reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
     inv.lines, inv.shortage, inv.surplus = lines, shortage, surplus
     audit_record(ctx, "inventory.count", inv.id, {}, {
         "shortage": shortage, "surplus": surplus,
@@ -712,7 +726,8 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
 def list_inventories(days: int = 90, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
     q = (
         select(Inventory)
-        .where(Inventory.company_id == ctx.cid, Inventory.created_at >= start_of_day_ms(days))
+        .where(Inventory.company_id == ctx.cid, Inventory.branch_id == ctx.branch_id,
+               Inventory.created_at >= start_of_day_ms(days))
         .order_by(Inventory.id.desc())
         .limit(100)
     )

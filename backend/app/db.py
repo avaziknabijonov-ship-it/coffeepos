@@ -200,6 +200,11 @@ class Inventory(Base):
     __tablename__ = "inventories"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    staff_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="approved")
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
     note: Mapped[str] = mapped_column(String(200), default="")
     lines: Mapped[list] = mapped_column(JSON)
@@ -399,3 +404,37 @@ class ReceiptLink(Base):
     expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
     revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class StockNotification(Base):
+    """Low-stock episode; open_key is unique while open, so one alert per episode."""
+    __tablename__ = "stock_notifications"
+    __table_args__ = (UniqueConstraint("company_id", "open_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(Integer, index=True)
+    ingredient: Mapped[str] = mapped_column(String(64))
+    open_key: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    stock: Mapped[float] = mapped_column(default=0)
+    min: Mapped[float] = mapped_column(default=0)
+    opened_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    resolved_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class StockTransfer(Base):
+    """Branch-to-branch movement: dispatched (in transit) -> received | cancelled."""
+    __tablename__ = "stock_transfers"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    from_branch_id: Mapped[int] = mapped_column(Integer, index=True)
+    to_branch_id: Mapped[int] = mapped_column(Integer, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="in_transit")
+    lines: Mapped[list] = mapped_column(JSON)
+    received_lines: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    dispatched_by: Mapped[str] = mapped_column(String(64))
+    dispatched_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    closed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

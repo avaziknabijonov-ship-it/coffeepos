@@ -136,10 +136,20 @@ def payments_and_refund_reversals(engine) -> None:
                      "t": row.created_at})
 
 
+def inventory_approval(engine) -> None:
+    add_columns(engine, {"inventories": ["branch_id INTEGER", "staff_id INTEGER",
+                                         "status VARCHAR(16) DEFAULT 'approved'",
+                                         "approved_by VARCHAR(64)", "approved_at BIGINT"]})
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE inventories SET status = 'approved' WHERE status IS NULL"))
+        conn.execute(text("UPDATE inventories SET branch_id = (SELECT b.id FROM branches b WHERE b.company_id = inventories.company_id AND b.is_default = TRUE) WHERE branch_id IS NULL"))
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
     (3, "payments table and refund reversals", payments_and_refund_reversals),
+    (4, "branch inventory approval", inventory_approval),
 ]
 
 

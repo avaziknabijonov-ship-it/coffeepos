@@ -13,12 +13,14 @@ import Payroll from './Payroll'
 import CashierReport from './CashierReport'
 import PrinterSettings from './PrinterSettings'
 import RefundPanel from './RefundPanel'
+import AuditLog from './AuditLog'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'audit' | 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'audit', label: 'Audit jurnali' },
   { id: 'stock', label: 'Ombor' },
   { id: 'receiving', label: 'Prixod' },
   { id: 'inventory', label: 'Inventarizatsiya' },
@@ -34,7 +36,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { audit: BookOpen, dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -79,6 +81,7 @@ export default function Admin() {
           {view === 'expenses' && <Expenses />}
           {view === 'bonus' && <BonusSettings />}
           {view === 'finance' && <Finance />}
+          {view === 'audit' && <AuditLog />}
           {view === 'payroll' && <Payroll />}
           {view === 'printer' && <PrinterSettings />}
         </main>

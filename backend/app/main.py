@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .combos import resolve_combo
 from .promotions import choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
@@ -61,6 +62,9 @@ def migrate() -> None:
         if "can_reprint_receipts" not in staff_permissions:
             conn.execute(text("ALTER TABLE staff ADD COLUMN can_reprint_receipts BOOLEAN NOT NULL DEFAULT FALSE"))
     product_columns = {c["name"] for c in inspect(engine).get_columns("products")}
+    if "combo_components" not in product_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE products ADD COLUMN combo_components JSON"))
     if "image_url" not in product_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
@@ -198,7 +202,7 @@ def ingredient_out(i: Ingredient) -> dict:
 
 
 def product_out(p: Product) -> dict:
-    return {"id": p.key, "cat": p.cat, "name": p.name, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+    return {"id": p.key, "cat": p.cat, "name": p.name, "comboComponents": p.combo_components, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
 
 
 def shift_out(s: Shift | None) -> dict | None:
@@ -332,9 +336,22 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
     cats = sorted(rows(db, Category, cid), key=lambda c: (c.sort, c.id))
     prods = sorted(rows(db, Product, cid), key=lambda p: (p.sort, p.id))
     mods = sorted(rows(db, Modifier, cid), key=lambda m: (m.sort, m.id))
+    product_map = {p.key: p for p in prods}
+    ingredient_map = {i.key: i for i in rows(db, Ingredient, cid)}
+    modifier_map = {m.key: m for m in mods}
+    products_out = []
+    for product in prods:
+        entry = product_out(product)
+        if product.combo_components:
+            try:
+                resolved = resolve_combo(product, product_map, modifier_map, ingredient_map)
+                entry["sizes"] = resolved.sizes
+            except HTTPException:
+                entry["active"] = False
+        products_out.append(entry)
     return {
         "categories": [{"id": c.key, "name": c.name} for c in cats],
-        "products": [product_out(p) for p in prods],
+        "products": products_out,
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
     }
@@ -441,6 +458,8 @@ def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
 @app.put("/api/products/{key}")
 def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     p = get_row(ctx.db, Product, ctx.cid, key)
+    if p.combo_components:
+        raise HTTPException(409, "Combo mahsulotni Combo bo‘limidan tahrirlang")
     validate_product(ctx, body)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
     p.image_url = body.imageUrl
@@ -463,9 +482,63 @@ def set_product_active(key: str, body: ActiveIn, ctx: Ctx = Depends(require(*CAS
 
 @app.delete("/api/products/{key}")
 def delete_product(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    ctx.db.delete(get_row(ctx.db, Product, ctx.cid, key))
+    product = get_row(ctx.db, Product, ctx.cid, key)
+    for combo in rows(ctx.db, Product, ctx.cid):
+        if any(c["productId"] == key for c in (combo.combo_components or [])):
+            raise HTTPException(409, "Mahsulot combo tarkibida ishlatilmoqda")
+    ctx.db.delete(product)
     ctx.db.commit()
     return {"ok": True}
+
+
+class ComboComponentIn(BaseModel):
+    productId: str = Field(min_length=1, max_length=64)
+    size: str = Field(min_length=1, max_length=16)
+    qty: int = Field(ge=1, le=10)
+
+
+class ComboIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    cat: str
+    price: int = Field(ge=0)
+    components: list[ComboComponentIn] = Field(min_length=2, max_length=10)
+    active: bool = True
+
+
+def save_combo(body, ctx, product=None):
+    get_row(ctx.db, Category, ctx.cid, body.cat)
+    components = [c.model_dump() for c in body.components]
+    if not body.name.strip() or len({(c["productId"], c["size"]) for c in components}) != len(components):
+        raise HTTPException(422, "Combo nomi va tarkibini tekshiring")
+    if product is None:
+        product = Product(company_id=ctx.cid, key="combo-" + secrets.token_hex(8), sort=len(rows(ctx.db, Product, ctx.cid)))
+    product.name, product.cat, product.mods, product.active = body.name.strip(), body.cat, [], body.active
+    product.combo_components = components
+    product.sizes = [{"code": "-", "label": "Combo", "price": body.price, "recipe": []}]
+    resolved = resolve_combo(product, {p.key: p for p in rows(ctx.db, Product, ctx.cid)},
+                             {m.key: m for m in rows(ctx.db, Modifier, ctx.cid)},
+                             {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)})
+    ctx.db.add(product)
+    ctx.db.commit()
+    return {**product_out(product), "sizes": resolved.sizes}
+
+
+@app.get("/api/combos")
+def list_combos(ctx: Ctx = Depends(require(*MANAGERS))):
+    return [product_out(p) for p in rows(ctx.db, Product, ctx.cid) if p.combo_components]
+
+
+@app.post("/api/combos", status_code=201)
+def add_combo(body: ComboIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    return save_combo(body, ctx)
+
+
+@app.put("/api/combos/{key}")
+def edit_combo(key: str, body: ComboIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    product = get_row(ctx.db, Product, ctx.cid, key)
+    if not product.combo_components:
+        raise HTTPException(409, "Bu mahsulot combo emas")
+    return save_combo(body, ctx, product)
 
 
 class ModifierIn(BaseModel):
@@ -1386,7 +1459,10 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         product = prods.get(it.productId)
         if not product:
             raise HTTPException(400, "Mahsulot topilmadi")
-        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        resolved = resolve_combo(product, prods, mods, ings)
+        built = build_item(resolved, it.size, it.modIds, it.qty, mods, ings)
+        if getattr(resolved, "combo_items", None):
+            built["components"] = resolved.combo_items
         same = next((x for x in items if x["key"] == built["key"]), None)
         if same:
             same["qty"] += built["qty"]

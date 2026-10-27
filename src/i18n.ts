@@ -15,6 +15,18 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Kategoriya": "Категория",
+  "Bu mahsulot combo emas": "Этот товар не является комбо",
+  "Combo nomi va tarkibini tekshiring": "Проверьте название и состав комбо",
+  "Mahsulot combo tarkibida ishlatilmoqda": "Товар используется в составе комбо",
+  "Combo mahsulotni Combo bo‘limidan tahrirlang": "Редактируйте комбо-товар в разделе комбо",
+  "Combo texkartasidagi xomashyo mavjud emas": "Ингредиент в техкарте комбо недоступен",
+  "Combo tarkibidagi mahsulot mavjud emas": "Товар в составе комбо недоступен",
+  "Olib tashlash": "Убрать",
+  "O‘lcham": "Размер",
+  "Tarkib qo‘shish": "Добавить компонент",
+  "Tarkib oddiy mahsulotlardan tuziladi. Qo‘shimcha modifikator va ichma-ich combo yo‘q. Ombor sarfi bir marta yoziladi.": "Состав формируется из обычных товаров. Модификаторы и вложенные комбо не поддерживаются. Склад списывается один раз.",
+  "Combo mahsulotlar": "Комбо-товары",
   "Davr 1-92 kun bo‘lsin": "Период должен быть от 1 до 92 дней",
   "Mijoz tahlilga rozilik bermagan": "Клиент не дал согласия на аналитику",
   "Mijoz roziligi olinganini tasdiqlang": "Подтвердите получение согласия клиента",

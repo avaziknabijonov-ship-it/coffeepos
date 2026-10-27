@@ -85,6 +85,7 @@ class Product(Base):
     key: Mapped[str] = mapped_column(String(64))
     cat: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
+    combo_components: Mapped[list | None] = mapped_column(JSON, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), default="")
     mods: Mapped[list] = mapped_column(JSON, default=list)
     sizes: Mapped[list] = mapped_column(JSON, default=list)

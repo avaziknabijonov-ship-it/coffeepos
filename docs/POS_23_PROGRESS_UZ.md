@@ -1,40 +1,54 @@
-# 23 modul: dalillarga asoslangan dastlabki baho
+# 23 modul: dalillarga asoslangan holat
 
-Sana: 2026-10-27. Ishchi PR: https://github.com/avaziknabijonov-ship-it/coffeepos/pull/8
+Sana: 2026-10-27. Ishchi branch: `devin/1793089384-pos-23-modules` (PR #8 / `codex/ci-lint-20261027` ning `79948a6` commiti to‘liq ichida).
 
-**Umumiy dastlabki baho: 30%. To‘liq qabul qilingan: 0/23.**
-Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irlikda. Baho dastlabki kod auditi, chuqur tekshiruvda pasayishi ham mumkin.
+**Acceptance shkalasi bo‘yicha o‘rtacha: ~56%. Foydalanuvchi tomonidan to‘liq qabul qilingan: 0/23.**
 
-Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
+Mezon (o‘zgarmagan): 0 — dalil yo‘q; 20 — scaffold; 40 — API/UI/testlarning asosiy qismi, mezonlar ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — real staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan.
+"Lokal staging" — VM'dagi alohida `coffeepos-staging` Docker stack (alohida `coffeepos_staging` bazasi). Bu real staging serveri emas, shuning uchun 80% berilmaydi.
 
-Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40471662665 — backend SQLite, PostgreSQL va frontend muvaffaqiyatli. Bu barcha 23 modul uchun staging dalili emas.
+## Tekshirilgan dalillar (2026-10-27, mahalliy)
 
-| № | Modul | Baho | Dalil / ochiq ish |
-|---|---|---:|---|
-| 1 | Split payment | 40% | API/UI va tender testlari; qisman to‘lov va filial kesimi yetishmaydi |
-| 2 | Refund | 40% | Manual ledger/UI va parallel test; provider, stock/bonus/fiscal reversal yo‘q |
-| 3 | Tannarx | 40% | Order snapshot bor; yangi regression testi tekshirilmoqda |
-| 4 | Low stock | 40% | Threshold API/UI va test; filial/dedupe notification yetishmaydi |
-| 5 | P&L | 40% | Finance API/UI; filial va to‘liq reconciliation yetishmaydi |
-| 6 | Audit | 40% | Refund/cancel/inventory DB jurnal, API/UI va SQL himoya testlari; global qamrov/filial/staging ochiq |
-| 7 | Fiscal | 20% | Adapter scaffold; provider sandbox yo‘q |
-| 8 | Backup | 20% | Qo‘lda script; encrypted offsite va restore dalili yo‘q |
-| 9 | Draft orders | 40% | Server/API testlari; to‘liq checkout integratsiyasi tekshirilsin |
-| 10 | Tables | 0% | Joriy tarmoqda server occupancy/move/merge yo‘q |
-| 11 | Stock transfer | 0% | Faqat hisoblash yordamchisi; modul emas |
-| 12 | Inventory variance | 40% | API/UI/test; approval workflow yo‘q |
-| 13 | Cash variance | 40% | Smena balansi/API/UI/test; staging yo‘q |
-| 14 | Staff analytics | 40% | Server API/UI, discount/refund/net, RBAC va tenant test; ism kolliziyasi va staging ochiq |
-| 15 | Telegram director | 0% | Opt-in digest/retry integratsiyasi yo‘q |
-| 16 | Electronic receipt | 40% | Signed 15-min nonfiscal link/API/UI, privacy va token testlari; DB grant/revoke/audit va Uvicorn log redaction testlari qo‘shildi; QR, proxy loglari va staging ochiq |
-| 17 | Happy Hour | 40% | Schedule DB/API/admin/kassa, expectedTotal, snapshot va testlar; filial/staging/offline konflikt yechimi ochiq |
-| 18 | Customer analytics | 40% | Consent/audit, masked list, gross cohorts/history API/UI/Excel va testlar; retention/deletion/filial/staging ochiq |
-| 19 | Combo | 40% | DB/API/admin/kassa, recipe deduction va cancel ledger testlari; item-return/filial/staging ochiq |
-| 20 | Offline | 20% | Boshlang‘ich queue; ko‘p qurilma/qayta ochish testi yo‘q |
-| 21 | Device management | 0% | Device binding/revoke yo‘q |
-| 22 | Updates | 20% | Version/update UI bor; staged rollout/rollback yo‘q |
-| 23 | Loyalty | 40% | Ledger/API/UI bor; refund reversal va concurrency to‘liq emas |
+| Tekshiruv | Natija |
+|---|---|
+| Backend SQLite `pytest backend/tests` | 90 passed, 3 skipped (PostgreSQL-only) |
+| Backend PostgreSQL 16 (disposable konteyner, toza sxema) | 93 passed |
+| Frontend `check-i18n.mjs` | o‘tdi, 706 RU kalit |
+| Frontend `npm test` / `lint` / `build` | 5/5 o‘tdi; lint 0 xato (faqat ogohlantirishlar); build o‘tdi |
+| Lokal staging `scripts/staging_smoke.py` (HTTP, nginx+API+PostgreSQL) | 23/23 o‘tdi |
+| Shifrlangan backup + restore drill (throwaway PostgreSQL) | o‘tdi |
+| GitHub Actions (backend×2, frontend, staging-smoke) | PR ochilgach alohida tasdiqlanadi |
 
-Productionga tegilmadi. Foiz faqat yangi dalil yoki bajarilgan qabul mezoni bilan o‘zgartiriladi.
+Production VPS va production bazasiga tegilmadi. Deploy qilinmadi.
 
-2026-10-27 keyingi tekshiruv: receipt grant/revoke va access log himoyasi uchun 68 backend testi o‘tdi, 3 PostgreSQL-only test mahalliy muhitda skip; Node 2/2, build/i18n o‘tdi. Yangi commit CI natijasi alohida tasdiqlanadi. Umumiy baho 30% saqlanadi.
+## Modullar
+
+| № | Modul | Baho | Bajarilgan mezonlar va dalil | Ochiq / bloklangan |
+|---|---|---:|---|---|
+| 1 | Split payment | 60% | `OrderPayment` yozuvlari, partial status, keyingi to‘lov, clientKey idempotency; `test_split_api`, `test_payment_rules`, smoke 06–07 | Real terminal/Payme/Click provider |
+| 2 | Refund | 60% | Original to‘lovga bog‘lash, qisman/to‘liq, ortiqcha refund taqiq, stock/bonus/fiscal reversal, audit; `test_refunds_api`, `test_refund_concurrency`, smoke 09–10 | Provider orqali pul qaytarish |
+| 3 | Tannarx | 60% | Ingredient/retsept snapshot, tarixiy o‘zgarmaslik; `test_cost_snapshot` | — |
+| 4 | Low stock | 60% | Filial bo‘yicha threshold, dedupe notification; `test_stock_alerts`, smoke 22 | — |
+| 5 | P&L | 60% | Revenue − refund, COGS, xarajat, filial/sana filtri; `test_finance_ops`, smoke 18 | — |
+| 6 | Audit | 60% | Actor/action/before-after/company, append-only, sirlar maskalangan; `test_audit`, smoke 20–21 | — |
+| 7 | Fiscal | 40% | STIR/operator/terminal config, Fernet shifrlangan credential, sandbox provider, QR payload, refund chek, mandatory fail-closed (503); `test_fiscal`, `test_integrations`, smoke 13–15 | **Bloklangan:** sertifikatlangan OFD/fiskal provayder, kalitlar va uskuna |
+| 8 | Backup | 40% | AES-256 (PBKDF2) shifrlangan dump, retention, `last-status.json`, restore drill o‘tdi; CI job qo‘shildi | **Bloklangan:** offsite (rclone) kirish ma’lumoti, monitoring/alert kanali |
+| 9 | Draft orders | 60% | Server draft, version conflict, checkoutgacha tushum yo‘q; `test_drafts` | — |
+| 10 | Tables | 60% | Zal/stol, occupancy, move/merge RBAC, takeaway; `test_experience`, admin "Zal" UI | — |
+| 11 | Stock transfer | 60% | Dispatch/in-transit/receive, atomik ikki filial ledger, ikki marta qabul taqiq; `test_inventory_ops`, smoke 11–12 | — |
+| 12 | Inventory variance | 60% | Kutilgan/sanalgan, signed adjustment, approval/reject; `test_inventory_ops`, UI | — |
+| 13 | Cash variance | 60% | opening + naqd sotuv − naqd refund − naqd xarajat, farq va actor; `test_finance_ops`, smoke 19 | — |
+| 14 | Staff analytics | 60% | staff_id bo‘yicha order/sotuv/chegirma/refund/smena, rol ko‘rinishi; `test_staff_analytics` | — |
+| 15 | Telegram director | 40% | Opt-in tenant chat, shifrlangan token, kunlik digest, dedupe, backoff retry (5), token redaction; fake sender bilan `test_integrations` | **Bloklangan:** real bot token/chat va tarmoq orqali yuborish sinovi |
+| 16 | Electronic receipt | 60% | Fiscal/nonfiscal/sandbox holati aniq, signed qisqa muddatli link, privacy; `test_receipts`, `test_access_logs`, smoke 15 | Real fiskal QR (7-modulga bog‘liq) |
+| 17 | Happy Hour | 60% | Lokal vaqt zonasi, tungi jadval, ustuvorlik, chegirma limiti, filial; `test_promotions`, `test_experience`, UI | — |
+| 18 | Customer analytics | 60% | Consent, takroriy tashrif, kogorta, tarix, PII o‘chirish (buxgalteriya saqlanadi); `test_customer_analytics`, `test_experience`, UI | — |
+| 19 | Combo | 60% | Komponent SKU, bir martalik ingredient yechish, qaytarishda reversal; `test_combos`, `test_experience` | — |
+| 20 | Offline | 40% | Company-scoped durable queue, idempotency, server conflict jadvali va manager resolve, soxta fiskal chek yo‘q, faqat naqd; `test_reliability`, `tests/offline.test.mjs`, smoke 16 | Ko‘p qurilma/brauzer qayta ochish UI sinovi o‘tkazilmagan |
+| 21 | Device management | 60% | Hashed device secret, company/branch binding, revoke, last seen, require-device policy; `test_reliability`, smoke 17 | Real qurilmalar parki |
+| 22 | Updates | 40% | Semver, deterministik staged rollout, rollback, min backend/client (426); `test_reliability`, smoke 23 | **Bloklangan:** APK build/imzo va tarqatish infratuzilmasi |
+| 23 | Loyalty | 60% | Ledger, accrual/redeem/refund reversal, lock bilan parallel himoya, ledger mosligi; `test_experience`, `test_api` | — |
+
+## Real sinovga tayyorlik
+
+**Hali "real sinovga tayyor" emas.** Sabablar: CI natijasi PR'da tasdiqlanishi kerak; fiskal provayder, Telegram, offsite backup va APK bloklangan; UI end-to-end sinovi (testing agent) foydalanuvchi ruxsati bilan hali o‘tkazilmagan; real staging serveri yo‘q.

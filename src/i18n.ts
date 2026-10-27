@@ -15,6 +15,7 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Refund asl kassirga qaytarish sanasi bo‘yicha yoziladi. Bir xil ismli xodimlar birlashtiriladi.": "Возврат относится к исходному кассиру по дате возврата. Сотрудники с одинаковыми именами объединяются.",
   "Qaytarilgan mablag‘": "Возвращённые средства",
   "Qaytarishdan keyingi tushum": "Выручка после возвратов",
   "Pul qaytarish tannarx va omborni avtomatik tiklamaydi.": "Возврат денег автоматически не восстанавливает себестоимость и остатки.",

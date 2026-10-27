@@ -15,6 +15,19 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Mijoz ismi": "Имя клиента",
+  "Narx 1 g yoki 1 dona uchun. Masalan: 100 g tamaki 100 000 so‘m bo‘lsa, 1 g = 1 000 so‘m.": "Цена за 1 г или 1 шт. Например: если 100 г табака стоят 100 000 сум, то 1 г = 1 000 сум.",
+  "Kalyanchi": "Кальянщик",
+  "Kalyanxona boshqaruvi": "Управление кальянной", "Kalyanxona hisoboti": "Отчёт кальянной", "Zal, Bar va VIP": "Зал, бар и VIP",
+  "Tamaki va sarf materiallari": "Табак и расходные материалы", "Tamaki va bar kirimi": "Поступления табака и бара",
+  "Kalyan va bar menyusi": "Меню кальянов и бара", "Aralashmalar va sarf retseptlari": "Смеси и нормы расхода",
+  "Kalyanchilar va kassirlar": "Кальянщики и кассиры", "Kalyan, bar, mehmonlar va zal uchun yagona boshqaruv": "Единое управление кальянами, баром, гостями и залом",
+  "Tamaki yoki sarf materiali qo‘shish": "Добавить табак или расходный материал", "Tayyorlash ekrani": "Экран приготовления", "Kalyanxona kassasi": "Касса кальянной",
+  "Sovuq ichimliklar": "Холодные напитки", "Sneklar": "Снеки",
+  "Kalyan": "Кальян",
+  "Kalyanxona": "Кальянная", "Kalyanxona moduli": "Модуль кальянной",
+  "Kalyanxona moduli litsenziyada yoqilmagan": "Модуль кальянной не включён в лицензию",
+  "Stollar, mehmonlar va alohida cheklar": "Столы, гости и отдельные чеки",
   "Chek amallari": "Действия с чеком", "Chekka izoh": "Комментарий к чеку", "Mehmonlar soni": "Количество гостей",
   "Stolni almashtirish": "Сменить стол", "Chekni ajratish": "Разделить чек", "Mas’ul xodimni almashtirish": "Сменить ответственного сотрудника",
   "Buyurtmani tozalash": "Очистить заказ", "Buyurtma tozalansinmi?": "Очистить заказ?", "Mas’ul xodim": "Ответственный сотрудник",
@@ -608,7 +621,7 @@ export function tServer(msg: string): string {
 }
 
 /** Translate only the default demo catalog labels. User-supplied names remain untouched. */
-const DEFAULT_CATALOG_NAMES = new Set<string>(["Kofe doni (arabika)","Sut 3,2%","Bodom suti","Kokos suti","Laktozasiz sut","Qaymoq 10%","Karamel sirop","Vanil sirop","Findiq sirop","Shokolad sousi","Matcha kukuni","Qora choy (paket)","Ko'k choy (paket)","Muz","Stakan S (250 ml)","Stakan M (350 ml)","Stakan L (450 ml)","Sovuq ichimlik stakani","Qopqoq","Trubochka","Kruassan","Chizkeyk (bo'lak)","Brauni","Espresso","Sutli kofe","Sovuq","Choy","Desert","Amerikano","Kapuchino","Latte","Flat uayt","Raf","Mokko","Ays latte","Ays amerikano","Frappe karamel","Qora choy","Ko'k choy","Matcha latte","Chizkeyk","Oddiy sut","Laktozasiz","Karamel","Vanil","Findiq","Doppio"])
+const DEFAULT_CATALOG_NAMES = new Set<string>(["Kalyan","Sovuq ichimliklar","Sneklar","Kofe doni (arabika)","Sut 3,2%","Bodom suti","Kokos suti","Laktozasiz sut","Qaymoq 10%","Karamel sirop","Vanil sirop","Findiq sirop","Shokolad sousi","Matcha kukuni","Qora choy (paket)","Ko'k choy (paket)","Muz","Stakan S (250 ml)","Stakan M (350 ml)","Stakan L (450 ml)","Sovuq ichimlik stakani","Qopqoq","Trubochka","Kruassan","Chizkeyk (bo'lak)","Brauni","Espresso","Sutli kofe","Sovuq","Choy","Desert","Amerikano","Kapuchino","Latte","Flat uayt","Raf","Mokko","Ays latte","Ays amerikano","Frappe karamel","Qora choy","Ko'k choy","Matcha latte","Chizkeyk","Oddiy sut","Laktozasiz","Karamel","Vanil","Findiq","Doppio"])
 export function tCatalogName(name: string): string {
   return DEFAULT_CATALOG_NAMES.has(name) ? t(name) : name
 }

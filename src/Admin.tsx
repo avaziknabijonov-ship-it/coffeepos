@@ -53,7 +53,9 @@ const VIEW_ICONS = { branches: Warehouse, floor: LayoutDashboard, cashControl: C
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
-export default function Admin() {
+const HOOKAH_LABELS: Partial<Record<View, string>> = { dashboard: 'Kalyanxona hisoboti', floor: 'Zal, Bar va VIP', stock: 'Tamaki va sarf materiallari', receiving: 'Tamaki va bar kirimi', menu: 'Kalyan va bar menyusi', recipes: 'Aralashmalar va sarf retseptlari', staff: 'Kalyanchilar va kassirlar' }
+
+export default function Admin({ hookah = false }: { hookah?: boolean }) {
   const [view, setView] = useState<View>('dashboard')
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
@@ -61,12 +63,12 @@ export default function Admin() {
   const low = INGREDIENTS.filter((i) => i.min > 0 && (stock[i.id] ?? 0) <= i.min)
 
   return (
-    <div className="admin-shell h-full overflow-y-auto bg-stone-50">
+    <div className={`admin-shell ${hookah ? 'hookah-admin' : ''} h-full overflow-y-auto bg-stone-50`}>
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-3 md:flex-row md:gap-5 md:p-5">
-        <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
+        <aside data-motto={hookah ? t('Kalyanxona boshqaruvi') : t('Yaxshi qahva — yaxshi kun')} className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
           <div className="mb-3 hidden px-3 pt-2 md:block">
             <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">{t('Boshqaruv')}</p>
-            <h2 className="mt-1 text-lg font-bold text-stone-900">{t('Admin panel')}</h2>
+            <h2 className="mt-1 text-lg font-bold text-stone-900">{hookah ? t('Kalyanxona boshqaruvi') : t('Admin panel')}</h2>
           </div>
           <nav aria-label={t('Admin bo‘limlari')} className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
             {VIEWS.map((v) => {
@@ -74,22 +76,23 @@ export default function Admin() {
               return <button key={v.id} onClick={() => setView(v.id)} aria-current={view === v.id ? 'page' : undefined}
                 className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors md:w-full ${view === v.id ? 'bg-stone-900 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'}`}>
                 <Icon className="size-[18px] shrink-0" />
-                <span className="flex-1 whitespace-nowrap">{t(v.label)}</span>
+                <span className="flex-1 whitespace-nowrap">{t(hookah ? HOOKAH_LABELS[v.id] ?? v.label : v.label)}</span>
                 {v.id === 'stock' && low.length > 0 && <span className="rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
               </button>
             })}
           </nav>
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
-          {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => ({ name: i.name, stock: stock[i.id] ?? 0, min: i.min, unit: i.unit }))} goStock={() => setView('stock')} />}
+          {hookah && <div className="hookah-section-heading"><span>{t('Kalyanxona moduli')}</span><h1>{t(HOOKAH_LABELS[view] ?? VIEWS.find(v => v.id === view)?.label ?? 'Kalyanxona boshqaruvi')}</h1><p>{t('Kalyan, bar, mehmonlar va zal uchun yagona boshqaruv')}</p></div>}
+          {view === 'dashboard' && <Dashboard hookah={hookah} today={today} low={low.map((i) => ({ name: i.name, stock: stock[i.id] ?? 0, min: i.min, unit: i.unit }))} goStock={() => setView('stock')} />}
           {view === 'stock' && <StockOverview />}
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
-          {view === 'menu' && <MenuEditor />}
+          {view === 'menu' && <MenuEditor hookah={hookah} />}
           {view === 'recipes' && <Recipes onEdit={() => setView('menu')} />}
           {view === 'orders' && <Orders today={today} />}
           {view === 'cashierReport' && <CashierReport />}
-          {view === 'staff' && <StaffView />}
+          {view === 'staff' && <StaffView hookah={hookah} />}
           {view === 'shifts' && <ShiftsView />}
           {view === 'expenses' && <Expenses />}
           {view === 'bonus' && <BonusSettings />}
@@ -153,7 +156,7 @@ function Card({ title, children, className = '' }: { title?: string; children: R
   )
 }
 
-function Dashboard({ today, low, goStock }: { today: Orders; low: { name: string; stock: number; min: number; unit: string }[]; goStock: () => void }) {
+function Dashboard({ today, low, goStock, hookah = false }: { hookah?: boolean; today: Orders; low: { name: string; stock: number; min: number; unit: string }[]; goStock: () => void }) {
   const active = today.filter(o => o.status !== 'cancelled' && !o.pendingSync)
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
@@ -192,7 +195,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: { name: string
 
   return (
     <div className="premium-dashboard space-y-5">
-      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
+      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{hookah ? t("Kalyanxona hisoboti") : t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />

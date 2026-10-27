@@ -243,6 +243,7 @@ class PurchaseInvoice(Base):
 class Subscription(Base):
     __tablename__ = "subscriptions"
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    modules: Mapped[list] = mapped_column(JSON, default=list)
     plan: Mapped[str] = mapped_column(String(16), default="monthly")
     status: Mapped[str] = mapped_column(String(16), default="active")
     expires_at: Mapped[int] = mapped_column(BigInteger)

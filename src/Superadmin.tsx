@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { t, tServer } from './i18n'
 import LangSwitch from './LangSwitch'
 import { useAppState } from './store'
-type Subscription = { plan: string; status: string; expiresAt: number }
+type Subscription = { modules?: string[]; plan: string; status: string; expiresAt: number }
 type Company = { id: number; slug: string; name: string; createdAt: number; subscription: Subscription | null }
 type Result = { items: Company[]; offset: number; limit: number }
 type Action = 'grant' | 'renew' | 'suspend'
@@ -22,6 +22,8 @@ export default function Superadmin() {
   const [ownerPin, setOwnerPin] = useState('')
   const [plan, setPlan] = useState<'monthly' | 'yearly'>('monthly')
   const [days, setDays] = useState(30)
+  const [hookah, setHookah] = useState(false)
+  const [moduleChoices, setModuleChoices] = useState<Record<string, boolean>>({})
   const limit = 100
 
   async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -50,15 +52,17 @@ export default function Superadmin() {
   async function create() {
     setBusy(true); setError('')
     try {
-      await request('/companies', 'POST', { slug, name, owner_name: ownerName, owner_pin: ownerPin, plan, days })
-      setOwnerPin(''); setSlug(''); setName(''); setOwnerName('')
+      await request('/companies', 'POST', { slug, name, owner_name: ownerName, owner_pin: ownerPin, plan, days, modules: hookah ? ['hookah'] : [] })
+      setHookah(false); setOwnerPin(''); setSlug(''); setName(''); setOwnerName('')
       await load(0)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   async function update(slugValue: string, action: Action) {
     if (!window.confirm(slugValue + ' — ' + t(action === 'grant' ? 'Berish' : action === 'renew' ? 'Uzaytirish' : 'To‘xtatish') + '?')) return
     setBusy(true); setError('')
-    try { await request('/companies/' + encodeURIComponent(slugValue) + '/subscription', 'POST', { action, plan, days }); await load() }
+    const company = companies.find(c => c.slug === slugValue)
+    const selected = moduleChoices[slugValue] ?? Boolean(company?.subscription?.modules?.includes('hookah'))
+    try { await request('/companies/' + encodeURIComponent(slugValue) + '/subscription', 'POST', { action, plan, days, ...(action === 'suspend' ? {} : { modules: selected ? ['hookah'] : [] }) }); await load() }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const field = 'w-full min-w-0 rounded-lg border border-stone-300 bg-white p-2 text-sm'
@@ -81,6 +85,7 @@ export default function Superadmin() {
             <label className="text-sm">{t("Rahbar PIN")}<input className={field} type="password" inputMode="numeric" autoComplete="new-password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} required pattern="[0-9]{4,6}" /></label>
             <label className="text-sm">{t("Tarif")}<select className={field} value={plan} onChange={e => setPlan(e.target.value as 'monthly' | 'yearly')}><option value="monthly">{t("Oylik")}</option><option value="yearly">{t("Yillik")}</option></select></label>
             <label className="text-sm">{t("Obuna davomiyligi, kun")}<input className={field} type="number" min="1" max="730" value={days} onChange={e => setDays(Number(e.target.value))} required /></label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hookah} onChange={e => setHookah(e.target.checked)} />{t('Kalyanxona moduli')}</label>
             <button className="self-end rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>{t("Qahvaxona yaratish")}</button>
           </form>
         </section>
@@ -88,7 +93,7 @@ export default function Superadmin() {
           <h2 className="mb-3 text-lg font-semibold">{t("Qahvaxonalar va litsenziyalar")}</h2>
           <div className="space-y-2">{companies.map(c => <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
             <div className="text-sm"><b>{c.name}</b> <span className="text-stone-500">({c.slug})</span><p className="text-stone-500">{c.subscription ? (t(c.subscription.plan === 'monthly' ? 'Oylik' : 'Yillik') + ' · ' + (c.subscription.status === 'active' ? (t('Faol')) : c.subscription.status === 'suspended' ? t('To‘xtatilgan') : c.subscription.status) + ' · ' + new Date(c.subscription.expiresAt).toLocaleDateString()) : t('Obuna yo‘q')}</p></div>
-            <div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'grant')} disabled={busy}>{t("Berish")}</button><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'renew')} disabled={busy}>{t("Uzaytirish")}</button><button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700" onClick={() => update(c.slug, 'suspend')} disabled={busy || !c.subscription}>{t("To‘xtatish")}</button></div>
+            <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-sm"><input aria-label={t('Kalyanxona moduli') + ' · ' + c.slug} type="checkbox" checked={moduleChoices[c.slug] ?? Boolean(c.subscription?.modules?.includes('hookah'))} onChange={e => setModuleChoices(prev => ({ ...prev, [c.slug]: e.target.checked }))} />{t('Kalyanxona moduli')}</label><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'grant')} disabled={busy}>{t("Berish")}</button><button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => update(c.slug, 'renew')} disabled={busy}>{t("Uzaytirish")}</button><button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700" onClick={() => update(c.slug, 'suspend')} disabled={busy || !c.subscription}>{t("To‘xtatish")}</button></div>
           </div>)}</div>
           <div className="mt-3 flex items-center gap-3"><button disabled={offset === 0} onClick={() => load(Math.max(0, offset-limit))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Oldingi")}</button><span className="text-sm">{offset+1}–{offset+companies.length}</span><button disabled={companies.length < limit} onClick={() => load(offset+limit)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">{t("Keyingi")}</button></div>
         </section>

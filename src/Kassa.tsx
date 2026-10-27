@@ -38,9 +38,9 @@ const restoreParkedItems = (items: ParkedItem[]): OrderItem[] => items.map(i => 
 type BonusSnapshot = { phone: string; name: string; balance: number; enabled: boolean; earnPercent: number; redemptionLimitPercent: number }
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
-export default function Kassa({ onShift }: { onShift: () => void }) {
+export default function Kassa({ onShift, hookah = false }: { onShift: () => void; hookah?: boolean }) {
   const { shift, menuVersion, orders, session } = useAppState()
-  const [cat, setCat] = useState('')
+  const [cat, setCat] = useState(() => hookah ? CATEGORIES.find(c => /kalyan|кальян|hookah/i.test(c.name))?.id ?? '' : '')
   const [note, setNote] = useState('')
   const [actionsOpen, setActionsOpen] = useState(false)
   const [actionFloor, setActionFloor] = useState<FloorData>({ areas: [], tables: [] })
@@ -243,7 +243,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const cartPanel = (
     <Cart
-      onActions={openActions} guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
+      hookah={hookah} onActions={openActions} guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
@@ -254,10 +254,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   if (!shift) return <OpenShift canOpen />
 
   return (
-    <div className="cashier-warm cashier-reference flex h-full min-h-0">
+    <div className={`cashier-warm cashier-reference ${hookah ? 'hookah-cashier' : ''} flex h-full min-h-0`}>
 
 
       <main className="cashier-products flex min-w-0 flex-1 flex-col">
+        {hookah && <div className="border-b bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">{t('Kalyanxona')} · {t('Stollar, mehmonlar va alohida cheklar')}</div>}
         {promotion && <p className="bg-amber-100 p-2 text-sm font-semibold">{t('Happy Hour')}: {promotion.name} · {promotion.percent}% · {t('Chegirmalar qo‘shilmaydi; kattarog‘i olinadi')}</p>}
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
           <div className="flex flex-wrap gap-2">
@@ -375,6 +376,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 }
 
 function Cart(props: {
+  hookah?: boolean
   onActions: () => void
   guest: number; guests: number; setGuest: (n: number) => void; addGuest: () => void
   number: number; cart: OrderItem[]; customer: string; setCustomer: (v: string) => void
@@ -402,7 +404,7 @@ function Cart(props: {
         </div>
       </div>
       <div className="px-4 pt-3">
-        <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder={t('Mijoz ismi (stakan uchun)')}
+        <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder={t(props.hookah ? 'Mijoz ismi' : 'Mijoz ismi (stakan uchun)')}
           className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 outline-none focus:border-amber-500" />
       </div>
       <div className="space-y-2 px-4 pt-2">

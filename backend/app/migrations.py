@@ -175,6 +175,12 @@ def order_actions(engine) -> None:
     add_columns(engine, {name: ["note VARCHAR(500) NOT NULL DEFAULT ''", "guest_count INTEGER NOT NULL DEFAULT 1", "waiter_name VARCHAR(64) NOT NULL DEFAULT ''"] for name in ["orders", "draft_orders"]})
 
 
+def subscription_modules(engine) -> None:
+    add_columns(engine, {"subscriptions": ["modules JSON"]})
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE subscriptions SET modules = '[]' WHERE modules IS NULL"))
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
@@ -185,6 +191,7 @@ MIGRATIONS = [
     (7, "category images", category_images),
     (8, "persistent floor layout", floor_layout),
     (9, "order notes guests and responsibility", order_actions),
+    (10, "licensed optional business modules", subscription_modules),
 ]
 
 

@@ -32,7 +32,7 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   )
 }
 
-export function MenuEditor() {
+export function MenuEditor({ hookah = false }: { hookah?: boolean }) {
   useAppState()
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
   const [catName, setCatName] = useState('')
@@ -45,7 +45,7 @@ export function MenuEditor() {
 
   return (
     <div className="space-y-5">
-      <Section title={t('Mahsulotlar')} action={<button className={`${btn} flex items-center gap-1`} onClick={() => setEditing('new')}><Plus className="size-4" />{t('Yangi mahsulot')}</button>}>
+      <Section title={t(hookah ? 'Kalyan va bar menyusi' : 'Mahsulotlar')} action={<button className={`${btn} flex items-center gap-1`} onClick={() => setEditing('new')}><Plus className="size-4" />{t('Yangi mahsulot')}</button>}>
         <div className="space-y-5">
           {CATEGORIES.map((c) => {
             const list = PRODUCTS.filter((p) => p.cat === c.id)
@@ -90,7 +90,7 @@ export function MenuEditor() {
         </form>
       </Section>
 
-      <Section title={t("Qo'shimchalar narxi")}>
+      {!hookah && <Section title={t("Qo'shimchalar narxi")}>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {MODIFIERS.filter((m) => m.id !== 'milk-regular').map((m) => (
             <label key={m.id} className="flex items-center gap-2 text-sm">
@@ -100,9 +100,9 @@ export function MenuEditor() {
             </label>
           ))}
         </div>
-      </Section>
+      </Section>}
 
-      <Section title={t('Yangi xomashyo')}>
+      <Section title={t(hookah ? 'Tamaki yoki sarf materiali qo‘shish' : 'Yangi xomashyo')}>
         <form className="flex flex-wrap gap-2" onSubmit={(e) => {
           e.preventDefault()
           void run(() => api('/api/ingredients', { body: { name: ing.name, unit: ing.unit, cost: Number(ing.cost) || 0, min: Number(ing.min) || 0 } }))
@@ -116,18 +116,18 @@ export function MenuEditor() {
           <input value={ing.min} onChange={(e) => setIng({ ...ing, min: e.target.value.replace(/\D/g, '') })} placeholder={t('Min qoldiq')} inputMode="numeric" className={`${input} w-28`} />
           <button className={btn}>{t("Qo'shish")}</button>
         </form>
-        <p className="mt-2 text-xs text-stone-500">{t("Narx 1 g, 1 ml yoki 1 dona uchun yoziladi. Masalan: 1 kg kofe 260 000 so'm bo'lsa, 1 g = 260.")}</p>
+        <p className="mt-2 text-xs text-stone-500">{hookah ? t("Narx 1 g yoki 1 dona uchun. Masalan: 100 g tamaki 100 000 so‘m bo‘lsa, 1 g = 1 000 so‘m.") : t("Narx 1 g, 1 ml yoki 1 dona uchun yoziladi. Masalan: 1 kg kofe 260 000 so'm bo'lsa, 1 g = 260.")}</p>
       </Section>
 
       {imageCat && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div role="dialog" aria-modal="true" aria-label={t('Kategoriya rasmi')} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5"><h2 className="font-bold">{t('Kategoriya rasmi')}</h2><ImagePicker value={categoryImage} onChange={setCategoryImage} onBusyChange={setImageBusy} /><div className="flex gap-2"><button disabled={imageBusy} className={btn} onClick={async () => { const c = CATEGORIES.find(x => x.id === imageCat); if (c && await run(() => api(`/api/categories/${encodeURIComponent(c.id)}`, { method: 'PUT', body: { name: c.name, imageUrl: categoryImage.trim() } }))) setImageCat(null) }}>{t('Saqlash')}</button><button onClick={() => setImageCat(null)}>{t('Yopish')}</button></div></div></div>}
-      {editing && <ProductForm product={editing === 'new' ? null : editing} canDelete={role === 'owner' || role === 'admin'} onClose={() => setEditing(null)} />}
+      {editing && <ProductForm hookah={hookah} product={editing === 'new' ? null : editing} canDelete={role === 'owner' || role === 'admin'} onClose={() => setEditing(null)} />}
     </div>
   )
 }
 
 const emptySize = (): Size => ({ code: '-', label: '', price: 0, recipe: [] })
 
-function ProductForm({ product, canDelete, onClose }: { product: Product | null; canDelete: boolean; onClose: () => void }) {
+function ProductForm({ product, canDelete, onClose, hookah = false }: { hookah?: boolean; product: Product | null; canDelete: boolean; onClose: () => void }) {
   const [name, setName] = useState(product?.name ?? '')
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? '')
   const [cat, setCat] = useState(product?.cat ?? CATEGORIES[0]?.id ?? '')
@@ -162,14 +162,14 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
               {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{tCatalogName(c.name)}</option>)}
             </select>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm">
+          {!hookah && <div className="flex flex-wrap gap-4 text-sm">
             {(Object.keys(GROUP_LABEL) as ModGroupId[]).map((g) => (
               <label key={g} className="flex items-center gap-1.5">
                 <input type="checkbox" className="size-4 accent-amber-600" checked={mods.includes(g)} onChange={(e) => setMods((m) => (e.target.checked ? [...m, g] : m.filter((x) => x !== g)))} />
                 {t(GROUP_LABEL[g])}
               </label>
             ))}
-          </div>
+          </div>}
           {sizes.map((s, i) => {
             const cost = recipeCost(s.recipe)
             return (
@@ -207,7 +207,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
 
 interface StaffRow { id: number; name: string; role: Role; active: boolean; canBarista: boolean; canCancelOrders: boolean; canReprintReceipts: boolean }
 
-export function StaffView() {
+export function StaffView({ hookah = false }: { hookah?: boolean }) {
   const me = useAppState().session?.staff
   const [list, setList] = useState<StaffRow[]>([])
   const [form, setForm] = useState({ name: '', role: 'kassir' as Role, pin: '', canBarista: false, canCancelOrders: false, canReprintReceipts: false })
@@ -231,7 +231,7 @@ export function StaffView() {
           <div key={s.id} className="flex flex-wrap items-center gap-3 py-2.5">
             <span className={`min-w-28 flex-1 font-medium ${s.active ? '' : 'text-stone-400 line-through'}`}>{s.name}{s.id === me?.id && <span className="ml-1 text-xs text-stone-400">({t('siz')})</span>}</span>
             <select value={s.role} disabled={s.id === me?.id || (s.role === 'owner' && me?.role !== 'owner')} onChange={(e) => update(s, { role: e.target.value as Role })} className={input}>
-              {(Object.keys(ROLE_LABEL) as Role[]).map((r) => <option key={r} value={r} disabled={!roles.includes(r)}>{t(ROLE_LABEL[r])}</option>)}
+              {(Object.keys(ROLE_LABEL) as Role[]).map((r) => <option key={r} value={r} disabled={!roles.includes(r)}>{t(hookah && r === 'barista' ? 'Kalyanchi' : ROLE_LABEL[r])}</option>)}
             </select>
             {s.role === 'kassir' && <label className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm"><input type="checkbox" checked={s.canBarista} onChange={e => update(s, { canBarista: e.target.checked })}/>{t('Barista vazifasi ham')}</label>}
             {s.role === 'kassir' && <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={s.canCancelOrders} onChange={e => update(s, { canCancelOrders: e.target.checked })}/>{t('Otmena ruxsati')}</label>}
@@ -255,7 +255,7 @@ export function StaffView() {
       }}>
         <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('Ism')} className={`${input} min-w-32 flex-1`} />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} className={input}>
-          {roles.map((r) => <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>)}
+          {roles.map((r) => <option key={r} value={r}>{t(hookah && r === 'barista' ? 'Kalyanchi' : ROLE_LABEL[r])}</option>)}
         </select>
         {form.role === 'kassir' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.canBarista} onChange={e => setForm({ ...form, canBarista: e.target.checked })}/>{t('Barista vazifasi ham')}</label>}
         {form.role === 'kassir' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.canCancelOrders} onChange={e => setForm({ ...form, canCancelOrders: e.target.checked })}/>{t('Otmena ruxsati')}</label>}

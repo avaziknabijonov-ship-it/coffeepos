@@ -151,3 +151,24 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .cashier-reference .cashier-categories::after { display:none; }
 .cashier-reference .cashier-categories button { min-height:110px; }
 .cashier-reference .cashier-checkout { border-left:0; border-right:1px solid #e5cfb7; }
+
+/* Licensed hookah venue: separate lounge accents, shared operational components. */
+.app-hookah .premium-app-header { background:linear-gradient(115deg,#21182d,#111d24) !important; color:#f5efff !important; border-bottom-color:#5f477b !important; }
+.app-hookah .premium-app-header .text-white,.app-hookah .premium-app-header .text-stone-300,.app-hookah .premium-app-brand span:nth-child(2) { color:#f5efff !important; }
+.app-hookah .premium-app-header .admin-return { color:#f5efff !important; background:#342740 !important; border-color:#8f72b0 !important; }
+.app-hookah .premium-app-header .premium-nav-tab { color:#eadfff !important; }
+.app-hookah .premium-app-header .premium-nav-tab.bg-white { background:#61447d !important; color:white !important; border-color:#a78bca !important; }
+.admin-shell.hookah-admin { background:#11131d !important; }
+.admin-shell.hookah-admin > div > aside { background:linear-gradient(160deg,#242034,#151923) !important; border-color:#514665 !important; }
+[data-theme] .admin-shell.hookah-admin nav button[aria-current="page"] { background:linear-gradient(110deg,#61447d,#313953) !important; border-color:#a78bca !important; color:#fff !important; }
+.admin-shell.hookah-admin .premium-titlebar h1 { color:#e0cbff; }
+.hookah-section-heading { padding:20px 24px; border:1px solid #605275; border-radius:18px; background:linear-gradient(110deg,#352742,#1c323c); color:#faf5ff; }
+.hookah-section-heading > span { color:#d7bcff; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; }
+.hookah-section-heading h1 { font-size:25px; font-weight:800; margin:5px 0; }
+.hookah-section-heading p { font-size:13px; color:#d5d1df; }
+.cashier-warm.hookah-cashier { background:#f1eef7; }
+.cashier-warm.hookah-cashier .cashier-categories { background:#efebf5 !important; }
+.cashier-warm.hookah-cashier .cashier-checkout { background:linear-gradient(180deg,#fcfaff,#f0eaf7) !important; border-color:#d6c8e5 !important; }
+.cashier-warm.hookah-cashier .cashier-product-card { border-color:#d6c8e5; }
+.cashier-warm.hookah-cashier .cashier-add-button { background:linear-gradient(110deg,#674586,#3d5469) !important; color:#fff !important; }
+.admin-shell.hookah-admin > div > aside nav span.flex-1 { white-space:normal !important; line-height:1.35; }

@@ -32,6 +32,7 @@ def main():
         env = {**os.environ, 'DATABASE_URL': f'sqlite:///{work}/test.db',
                'SECRET_KEY': uuid4().hex + uuid4().hex, 'SEED_DEMO': '0',
                'ALLOW_PUBLIC_REGISTRATION': '1', 'ENFORCE_LICENSES': '0',
+               'SUPERADMIN_KEY': uuid4().hex + uuid4().hex,
                'UI_BASE_URL': base}
         processes = []
         with open(Path(work) / 'servers.log', 'w+') as log:

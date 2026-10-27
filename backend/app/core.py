@@ -144,3 +144,11 @@ def start_of_day_ms(days_ago: int = 0) -> int:
     return int(d.timestamp() * 1000)
 
 
+
+
+def enabled_modules(db: Session, cid: int) -> list[str]:
+    """Optional modules always require a live license, even when core license enforcement is off."""
+    sub = db.get(Subscription, cid)
+    if sub is None or sub.status != "active" or sub.expires_at <= now_ms():
+        return []
+    return [name for name in (sub.modules or []) if name in {"hookah"}]

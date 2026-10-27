@@ -36,7 +36,7 @@ from .integrations import fiscalize, router as integrations_router, sale_receipt
 from .inventory_ops import refresh_low_stock, router as inventory_router
 from . import stock as branch_stock
 from .core import (
-    BARISTAS, CASHIERS, MANAGERS, TZ, Ctx, Role, auth, get_db, get_row, open_shift, require, rows,
+    enabled_modules, BARISTAS, CASHIERS, MANAGERS, TZ, Ctx, Role, auth, get_db, get_row, open_shift, require, rows,
     start_of_day_ms,
 )
 
@@ -149,13 +149,17 @@ def pin_taken(db: Session, cid: int, pin: str, exclude: int | None = None) -> bo
     return False
 
 
-def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin: str) -> Company:
+def create_company(db: Session, slug: str, name: str, owner_name: str, owner_pin: str, profile: str = "coffee") -> Company:
     company = Company(slug=slug, name=name)
     db.add(company)
     db.flush()
     cid = company.id
     db.add(Branch(company_id=cid, name="Asosiy filial", is_default=True))
     db.add(Staff(company_id=cid, name=owner_name, role="owner", pin_hash=hash_pin(owner_pin)))
+    if profile == "hookah":
+        for i, (key, name) in enumerate([("hookah", "Kalyan"), ("tea", "Choy"), ("cold", "Sovuq ichimliklar"), ("snacks", "Sneklar")]):
+            db.add(Category(company_id=cid, key=key, name=name, sort=i))
+        return company
     for i, (key, cname) in enumerate(seed.CATEGORIES):
         db.add(Category(company_id=cid, key=key, name=cname, sort=i))
     for key, iname, unit, cost, stock, mn in seed.INGREDIENTS:
@@ -203,7 +207,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
     return {
         "token": make_token(db, staff.id, company.id),
         "staff": staff_out(staff),
-        "company": {"slug": company.slug, "name": company.name},
+        "company": {"slug": company.slug, "name": company.name, "modules": enabled_modules(db, company.id)},
     }
 
 
@@ -227,7 +231,7 @@ def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)) 
 
 @app.get("/api/me")
 def me(ctx: Ctx = Depends(auth)) -> dict:
-    return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name},
+    return {"staff": staff_out(ctx.staff), "company": {"slug": ctx.company.slug, "name": ctx.company.name, "modules": enabled_modules(ctx.db, ctx.cid)},
             "branch": {"id": ctx.branch.id, "name": ctx.branch.name} if ctx.branch else None}
 
 
@@ -2341,7 +2345,7 @@ def platform_company(c: Company, subscription: Subscription | None) -> dict:
     return {
         "id": c.id, "slug": c.slug, "name": c.name, "createdAt": c.created_at,
         "subscription": None if subscription is None else {
-            "plan": subscription.plan, "status": subscription.status,
+            "plan": subscription.plan, "status": subscription.status, "modules": subscription.modules or [],
             "expiresAt": subscription.expires_at, "updatedAt": subscription.updated_at
         }
     }
@@ -2359,7 +2363,19 @@ def platform_companies(offset: int = 0, limit: int = 100, db: Session = Depends(
             "offset": offset, "limit": limit}
 
 
+def ensure_hookah_catalog(db: Session, cid: int, modules: list[str]) -> None:
+    if "hookah" not in modules:
+        return
+    categories = rows(db, Category, cid)
+    if not any(re.search(r"kalyan|кальян|hookah", c.name, re.I) for c in categories):
+        category_key = "hookah"
+        if any(c.key == category_key for c in categories):
+            category_key += "-" + secrets.token_hex(3)
+        db.add(Category(company_id=cid, key=category_key, name="Kalyan", sort=max((c.sort for c in categories), default=0) + 1))
+
+
 class PlatformCompanyIn(BaseModel):
+    modules: list[Literal["hookah"]] = Field(default_factory=list, max_length=1)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,40}$")
     name: str = Field(min_length=2, max_length=128)
     owner_name: str = Field(min_length=1, max_length=64)
@@ -2374,15 +2390,17 @@ def platform_create_company(body: PlatformCompanyIn, db: Session = Depends(get_d
     slug = body.slug.strip().lower()
     if db.scalar(select(Company).where(Company.slug == slug)):
         raise HTTPException(409, "Bunday login mavjud")
-    company = create_company(db, slug, body.name.strip(), body.owner_name.strip(), body.owner_pin)
+    company = create_company(db, slug, body.name.strip(), body.owner_name.strip(), body.owner_pin, profile="hookah" if "hookah" in body.modules else "coffee")
     expiry = now_ms() + body.days * 86400000
-    sub = Subscription(company_id=company.id, plan=body.plan, status="active", expires_at=expiry)
+    sub = Subscription(company_id=company.id, plan=body.plan, status="active", expires_at=expiry, modules=body.modules)
     db.add(sub)
+    ensure_hookah_catalog(db, company.id, body.modules)
     db.commit()
     return platform_company(company, sub)
 
 
 class PlatformSubscriptionIn(BaseModel):
+    modules: list[Literal["hookah"]] | None = Field(default=None, max_length=1)
     action: Literal["grant", "renew", "suspend"]
     plan: Literal["monthly", "yearly"] = "monthly"
     days: int = Field(default=30, ge=1, le=730)
@@ -2408,5 +2426,15 @@ def platform_subscription(slug: str, body: PlatformSubscriptionIn,
             db.add(sub)
         else:
             sub.plan, sub.status, sub.expires_at, sub.updated_at = body.plan, "active", expiry, current
+        if body.modules is not None:
+            sub.modules = body.modules
+        ensure_hookah_catalog(db, company.id, sub.modules or [])
     db.commit()
     return platform_company(company, sub)
+
+
+@app.get("/api/modules/hookah")
+def hookah_access(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    if "hookah" not in enabled_modules(ctx.db, ctx.cid):
+        raise HTTPException(403, "Kalyanxona moduli litsenziyada yoqilmagan")
+    return {"module": "hookah", "enabled": True, "branchId": ctx.branch_id}

@@ -2,7 +2,7 @@
 
 Sana: 2026-10-27. Ishchi PR: https://github.com/avaziknabijonov-ship-it/coffeepos/pull/8
 
-**Umumiy dastlabki baho: 24%. To‘liq qabul qilingan: 0/23.**
+**Umumiy dastlabki baho: 26%. To‘liq qabul qilingan: 0/23.**
 Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irlikda. Baho dastlabki kod auditi, chuqur tekshiruvda pasayishi ham mumkin.
 
 Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
@@ -16,7 +16,7 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 3 | Tannarx | 40% | Order snapshot bor; yangi regression testi tekshirilmoqda |
 | 4 | Low stock | 40% | Threshold API/UI va test; filial/dedupe notification yetishmaydi |
 | 5 | P&L | 40% | Finance API/UI; filial va to‘liq reconciliation yetishmaydi |
-| 6 | Audit | 0% | Umumiy append-only audit to‘liq tasdiqlanmagan |
+| 6 | Audit | 40% | Refund/cancel/inventory DB jurnal, API/UI va SQL himoya testlari; global qamrov/filial/staging ochiq |
 | 7 | Fiscal | 20% | Adapter scaffold; provider sandbox yo‘q |
 | 8 | Backup | 20% | Qo‘lda script; encrypted offsite va restore dalili yo‘q |
 | 9 | Draft orders | 40% | Server/API testlari; to‘liq checkout integratsiyasi tekshirilsin |

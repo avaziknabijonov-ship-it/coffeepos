@@ -1059,13 +1059,20 @@ def shift_summary(db: Session, shift: Shift) -> dict:
         Expense.created_at >= shift.opened_at,
         Expense.created_at <= cutoff,
     )))
+    cash_refunded = sum(r.amount for r in db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == shift.company_id,
+        OrderRefund.method == "naqd",
+        OrderRefund.created_at >= shift.opened_at,
+        OrderRefund.created_at <= cutoff,
+    )))
     return {
         "shift": shift_out(shift),
+        "cashRefunds": cash_refunded,
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
         "cashExpenses": cash_spent,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent - cash_refunded,
     }
 
 
@@ -1560,6 +1567,12 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     by_payment: dict[str, int] = {}
     for o in orders:
         add_payment_totals(by_payment, o)
+    refunds = db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == cid, OrderRefund.created_at >= start,
+    )).all()
+    refunds_by_payment: dict[str, int] = {}
+    for refund in refunds:
+        refunds_by_payment[refund.method] = refunds_by_payment.get(refund.method, 0) + refund.amount
 
     daily = []
     for d in range(days - 1, -1, -1):
@@ -1567,24 +1580,27 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
         day_sales = [o for o in orders if lo <= o.created_at < hi]
         day_expenses = sum(e.amount for e in expenses if lo <= e.created_at < hi)
         day_wages = sum(w.amount for w in wages if lo <= w.created_at < hi)
+        day_refunds = sum(r.amount for r in refunds if lo <= r.created_at < hi)
         revenue = sum(o.total for o in day_sales)
         cogs = sum(o.cost for o in day_sales)
         daily.append({
             "day": lo, "orders": len(day_sales), "revenue": revenue,
-            "cogs": cogs, "grossProfit": revenue - cogs,
+            "refunds": day_refunds, "netRevenue": revenue - day_refunds,
+            "cogs": cogs, "grossProfit": revenue - day_refunds - cogs,
             "expenses": day_expenses, "staffPayments": day_wages,
-            "operatingBalance": revenue - cogs - day_expenses - day_wages,
+            "operatingBalance": revenue - day_refunds - cogs - day_expenses - day_wages,
         })
     def total(key: str) -> int:
         return sum(day[key] for day in daily)
     return {
         "days": days, "start": start,
         "orders": total("orders"), "revenue": total("revenue"),
+        "refunds": total("refunds"), "netRevenue": total("netRevenue"),
         "cogs": total("cogs"), "grossProfit": total("grossProfit"),
         "expenses": total("expenses"), "staffPayments": total("staffPayments"),
         "operatingBalance": total("operatingBalance"),
-        "byPayment": by_payment, "daily": daily,
-        "note": "Tax, supplier debts, pending salaries and other liabilities are not included.",
+        "byPayment": by_payment, "refundsByPayment": refunds_by_payment, "daily": daily,
+        "note": "Refunds are recorded manually after external confirmation; stock and COGS are not reversed. Tax, supplier debts, pending salaries and other liabilities are not included.",
     }
 
 

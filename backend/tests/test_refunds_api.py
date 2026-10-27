@@ -44,6 +44,14 @@ def test_refund_limits_and_idempotency():
         assert c.post(url, json={**body, "clientKey": "refund_" + uuid4().hex,
                                  "amount": 3000}, headers=h).status_code == 201
         assert len(c.get(url, headers=h).json()) == 2
+        shift = c.get("/api/shifts/current", headers=h).json()
+        assert shift["cashRefunds"] == 10000
+        assert shift["expectedCash"] == 500000
+        report = c.get("/api/reports/finance?days=1", headers=h).json()
+        assert report["refunds"] == 10000
+        assert report["refundsByPayment"]["naqd"] == 10000
+        assert report["netRevenue"] == report["revenue"] - 10000
+        assert report["daily"][-1]["refunds"] == 10000
         assert c.get(url).status_code == 401
         assert c.get("/api/orders/999999/refunds", headers=h).status_code == 404
 

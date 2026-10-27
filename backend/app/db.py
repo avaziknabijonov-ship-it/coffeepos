@@ -284,3 +284,18 @@ class DraftOrder(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class OrderRefund(Base):
+    """Recorded refunds only: external gateway transfer is never initiated here."""
+    __tablename__ = "order_refunds"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    method: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(256))
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

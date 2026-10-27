@@ -15,6 +15,11 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Elektron chek havolasi": "Ссылка на электронный чек",
+  "Havola 15 daqiqa amal qiladi. Havolasi bor shaxs chekni ochishi mumkin. Fiskal chek emas.": "Ссылка действует 15 минут. Любой обладатель ссылки может открыть чек. Не является фискальным чеком.",
+  "Elektron chekni ochish": "Открыть электронный чек",
+  "Chek havolasi yaroqsiz yoki muddati tugagan": "Ссылка на чек недействительна или истекла",
+
   "Audit filtri noto‘g‘ri": "Неверный фильтр аудита",
   "Buyurtmani bekor qilish": "Отмена заказа",
   "Pul qaytarish": "Возврат средств",

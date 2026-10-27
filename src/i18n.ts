@@ -15,6 +15,13 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Chegirma chegarasi (so‘m, 0 = cheksiz)": "Лимит скидки (сум, 0 = без лимита)",
+  "Faqat joriy filial uchun": "Только для текущего филиала",
+  "Mijoz shaxsiy ma’lumotlari o‘chirilsinmi? Buxgalteriya tarixi saqlanadi, bonus balansi nolga tushadi.": "Удалить персональные данные клиента? Бухгалтерская история сохранится, бонусный баланс обнулится.",
+  "Bonus tarixi": "История бонусов",
+  "Shaxsiy ma’lumotni o‘chirish": "Удалить персональные данные",
+  "Balans": "Баланс",
+  "Balans va tarix mos emas": "Баланс не совпадает с историей",
   "Band": "Занят",
   "Birlashtirish": "Объединить",
   "Bloklangan": "Заблокировано",

@@ -29,6 +29,17 @@ export default function CustomerAnalytics() {
     }
     void load(); return () => { active = false }
   }, [days, revision, cursor])
+  const [ledger, setLedger] = useState<{ customerId: number; balance: number; consistent: boolean; items: { id: number; orderId: number | null; amount: number; reason: string; createdAt: number }[] } | null>(null)
+  const showLedger = async (id: number) => {
+    setBusy(true); setError('')
+    try { setLedger(await api(`/api/customers/${id}/bonus-ledger`)) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const erase = async (customer: Customer) => {
+    if (!confirm(t('Mijoz shaxsiy ma’lumotlari o‘chirilsinmi? Buxgalteriya tarixi saqlanadi, bonus balansi nolga tushadi.'))) return
+    setBusy(true); setError('')
+    try { await api(`/api/customers/${customer.id}`, { method: 'DELETE' }); setCustomers(prev => prev.filter(c => c.id !== customer.id)); setLedger(null); setHistory(null) }
+    catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
   const consent = async (customer: Customer) => {
     if (!customer.analyticsConsent && !window.confirm(t('Mijoz tahlil uchun rozilik berganini tasdiqlaysizmi?'))) return
     setBusy(true); setError(''); setHistory(null)
@@ -59,7 +70,8 @@ export default function CustomerAnalytics() {
       <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{report.cohorts.map(c => <tr key={c.cohort + c.month} className="border-b"><td className="p-2">{c.cohort} / {c.month}</td><td>{c.customers} · {c.orders}</td><td>{som(c.revenue)}</td></tr>)}</tbody></table></div>
     </>}
     <h3 className="font-semibold">{t('Mijoz roziligini boshqarish')}</h3>
-    <div className="space-y-2">{customers.map(c => <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border p-3"><span>#{c.id} · {c.name} · {c.phoneMasked}</span><button disabled={busy} className="rounded border p-2" onClick={() => void consent(c)}>{c.analyticsConsent ? t('Rozilikni bekor qilish') : t('Rozilikni qayd etish')}</button>{c.analyticsConsent && <button disabled={busy} className="rounded border p-2" onClick={() => void purchases(c.id)}>{t('Xaridlar tarixi')}</button>}</div>)}</div>
+    <div className="space-y-2">{customers.map(c => <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border p-3"><span>#{c.id} · {c.name} · {c.phoneMasked}</span><button disabled={busy} className="rounded border p-2" onClick={() => void consent(c)}>{c.analyticsConsent ? t('Rozilikni bekor qilish') : t('Rozilikni qayd etish')}</button>{c.analyticsConsent && <button disabled={busy} className="rounded border p-2" onClick={() => void purchases(c.id)}>{t('Xaridlar tarixi')}</button>}<button disabled={busy} className="rounded border p-2" onClick={() => void showLedger(c.id)}>{t('Bonus tarixi')}</button><button disabled={busy} className="rounded border p-2 text-red-700" onClick={() => void erase(c)}>{t('Shaxsiy ma’lumotni o‘chirish')}</button></div>)}</div>
+    {ledger && <div className="space-y-1 rounded border p-3 text-sm"><h3>#{ledger.customerId} · {t('Bonus tarixi')} · {t('Balans')}: {ledger.balance}{ledger.consistent ? '' : ' · ' + t('Balans va tarix mos emas')}</h3>{ledger.items.map(e => <p key={e.id}>{new Date(e.createdAt).toLocaleString()} · {e.amount > 0 ? '+' : ''}{e.amount} · {e.reason}{e.orderId ? ' · #' + e.orderId : ''}</p>)}</div>}
     <button disabled={busy || !next} className="rounded border p-2 disabled:opacity-50" onClick={() => setCursor(next)}>{t('Oldingi yozuvlar')}</button>
     {history && <div className="space-y-2 rounded border p-3"><h3>#{history.customerId} · {t('Xaridlar tarixi')}</h3>{history.rows.map(p => <p key={p.id}>№{p.number} · {new Date(p.createdAt).toLocaleString()} · {som(p.total)} · {t(STATUS_LABEL[p.status as Status])}</p>)}<button disabled={busy || !history.nextCursor} className="rounded border p-2" onClick={() => void purchases(history.customerId, history.nextCursor ?? undefined)}>{t('Oldingi yozuvlar')}</button></div>}
   </section>

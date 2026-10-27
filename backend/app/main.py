@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +20,7 @@ from .audit import install_guards, record as audit_record
 from .db import (
     Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, engine, now_ms,
 )
+from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -1374,6 +1376,33 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
                 return order_out(duplicate)
         raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
     return order_out(order)
+
+
+@app.post("/api/orders/{oid}/receipt-link")
+def receipt_link(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid))
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    token = make_receipt_token(ctx.db, order)
+    return {"path": "/api/public/receipts/" + token, "expiresIn": RECEIPT_TTL, "fiscal": False}
+
+
+@app.get("/api/public/receipts/{token}", response_class=HTMLResponse)
+def public_receipt(token: str, lang: Literal["uz", "ru"] = "uz", db: Session = Depends(get_db)):
+    claims = read_receipt_token(db, token)
+    if not claims:
+        raise HTTPException(404, "Chek havolasi yaroqsiz yoki muddati tugagan")
+    order = db.scalar(select(Order).where(Order.id == claims["oid"], Order.company_id == claims["cid"]))
+    company = db.get(Company, claims["cid"])
+    if order is None or company is None:
+        raise HTTPException(404, "Chek havolasi yaroqsiz yoki muddati tugagan")
+    refunded = sum(db.scalars(select(OrderRefund.amount).where(
+        OrderRefund.company_id == company.id, OrderRefund.order_id == order.id)))
+    return HTMLResponse(receipt_html(order, company.name, refunded, lang, TZ), headers={
+        "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    })
 
 
 # ---------- manually recorded refunds (no payment gateway action) ----------

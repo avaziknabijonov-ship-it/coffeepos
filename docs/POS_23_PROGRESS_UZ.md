@@ -2,7 +2,7 @@
 
 Sana: 2026-10-27. Ishchi PR: https://github.com/avaziknabijonov-ship-it/coffeepos/pull/8
 
-**Umumiy dastlabki baho: 23%. To‘liq qabul qilingan: 0/23.**
+**Umumiy dastlabki baho: 24%. To‘liq qabul qilingan: 0/23.**
 Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irlikda. Baho dastlabki kod auditi, chuqur tekshiruvda pasayishi ham mumkin.
 
 Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
@@ -24,7 +24,7 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 11 | Stock transfer | 0% | Faqat hisoblash yordamchisi; modul emas |
 | 12 | Inventory variance | 40% | API/UI/test; approval workflow yo‘q |
 | 13 | Cash variance | 40% | Smena balansi/API/UI/test; staging yo‘q |
-| 14 | Staff analytics | 20% | Bazaviy hisobot; refund/role kesimi to‘liq emas |
+| 14 | Staff analytics | 40% | Server API/UI, discount/refund/net, RBAC va tenant test; ism kolliziyasi va staging ochiq |
 | 15 | Telegram director | 0% | Opt-in digest/retry integratsiyasi yo‘q |
 | 16 | Electronic receipt | 20% | Print bor; signed private link yo‘q |
 | 17 | Happy Hour | 20% | Hisoblash yordamchisi; server/UI workflow yo‘q |

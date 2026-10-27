@@ -15,6 +15,12 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Qoralama kaliti boshqa buyurtmaga tegishli": "Ключ черновика относится к другому заказу",
+  "Qoralama kaliti allaqachon mavjud": "Ключ черновика уже существует",
+  "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring": "Черновик изменён на другом устройстве. Обновите и проверьте снова",
+  "Qoralama topilmadi": "Черновик не найден",
+  "Bu filial uchun ruxsat yo'q": "Нет доступа к этому филиалу",
+
   "Chegirma chegarasi (so‘m, 0 = cheksiz)": "Лимит скидки (сум, 0 = без лимита)",
   "Faqat joriy filial uchun": "Только для текущего филиала",
   "Mijoz shaxsiy ma’lumotlari o‘chirilsinmi? Buxgalteriya tarixi saqlanadi, bonus balansi nolga tushadi.": "Удалить персональные данные клиента? Бухгалтерская история сохранится, бонусный баланс обнулится.",

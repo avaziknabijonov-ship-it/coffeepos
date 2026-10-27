@@ -1353,8 +1353,10 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
         DraftOrder.company_id == ctx.cid, DraftOrder.client_key == body.clientKey
     ))
     if existing:
+        if existing.branch_id != ctx.branch_id:
+            raise HTTPException(409, "Qoralama kaliti boshqa buyurtmaga tegishli")
         if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
-            raise HTTPException(409, "Draft clientKey already used with different content")
+            raise HTTPException(409, "Qoralama kaliti boshqa buyurtmaga tegishli")
         return draft_out(existing)
     table = validate_table(ctx, body.tableId, body.service)
     if table is not None and ctx.db.scalar(select(DraftOrder.id).where(
@@ -1369,7 +1371,7 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
         ctx.db.commit()
     except IntegrityError:
         ctx.db.rollback()
-        raise HTTPException(409, "Draft clientKey already exists")
+        raise HTTPException(409, "Qoralama kaliti allaqachon mavjud")
     ctx.db.refresh(draft)
     return draft_out(draft)
 
@@ -1386,13 +1388,13 @@ def update_draft(draft_id: int, body: DraftOrderUpdate,
     if result.rowcount != 1:
         ctx.db.rollback()
         exists = ctx.db.scalar(select(DraftOrder.id).where(
-            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id
         ))
         raise HTTPException(409 if exists else 404,
-                            "Draft changed on another device" if exists else "Draft not found")
+                            "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring" if exists else "Qoralama topilmadi")
     ctx.db.commit()
     draft = ctx.db.scalar(select(DraftOrder).where(
-        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id
     ))
     return draft_out(draft)
 
@@ -1402,17 +1404,17 @@ def delete_draft(draft_id: int, version: int,
                  ctx: Ctx = Depends(require(*CASHIERS))) -> None:
     result = ctx.db.execute(
         delete(DraftOrder).where(
-            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id,
             DraftOrder.version == version
         )
     )
     if result.rowcount != 1:
         ctx.db.rollback()
         exists = ctx.db.scalar(select(DraftOrder.id).where(
-            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id
         ))
         raise HTTPException(409 if exists else 404,
-                            "Draft changed on another device" if exists else "Draft not found")
+                            "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring" if exists else "Qoralama topilmadi")
     ctx.db.commit()
 
 

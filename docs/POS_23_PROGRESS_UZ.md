@@ -96,3 +96,22 @@ Playwright Chromium yuklashida arxiv xatosi bo‘ldi; brauzer UI qayta sinovi
 bajarildi deb hisoblanmaydi. Offline’ning real ikki qurilma sinovi ham ochiq.
 Fiskal/Telegram/offsite/APK va tashqi to‘lov kalitlariga bog‘liq bloklar saqlanadi.
 Production VPS/bazaga tegilmadi, merge/deploy bajarilmadi.
+
+## 2026-10-27: qoralama va filial RBAC tuzatishlari
+
+Davom ettirishda uchta regression avval xato bilan qayta yaratildi:
+boshqa faol filialdan qoralamani o‘chirish 204 qaytargan; shu clientKey bilan
+qoralama yaratish boshqa filialdagi mijoz/tarkib ma’lumotini qaytargan;
+boshqa filial qoralamasini yangilash uning mavjudligini 409 bilan bildirgan.
+
+- DELETE/PATCH va mavjudlik tekshiruvi company + faol branch bilan cheklangan.
+- Boshqa filial clientKey’siga qayta murojaat tafsilotsiz 409 qaytaradi.
+- Filialga biriktirilmagan kassir/barista endi X-Branch-Id orqali istalgan filialni
+  tanlay olmaydi. Default filial va administrator ro‘yxatdan o‘tkazgan qurilmaga
+  biriktirilgan filial ishlaydi; rahbarning filial tanlashi saqlangan.
+- Qoralama va filial ruxsati xatolari uchun UZ/RU matnlari qo‘shilgan.
+
+Dalil: `backend/tests/test_branch_drafts.py` da 4 yangi test, mahalliy backend
+**94 passed / 3 PostgreSQL-only skipped**. Frontend **11/11**, build va i18n
+tekshiruvi o‘tdi. PostgreSQL/staging va migratsiya GitHub CI’da qayta sinaladi.
+Acceptance hali **56%**, bu tuzatishlar real pilot yoki foydalanuvchi qabuli emas.

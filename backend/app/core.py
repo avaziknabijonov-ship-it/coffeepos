@@ -51,7 +51,7 @@ def default_branch(db: Session, cid: int) -> Branch:
     return branch
 
 
-def resolve_branch(db: Session, staff: Staff, requested: str) -> Branch:
+def resolve_branch(db: Session, staff: Staff, requested: str, device_branch_id: int | None = None) -> Branch:
     """Staff bound to a branch always work there; managers may select any active branch."""
     cid = staff.company_id
     if staff.branch_id is not None:
@@ -67,6 +67,8 @@ def resolve_branch(db: Session, staff: Staff, requested: str) -> Branch:
         branch = db.get(Branch, int(requested))
         if branch is None or branch.company_id != cid or not branch.active:
             raise HTTPException(404, "Filial topilmadi")
+        if staff.role not in MANAGERS and branch.id != device_branch_id and branch.id != default_branch(db, cid).id:
+            raise HTTPException(403, "Bu filial uchun ruxsat yo'q")
         return branch
     return default_branch(db, cid)
 
@@ -104,7 +106,8 @@ def auth(db: Session = Depends(get_db), authorization: str = Header(default=""),
         db.commit()
     elif staff.role != "owner" and devices.device_required(db, staff.company_id):
         raise HTTPException(401, "Bu kompaniyada faqat ro‘yxatdan o‘tgan qurilmalar ishlaydi")
-    return Ctx(db, staff, db.get(Company, staff.company_id), resolve_branch(db, staff, requested),
+    branch = resolve_branch(db, staff, requested, device.branch_id if device else None)
+    return Ctx(db, staff, db.get(Company, staff.company_id), branch,
                device.id if device else claims.get("did"))
 
 

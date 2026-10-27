@@ -15,6 +15,25 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Jurnal serverda qayd etilgan amallarni ko‘rsatadi. Eski amallar avtomatik tiklanmaydi.": "Журнал показывает действия, записанные сервером. Старые действия автоматически не восстанавливаются.",
+  "Qurilmalar": "Устройства",
+  "Qurilmani ro‘yxatga olish": "Регистрация устройства",
+  "Qurilma ruxsatini bekor qilish": "Отозвать доступ устройства",
+  "Qurilmalar kirish tartibini o‘zgartirish": "Изменение правил доступа устройств",
+  "Qurilma nomi": "Название устройства",
+  "Bu brauzerni ro‘yxatga olish": "Зарегистрировать этот браузер",
+  "Joriy qurilma": "Текущее устройство",
+  "Oxirgi faollik": "Последняя активность",
+  "Qurilma ruxsati bekor qilingan. Rahbarga murojaat qiling": "Доступ устройства отозван. Обратитесь к руководителю",
+  "Ro‘yxatdan o‘tgan qurilma talab qilinadi": "Требуется зарегистрированное устройство",
+  "Qurilma nomini kiriting": "Укажите название устройства",
+  "Qurilma topilmadi": "Устройство не найдено",
+  "Bu brauzerdagi qurilma bog‘lanishini unutish": "Забыть привязку устройства в этом браузере",
+  "Qurilma bog‘lanishi unutildi. Majburiy tartibda rahbar qayta ro‘yxatga oladi.": "Привязка устройства удалена. При обязательной регистрации руководитель должен зарегистрировать браузер заново.",
+  "Rahbar shu brauzerni ro‘yxatga oladi, so‘ng xodim o‘z PIN kodi bilan kiradi. Ruxsat bekor qilinsa, shu qurilmaga bog‘langan sessiyalar yopiladi.": "Руководитель регистрирует этот браузер, затем сотрудник входит со своим PIN-кодом. При отзыве доступа связанные с устройством сессии закрываются.",
+  "Majburiy tartib kassir va baristaga qo‘llanadi. Rahbar va administrator PIN orqali tiklash uchun kira oladi.": "Обязательная регистрация применяется к кассиру и бариста. Владелец и администратор могут войти по PIN-коду для восстановления доступа.",
+  "Kassir va barista faqat ro‘yxatdan o‘tgan qurilmada ishlasin": "Кассир и бариста работают только на зарегистрированных устройствах",
+
   'Elektron chek havolasini yaratish': 'Создание ссылки на электронный чек',
   'Elektron chek havolalarini bekor qilish': 'Отзыв ссылок на электронный чек',
   'Chekning barcha faol havolalari bekor qilindi': 'Все активные ссылки на чек отозваны',

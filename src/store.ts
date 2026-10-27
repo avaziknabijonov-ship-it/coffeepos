@@ -1,3 +1,4 @@
+import { getDeviceSecret } from './device'
 import { useSyncExternalStore } from 'react'
 import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
 import { setMenu, discountAmount } from './data'
@@ -156,7 +157,7 @@ export async function bootstrap() {
 }
 
 export async function login(company: string, pin: string) {
-  const r = await api<Session & { token: string }>('/api/auth/login', { body: { company, pin } })
+  const r = await api<Session & { token: string }>('/api/auth/login', { body: { company, pin, deviceSecret: getDeviceSecret(company) ?? undefined } })
   setToken(r.token)
   localStorage.setItem('coffeepos-company', r.company.slug)
   await start(r)

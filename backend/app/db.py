@@ -342,3 +342,23 @@ class ReceiptLink(Base):
     expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
     revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Device(Base):
+    """Logical browser/APK enrollment, not a hardware fingerprint."""
+    __tablename__ = 'devices'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    enrolled_by: Mapped[int] = mapped_column(ForeignKey('staff.id'))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    last_seen_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class DevicePolicy(Base):
+    __tablename__ = 'device_policies'
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), primary_key=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)

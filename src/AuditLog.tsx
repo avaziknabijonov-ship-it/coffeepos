@@ -4,7 +4,7 @@ import { t } from './i18n'
 
 type Event = { id: number; actorId: number; actor: string; action: string; entityId: number; before: unknown; after: unknown; createdAt: number }
 type Page = { items: Event[]; nextCursor: number | null }
-const labels: Record<string, string> = { 'receipt.issue': 'Elektron chek havolasini yaratish', 'receipt.revoke': 'Elektron chek havolalarini bekor qilish', 'customer.analytics_consent': 'Mijoz roziligini boshqarish', 'order.refund': 'Pul qaytarish', 'order.cancel': 'Buyurtmani bekor qilish', 'inventory.count': 'Inventarizatsiya' }
+const labels: Record<string, string> = { 'device.enroll': 'Qurilmani ro‘yxatga olish', 'device.revoke': 'Qurilma ruxsatini bekor qilish', 'device.policy': 'Qurilmalar kirish tartibini o‘zgartirish', 'receipt.issue': 'Elektron chek havolasini yaratish', 'receipt.revoke': 'Elektron chek havolalarini bekor qilish', 'customer.analytics_consent': 'Mijoz roziligini boshqarish', 'order.refund': 'Pul qaytarish', 'order.cancel': 'Buyurtmani bekor qilish', 'inventory.count': 'Inventarizatsiya' }
 export default function AuditLog() {
   const [cursor, setCursor] = useState<number | null>(null)
   const [page, setPage] = useState<Page>({ items: [], nextCursor: null })
@@ -26,7 +26,7 @@ export default function AuditLog() {
   }, [cursor, revision])
   return <section className="space-y-4 rounded-2xl border bg-white p-4">
     <h2 className="text-xl font-semibold">{t('Audit jurnali')}</h2>
-    <p className="text-sm text-stone-600">{t('Jurnal refund, otmena va inventarizatsiyani saqlaydi. Eski amallar avtomatik tiklanmaydi.')}</p>
+    <p className="text-sm text-stone-600">{t('Jurnal serverda qayd etilgan amallarni ko‘rsatadi. Eski amallar avtomatik tiklanmaydi.')}</p>
     <button disabled={loading} className="rounded border px-3 py-2" onClick={() => { setCursor(null); setRevision(v => v + 1) }}>{t('Yangilash')}</button>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loading ? <p>{t('Yuklanmoqda…')}</p> : <div className="space-y-3">{page.items.map(e => <article key={e.id} className="rounded-lg border p-3 text-sm">

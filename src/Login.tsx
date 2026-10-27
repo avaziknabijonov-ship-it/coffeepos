@@ -1,3 +1,4 @@
+import { forgetDeviceSecret, getDeviceSecret } from './device'
 import { useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
@@ -69,6 +70,7 @@ function PinLogin() {
           <button onClick={() => setPin((p) => p.slice(0, -1))} aria-label={t("O'chirish")} className="grid h-14 place-items-center rounded-xl text-stone-500"><Delete className="size-6" /></button>
         </div>
       </div>
+      {getDeviceSecret(company) && <button className="text-sm underline" onClick={() => { forgetDeviceSecret(company); setError(t('Qurilma bog‘lanishi unutildi. Majburiy tartibda rahbar qayta ro‘yxatga oladi.')) }}>{t('Bu brauzerdagi qurilma bog‘lanishini unutish')}</button>}
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <button disabled={busy || pin.length < 4} onClick={() => submit()}
         className="w-full rounded-xl bg-amber-600 py-3.5 font-semibold text-white disabled:bg-stone-200 disabled:text-stone-400">

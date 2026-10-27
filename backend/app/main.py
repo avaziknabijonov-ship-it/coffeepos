@@ -1,4 +1,5 @@
 import os
+import hashlib
 import re
 import secrets
 from collections.abc import Iterator
@@ -21,7 +22,7 @@ from .promotions import choose_promotion, discount_amount
 from . import seed
 from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, Device, DevicePolicy, engine, now_ms,
 )
 from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
@@ -141,8 +142,8 @@ def get_db() -> Iterator[Session]:
 
 
 class Ctx:
-    def __init__(self, db: Session, staff: Staff, company: Company):
-        self.db, self.staff, self.company = db, staff, company
+    def __init__(self, db: Session, staff: Staff, company: Company, device: Device | None = None):
+        self.db, self.staff, self.company, self.device = db, staff, company, device
 
     @property
     def cid(self) -> int:
@@ -156,11 +157,20 @@ def auth(db: Session = Depends(get_db), authorization: str = Header(default=""))
     staff = db.get(Staff, int(claims["sub"]))
     if not staff or not staff.active or staff.company_id != claims["cid"]:
         raise HTTPException(401, "Qaytadan kiring")
+    device = db.get(Device, claims['did']) if 'did' in claims else None
+    if 'did' in claims and (device is None or not device.active or device.company_id != staff.company_id):
+        raise HTTPException(401, "Qurilma ruxsati bekor qilingan. Rahbarga murojaat qiling")
+    policy = db.get(DevicePolicy, staff.company_id)
+    if policy and policy.required and staff.role not in MANAGERS and device is None:
+        raise HTTPException(401, "Ro‘yxatdan o‘tgan qurilma talab qilinadi")
+    if device is not None and device.last_seen_at < now_ms() - 60_000:
+        db.execute(update(Device).where(Device.id == device.id, Device.active.is_(True)).values(last_seen_at=now_ms()))
+        db.commit()
     if os.environ.get("ENFORCE_LICENSES", "0") == "1":
         subscription = db.get(Subscription, staff.company_id)
         if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
             raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
+    return Ctx(db, staff, db.get(Company, staff.company_id), device)
 
 
 def require(*roles: str):
@@ -170,6 +180,82 @@ def require(*roles: str):
         return ctx
 
     return dep
+
+
+# ---------- enrolled devices ----------
+
+class DeviceEnrollIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class DevicePolicyIn(BaseModel):
+    required: bool
+
+
+def device_out(device: Device):
+    return {"id": device.id, "name": device.name, "active": device.active,
+            "createdAt": device.created_at, "lastSeenAt": device.last_seen_at,
+            "revokedAt": device.revoked_at}
+
+
+@app.get("/api/devices")
+def list_devices(ctx: Ctx = Depends(require(*MANAGERS))):
+    policy = ctx.db.get(DevicePolicy, ctx.cid)
+    return {"items": [device_out(d) for d in ctx.db.scalars(select(Device).where(
+        Device.company_id == ctx.cid).order_by(Device.id.desc()))],
+        "required": bool(policy and policy.required),
+        "currentDeviceId": ctx.device.id if ctx.device else None}
+
+
+@app.post("/api/devices", status_code=201)
+def enroll_device(body: DeviceEnrollIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Qurilma nomini kiriting")
+    credential = secrets.token_urlsafe(32)
+    device = Device(company_id=ctx.cid, name=name, enrolled_by=ctx.staff.id,
+                    secret_hash=hashlib.sha256(credential.encode()).hexdigest())
+    ctx.db.add(device)
+    ctx.db.flush()
+    audit_record(ctx, "device.enroll", device.id, {}, {"status": "active"})
+    token = make_token(ctx.db, ctx.staff.id, ctx.cid, device.id)
+    ctx.db.commit()
+    # Only this authenticated enrollment response contains the device credential.
+    return {"device": device_out(device), "deviceSecret": credential, "token": token}
+
+
+@app.post("/api/devices/{device_id}/revoke")
+def revoke_device(device_id: int, ctx: Ctx = Depends(require(*MANAGERS))):
+    device = ctx.db.scalar(select(Device).where(
+        Device.id == device_id, Device.company_id == ctx.cid).with_for_update().execution_options(populate_existing=True))
+    if device is None:
+        raise HTTPException(404, "Qurilma topilmadi")
+    if device.active:
+        device.active, device.revoked_at = False, now_ms()
+        audit_record(ctx, "device.revoke", device.id, {"status": "active"}, {"status": "revoked"})
+    ctx.db.commit()
+    return device_out(device)
+
+
+@app.put("/api/devices/policy")
+def set_device_policy(body: DevicePolicyIn, ctx: Ctx = Depends(require("owner"))):
+    # Owners can recover from loss of the last enrolled browser using PIN login.
+    # Cashier/barista tokens, including pre-existing unbound tokens, obey policy.
+    ctx.db.scalar(select(Company).where(Company.id == ctx.cid).with_for_update())
+    policy = ctx.db.scalar(select(DevicePolicy).where(
+        DevicePolicy.company_id == ctx.cid).execution_options(populate_existing=True))
+    before = bool(policy and policy.required)
+    if policy is None:
+        policy = DevicePolicy(company_id=ctx.cid, required=body.required)
+        ctx.db.add(policy)
+    else:
+        policy.required = body.required
+    if before != body.required:
+        audit_record(ctx, "device.policy", ctx.cid,
+                     {"status": "required" if before else "optional"},
+                     {"status": "required" if body.required else "optional"})
+    ctx.db.commit()
+    return {"required": policy.required}
 
 
 # ---------- serializers ----------
@@ -278,6 +364,7 @@ PIN_RE = r"^\d{4,6}$"
 
 
 class LoginIn(BaseModel):
+    deviceSecret: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{32,128}$")
     company: str = Field(min_length=1, max_length=64)
     pin: str = Field(pattern=PIN_RE)
 
@@ -299,9 +386,22 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
     if not staff:
         limiter.fail(key)
         raise HTTPException(401, "Kofe bar yoki PIN noto'g'ri")
+    device = None
+    if body.deviceSecret:
+        device = db.scalar(select(Device).where(
+            Device.company_id == company.id,
+            Device.secret_hash == hashlib.sha256(body.deviceSecret.encode()).hexdigest()))
+        if device is None or not device.active:
+            raise HTTPException(403, "Qurilma ruxsati bekor qilingan. Rahbarga murojaat qiling")
+    policy = db.get(DevicePolicy, company.id)
+    if policy and policy.required and staff.role not in MANAGERS and device is None:
+        raise HTTPException(403, "Ro‘yxatdan o‘tgan qurilma talab qilinadi")
+    if device:
+        device.last_seen_at = now_ms()
+        db.commit()
     limiter.reset(key)
     return {
-        "token": make_token(db, staff.id, company.id),
+        "token": make_token(db, staff.id, company.id, device.id if device else None),
         "staff": staff_out(staff),
         "company": {"slug": company.slug, "name": company.name},
     }

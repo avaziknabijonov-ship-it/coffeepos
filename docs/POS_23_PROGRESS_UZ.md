@@ -2,12 +2,12 @@
 
 Sana: 2026-10-27. Ishchi PR: https://github.com/avaziknabijonov-ship-it/coffeepos/pull/8
 
-**Umumiy dastlabki baho: 30%. To‘liq qabul qilingan: 0/23.**
+**Umumiy dastlabki baho: 31%. To‘liq qabul qilingan: 0/23.**
 Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irlikda. Baho dastlabki kod auditi, chuqur tekshiruvda pasayishi ham mumkin.
 
 Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
 
-Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40471662665 — backend SQLite, PostgreSQL va frontend muvaffaqiyatli. Bu barcha 23 modul uchun staging dalili emas.
+Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/actions/runs/40472194270 — backend SQLite, PostgreSQL va frontend muvaffaqiyatli. Bu barcha 23 modul uchun staging dalili emas.
 
 | № | Modul | Baho | Dalil / ochiq ish |
 |---|---|---:|---|
@@ -31,10 +31,12 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 18 | Customer analytics | 40% | Consent/audit, masked list, gross cohorts/history API/UI/Excel va testlar; retention/deletion/filial/staging ochiq |
 | 19 | Combo | 40% | DB/API/admin/kassa, recipe deduction va cancel ledger testlari; item-return/filial/staging ochiq |
 | 20 | Offline | 20% | Boshlang‘ich queue; ko‘p qurilma/qayta ochish testi yo‘q |
-| 21 | Device management | 0% | Device binding/revoke yo‘q |
+| 21 | Device management | 40% | DB/API/admin, company-bound credentials/JWT, revoke, last-seen, owner policy, UZ/RU, migration/RBAC/tenant testlari; filial, hardware attestation va staging ochiq |
 | 22 | Updates | 20% | Version/update UI bor; staged rollout/rollback yo‘q |
 | 23 | Loyalty | 40% | Ledger/API/UI bor; refund reversal va concurrency to‘liq emas |
 
 Productionga tegilmadi. Foiz faqat yangi dalil yoki bajarilgan qabul mezoni bilan o‘zgartiriladi.
 
 2026-10-27 keyingi tekshiruv: receipt grant/revoke va access log himoyasi uchun 68 backend testi o‘tdi, 3 PostgreSQL-only test mahalliy muhitda skip; Node 2/2, build/i18n o‘tdi. Yangi commit CI natijasi alohida tasdiqlanadi. Umumiy baho 30% saqlanadi.
+
+2026-10-27 qurilmalar: 72 backend testi o‘tdi, 5 PostgreSQL-only test mahalliy skip (2 yangi device race testi). Node 2/2, build/i18n/lint o‘tdi (8 mavjud warning). Device management 0→40; teng og‘irlikdagi o‘rtacha 720/23 = 31.3%, yaxlitlangan baho 31%. Yangi CI kutilmoqda.

@@ -18,16 +18,18 @@ import ReceiptLink from './ReceiptLink'
 import Promotions from './Promotions'
 import CustomerAnalytics from './CustomerAnalytics'
 import Combos from './Combos'
+import DeviceManagement from './DeviceManagement'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'combos' | 'customers' | 'promotions' | 'audit' | 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'devices' | 'combos' | 'customers' | 'promotions' | 'audit' | 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'audit', label: 'Audit jurnali' },
   { id: 'promotions', label: 'Happy Hour' },
   { id: 'customers', label: 'Mijozlar tahlili' },
   { id: 'combos', label: 'Combo mahsulotlar' },
+  { id: 'devices', label: 'Qurilmalar' },
   { id: 'stock', label: 'Ombor' },
   { id: 'receiving', label: 'Prixod' },
   { id: 'inventory', label: 'Inventarizatsiya' },
@@ -43,7 +45,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { combos: ShoppingCart, customers: Users, promotions: Gift, audit: BookOpen, dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { devices: Printer, combos: ShoppingCart, customers: Users, promotions: Gift, audit: BookOpen, dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -92,6 +94,7 @@ export default function Admin() {
           {view === 'promotions' && <Promotions />}
           {view === 'customers' && <CustomerAnalytics />}
           {view === 'combos' && <Combos />}
+          {view === 'devices' && <DeviceManagement />}
           {view === 'payroll' && <Payroll />}
           {view === 'printer' && <PrinterSettings />}
         </main>

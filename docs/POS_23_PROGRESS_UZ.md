@@ -144,3 +144,9 @@ ham butunlay mavjud bo‘lmagan to‘liq tarmoqsiz qayta ochish sinovi emas.
 Ikki brauzer konteksti ikki haqiqiy POS uskuna sinovi degani emas. Barcha
 23 modulning to‘liq UI oqimi, real provider/hardware/staging hali ochiq.
 Acceptance o‘rtacha **56% o‘zgarmaydi**, 0/23 qabul qilingan.
+
+CI brauzer tayyorlash usuli: odatiy Chromium/system package yuklashi cho‘zilgani
+sabab `@sparticuz/chromium@153.0.0` ning aniq versiyasi npm orqali olinadi.
+`scripts/prepare_browser.mjs` paketni egasini o‘zgartirmasdan ajratadi; xuddi shu
+yordamchi va brauzer bilan mahalliy **14/14** test qayta o‘tdi. Playwright 1.62.1
+package-lock bilan biriktirilgan. Bu paket faqat browser CI job’ida o‘rnatiladi.

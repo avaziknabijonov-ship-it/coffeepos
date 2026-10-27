@@ -2,7 +2,7 @@
 
 Sana: 2026-10-27. Ishchi PR: https://github.com/avaziknabijonov-ship-it/coffeepos/pull/8
 
-**Umumiy dastlabki baho: 28%. To‘liq qabul qilingan: 0/23.**
+**Umumiy dastlabki baho: 29%. To‘liq qabul qilingan: 0/23.**
 Bu sarflangan vaqt yoki yakunlash muddatining foizi emas. Modullar teng og‘irlikda. Baho dastlabki kod auditi, chuqur tekshiruvda pasayishi ham mumkin.
 
 Mezon: 0 — ishlaydigan modul dalili yo‘q; 20 — qisman kod/scaffold; 40 — API/UI/testlarning asosiy qismi bor, mezonlar hali ochiq; 60 — barcha ichki integratsiya mezonlari dalil bilan; 80 — staging/hardware tekshirilgan; 100 — foydalanuvchi qabul qilgan. Yordamchi funksiya to‘liq modul hisoblanmaydi.
@@ -28,7 +28,7 @@ Oxirgi tasdiqlangan CI: https://github.com/avaziknabijonov-ship-it/coffeepos/act
 | 15 | Telegram director | 0% | Opt-in digest/retry integratsiyasi yo‘q |
 | 16 | Electronic receipt | 40% | Signed 15-min nonfiscal link/API/UI, privacy va token testlari; QR/revoke/log redaction/staging ochiq |
 | 17 | Happy Hour | 40% | Schedule DB/API/admin/kassa, expectedTotal, snapshot va testlar; filial/staging/offline konflikt yechimi ochiq |
-| 18 | Customer analytics | 20% | Mijoz bazasi; cohort/consent hali yo‘q |
+| 18 | Customer analytics | 40% | Consent/audit, masked list, gross cohorts/history API/UI/Excel va testlar; retention/deletion/filial/staging ochiq |
 | 19 | Combo | 20% | Hisoblash yordamchisi; stock/refund integratsiyasi yo‘q |
 | 20 | Offline | 20% | Boshlang‘ich queue; ko‘p qurilma/qayta ochish testi yo‘q |
 | 21 | Device management | 0% | Device binding/revoke yo‘q |

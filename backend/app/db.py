@@ -235,6 +235,9 @@ class Customer(Base):
     phone: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(64), default="")
     bonus_balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    analytics_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_updated_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    consent_actor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 

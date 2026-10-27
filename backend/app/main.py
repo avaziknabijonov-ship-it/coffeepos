@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, inspect, select, text, update
+from sqlalchemy import delete, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -64,6 +64,14 @@ def migrate() -> None:
     if "image_url" not in product_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
+    customer_columns = {c["name"] for c in inspect(engine).get_columns("customers")}
+    with engine.begin() as conn:
+        if "analytics_consent" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN analytics_consent BOOLEAN NOT NULL DEFAULT FALSE"))
+        if "consent_updated_at" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_updated_at BIGINT"))
+        if "consent_actor_id" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_actor_id INTEGER"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
         if "promotion_snapshot" not in order_columns:
@@ -990,6 +998,100 @@ def bonus_customer_get(phone: str, ctx: Ctx = Depends(require(*CASHIERS))) -> di
             "balance": customer.bonus_balance if customer else 0,
             "enabled": config.enabled, "earnPercent": config.earn_percent,
             "redemptionLimitPercent": config.redemption_limit_percent}
+
+
+def masked_phone(phone: str) -> str:
+    return "***" + phone[-4:]
+
+
+@app.get("/api/customers")
+def customer_list(before_id: int | None = None, limit: int = 50,
+                  ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if not 1 <= limit <= 100 or (before_id is not None and before_id < 1):
+        raise HTTPException(422, "Mijoz filtri noto‘g‘ri")
+    query = select(Customer).where(Customer.company_id == ctx.cid)
+    if before_id is not None:
+        query = query.where(Customer.id < before_id)
+    customers = ctx.db.scalars(query.order_by(Customer.id.desc()).limit(limit + 1)).all()
+    page = customers[:limit]
+    return {"items": [{"id": c.id, "name": c.name, "phoneMasked": masked_phone(c.phone),
+                       "analyticsConsent": c.analytics_consent, "consentUpdatedAt": c.consent_updated_at}
+                      for c in page], "nextCursor": page[-1].id if len(customers) > limit else None}
+
+
+class CustomerConsentIn(BaseModel):
+    granted: bool
+    operatorConfirmed: bool = False
+
+
+@app.put("/api/customers/{customer_id}/analytics-consent")
+def customer_consent(customer_id: int, body: CustomerConsentIn,
+                     ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    customer = ctx.db.scalar(select(Customer).where(
+        Customer.id == customer_id, Customer.company_id == ctx.cid).with_for_update())
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    if body.granted and not body.operatorConfirmed:
+        raise HTTPException(422, "Mijoz roziligi olinganini tasdiqlang")
+    if customer.analytics_consent != body.granted:
+        before = customer.analytics_consent
+        customer.analytics_consent = body.granted
+        customer.consent_updated_at, customer.consent_actor_id = now_ms(), ctx.staff.id
+        audit_record(ctx, "customer.analytics_consent", customer.id,
+                     {"analyticsConsent": before}, {"analyticsConsent": body.granted})
+        ctx.db.commit()
+    return {"id": customer.id, "analyticsConsent": customer.analytics_consent,
+            "consentUpdatedAt": customer.consent_updated_at}
+
+
+@app.get("/api/reports/customers")
+def customer_analytics(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if not 1 <= days <= 92:
+        raise HTTPException(422, "Davr 1-92 kun bo‘lsin")
+    start, end = start_of_day_ms(days - 1), now_ms()
+    # Consent is checked at read time, so revocation immediately excludes history.
+    consenting_count = ctx.db.scalar(select(func.count(Customer.id)).where(
+        Customer.company_id == ctx.cid, Customer.analytics_consent.is_(True)))
+    pairs = ctx.db.execute(select(Order, Customer.created_at).join(Customer, (Order.customer_id == Customer.id) &
+        (Order.company_id == Customer.company_id)).where(
+        Order.company_id == ctx.cid, Customer.analytics_consent.is_(True),
+        Order.status != "cancelled", Order.created_at >= start, Order.created_at <= end)).all()
+    orders = [pair[0] for pair in pairs]
+    visits = {}
+    cohorts = {}
+    for order, customer_created_at in pairs:
+        visits[order.customer_id] = visits.get(order.customer_id, 0) + 1
+        cohort = datetime.fromtimestamp(customer_created_at / 1000, TZ).strftime("%Y-%m")
+        month = datetime.fromtimestamp(order.created_at / 1000, TZ).strftime("%Y-%m")
+        key = (cohort, month)
+        entry = cohorts.setdefault(key, {"customers": set(), "orders": 0, "revenue": 0})
+        entry["customers"].add(order.customer_id)
+        entry["orders"] += 1
+        entry["revenue"] += order.total
+    return {"days": days, "start": start, "end": end, "consentingCustomers": consenting_count,
+            "purchasingCustomers": len(visits), "repeatCustomers": sum(n > 1 for n in visits.values()),
+            "orders": len(orders), "revenue": sum(o.total for o in orders),
+            "cohorts": [{"cohort": key[0], "month": key[1], "customers": len(v["customers"]),
+                         "orders": v["orders"], "revenue": v["revenue"]} for key, v in sorted(cohorts.items())]}
+
+
+@app.get("/api/customers/{customer_id}/purchases")
+def customer_purchases(customer_id: int, before_id: int | None = None,
+                       ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    customer = ctx.db.scalar(select(Customer).where(Customer.id == customer_id, Customer.company_id == ctx.cid))
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    if not customer.analytics_consent:
+        raise HTTPException(403, "Mijoz tahlilga rozilik bermagan")
+    if before_id is not None and before_id < 1:
+        raise HTTPException(422, "Mijoz filtri noto‘g‘ri")
+    query = select(Order).where(Order.company_id == ctx.cid, Order.customer_id == customer.id)
+    if before_id is not None:
+        query = query.where(Order.id < before_id)
+    orders = ctx.db.scalars(query.order_by(Order.id.desc()).limit(51)).all()
+    return {"items": [{"id": str(o.id), "number": o.number, "createdAt": o.created_at,
+                       "total": o.total, "status": o.status} for o in orders[:50]],
+            "nextCursor": orders[49].id if len(orders) > 50 else None}
 
 
 # ---------- staff ----------

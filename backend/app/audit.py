@@ -3,7 +3,7 @@ from sqlalchemy import text
 from .db import AuditEvent
 
 _ALLOWED = {'status', 'amount', 'method', 'orderId', 'shortage', 'surplus', 'lines',
-            'ingredient', 'expected', 'counted', 'difference'}
+            'ingredient', 'expected', 'counted', 'difference', 'analyticsConsent'}
 
 
 def safe_snapshot(value):

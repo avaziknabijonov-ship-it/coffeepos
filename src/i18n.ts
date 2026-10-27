@@ -37,6 +37,7 @@ const RU: Record<string, string> = {
   "Faol filial": "Активный филиал",
   "Filial qo‘shish": "Добавить филиал",
   "Filial": "Филиал",
+  "Versiya": "Версия",
   "Filialga biriktirilmagan": "Не привязано к филиалу",
   "Filiallar va transfer": "Филиалы и перемещения",
   "Filiallararo transfer": "Перемещение между филиалами",

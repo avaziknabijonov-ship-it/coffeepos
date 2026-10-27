@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, engine, now_ms,
 )
-from .payment_rules import PaymentPart, validate_split_payment
+from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
@@ -1360,6 +1360,84 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
                 return order_out(duplicate)
         raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
     return order_out(order)
+
+
+# ---------- manually recorded refunds (no payment gateway action) ----------
+
+class RefundIn(BaseModel):
+    clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+    amount: int = Field(gt=0)
+    method: Literal["naqd", "karta", "payme", "click"]
+    reason: str = Field(min_length=3, max_length=256)
+    externalConfirmed: bool
+
+
+def refund_out(refund: OrderRefund) -> dict:
+    return {
+        "id": refund.id, "orderId": refund.order_id, "clientKey": refund.client_key,
+        "amount": refund.amount, "method": refund.method, "reason": refund.reason,
+        "staff": refund.staff_name, "createdAt": refund.created_at,
+    }
+
+
+@app.get("/api/orders/{oid}/refunds")
+def list_order_refunds(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    order = ctx.db.scalar(select(Order.id).where(Order.id == oid, Order.company_id == ctx.cid))
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    refunds = ctx.db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == oid
+    ).order_by(OrderRefund.id)).all()
+    return [refund_out(r) for r in refunds]
+
+
+@app.post("/api/orders/{oid}/refunds", status_code=201)
+def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Audit an already completed refund. No transfer is initiated by this endpoint.
+
+    Do not restore ingredients here: financial refunds and physical returns are
+    distinct events. Gateway reversals must be verified outside this API.
+    """
+    if not body.externalConfirmed:
+        raise HTTPException(422, "Pul qaytarilgani tashqarida tasdiqlanishi kerak")
+    existing = ctx.db.scalar(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
+    ))
+    if existing:
+        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
+            oid, body.amount, body.method, body.reason.strip()
+        ):
+            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
+        return refund_out(existing)
+    order = ctx.db.scalar(select(Order).where(
+        Order.id == oid, Order.company_id == ctx.cid
+    ).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    if order.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan buyurtma uchun refund mumkin emas")
+    paid = {part["method"]: part["amount"] for part in order_payment_parts(order)}
+    if body.method not in paid:
+        raise HTTPException(422, "Ushbu usul bilan to‘lov olinmagan")
+    refunds = ctx.db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == oid
+    )).all()
+    already = sum(refund.amount for refund in refunds if refund.method == body.method)
+    try:
+        validate_refund(paid=paid[body.method], already_refunded=already, requested=body.amount)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    refund = OrderRefund(company_id=ctx.cid, order_id=oid, client_key=body.clientKey,
+                         amount=body.amount, method=body.method,
+                         reason=body.reason.strip(), staff_name=ctx.staff.name)
+    ctx.db.add(refund)
+    try:
+        ctx.db.commit()
+    except IntegrityError:
+        ctx.db.rollback()
+        raise HTTPException(409, "Qaytarish allaqachon saqlangan; qayta tekshiring")
+    ctx.db.refresh(refund)
+    return refund_out(refund)
 
 
 class CancelOrderIn(BaseModel):

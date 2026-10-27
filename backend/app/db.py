@@ -299,3 +299,17 @@ class OrderRefund(Base):
     reason: Mapped[str] = mapped_column(String(256))
     staff_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class AuditEvent(Base):
+    """Append-only operational audit; sensitive free text is deliberately excluded."""
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(Integer)
+    actor_name: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(48), index=True)
+    entity_id: Mapped[int] = mapped_column(Integer)
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

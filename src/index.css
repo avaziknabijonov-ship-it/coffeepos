@@ -144,3 +144,5 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 }
 
 .app-cashier .premium-app-header .text-white { color: #492614 !important; }
+
+.app-cashier .premium-app-header .admin-return { color: #492614 !important; background: #fffaf3; border-color: #a66d43; }

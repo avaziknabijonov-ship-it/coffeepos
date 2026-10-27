@@ -81,7 +81,7 @@ function Main({ role }: { role: Role }) {
           ))}
         </nav>
         {manager && <button onClick={() => { window.location.hash = inAdmin ? 'kassa' : 'admin' }}
-          className="rounded-lg border border-white/30 px-2 py-2 text-xs font-semibold text-white hover:bg-white/10 sm:px-3">
+          className="admin-return rounded-lg border border-white/30 px-2 py-2 text-xs font-semibold text-white hover:bg-white/10 sm:px-3">
           {inAdmin ? t('Ishchi kassa oynasi') : t('Admin boshqaruviga qaytish')}
         </button>}
         {!online && <span title={t("Server bilan aloqa yo'q")} className="flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs"><WifiOff className="size-4" /><span className="hidden sm:inline">{t("Aloqa yo'q")}</span></span>}

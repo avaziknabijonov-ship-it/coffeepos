@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from helpers import LATTE, new_company, staff_login
 from test_api import app
 
-KEY = "test-platform-key-not-a-secret"
+KEY = "test-superadmin-key-for-release-rollout-0123456789"
 
 
 def test_device_registration_binding_revoke_and_policy():
@@ -55,15 +55,15 @@ def test_offline_sale_rules_and_conflict_queue():
 
 
 def test_release_rollout_rollback_and_min_version(monkeypatch):
-    monkeypatch.setenv("PLATFORM_ADMIN_KEY", KEY)
+    monkeypatch.setenv("SUPERADMIN_KEY", KEY)
     with TestClient(app) as c:
         h, _ = new_company(c, "upd")
-        admin = {"X-Platform-Key": KEY}
+        admin = {"X-Superadmin-Key": KEY}
         platform = "web"
         version = f"9.{uuid4().int % 1000}.0"
         body = {"platform": platform, "version": version, "rolloutPercent": 0, "minSupported": "1.0.0"}
-        assert c.post("/api/platform/releases", json=body).status_code == 403
-        assert c.post("/api/platform/releases", headers={"X-Platform-Key": "x"}, json=body).status_code == 403
+        assert c.post("/api/platform/releases", json=body).status_code == 401
+        assert c.post("/api/platform/releases", headers={"X-Superadmin-Key": "x"}, json=body).status_code == 401
         assert c.post("/api/platform/releases", headers=admin, json={**body, "version": "1.0"}).status_code == 422
         future = c.post("/api/platform/releases", headers=admin, json={
             **body, "version": f"{version[:-1]}5", "minBackend": "99.0.0", "rolloutPercent": 100})

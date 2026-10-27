@@ -114,10 +114,13 @@ def set_policy(body: PolicyIn, ctx: Ctx = Depends(require("owner"))) -> dict:
 
 
 # ---------- releases ----------
-def platform_admin(x_platform_key: str = Header(default="")) -> None:
-    expected = os.environ.get("PLATFORM_ADMIN_KEY", "")
-    if not expected or not hmac.compare_digest(expected, x_platform_key):
-        raise HTTPException(403, "Platforma administratori kaliti noto‘g‘ri")
+def platform_admin(x_superadmin_key: str = Header(default="")) -> None:
+    """Same platform credential as the superadmin console (SUPERADMIN_KEY, >= 40 chars)."""
+    expected = os.environ.get("SUPERADMIN_KEY", "")
+    if len(expected) < 40:
+        raise HTTPException(503, "Superadmin sozlanmagan")
+    if not hmac.compare_digest(expected, x_superadmin_key):
+        raise HTTPException(401, "Superadmin ruxsati yo'q")
 
 
 class ReleaseIn(BaseModel):

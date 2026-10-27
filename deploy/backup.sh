@@ -11,7 +11,7 @@ BACKUP_DIR="${BACKUP_DIR:-$HOME/coffeepos-backups}"
 RETENTION="${BACKUP_RETENTION_DAYS:-14}"
 : "${BACKUP_PASSPHRASE_FILE:?BACKUP_PASSPHRASE_FILE is required (encryption is mandatory)}"
 test -r "$BACKUP_PASSPHRASE_FILE"
-PG_DUMP_CMD="${PG_DUMP_CMD:-docker compose exec -T db pg_dump -U coffeepos coffeepos}"
+PG_DUMP_CMD="${PG_DUMP_CMD:-docker compose exec -T db pg_dump --no-owner --no-privileges -U coffeepos coffeepos}"
 umask 077
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"

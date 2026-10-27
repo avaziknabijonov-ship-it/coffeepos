@@ -18,7 +18,8 @@ const CAT_TINT: Record<string, string> = {
   dessert: 'bg-rose-100 text-rose-800',
 }
 type ParkedItem = { productId: string; size: string; modIds: string[]; qty: number }
-type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number }
+type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number; tableId: number | null; service: 'takeaway' | 'dine_in' }
+type FloorData = { areas: { id: number; name: string; active: boolean }[]; tables: { id: number; areaId: number; name: string; active: boolean; occupied: boolean; drafts: { id: number; staff: string }[] }[] }
 const parkedItems = (items: OrderItem[]): ParkedItem[] => items.map(i => ({
   productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
 }))
@@ -65,6 +66,28 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [activeDraft, setActiveDraft] = useState<ParkedOrder | null>(null)
   const [draftError, setDraftError] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
+  const [floorOpen, setFloorOpen] = useState(false)
+  const [functionsOpen, setFunctionsOpen] = useState(false)
+  const [floor, setFloor] = useState<FloorData>({ areas: [], tables: [] })
+  const [areaId, setAreaId] = useState<number | null>(null)
+  const [selectedTable, setSelectedTable] = useState<{ id: number; name: string } | null>(null)
+  const openFloor = async () => {
+    setDraftError(''); setFloorOpen(true)
+    try { setFloor(await api<FloorData>('/api/floor')) } catch (e) { setDraftError((e as Error).message) }
+  }
+  const selectTable = async (table: FloorData['tables'][number]) => {
+    if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
+    setDraftError('')
+    try {
+      const available = await api<ParkedOrder[]>('/api/drafts')
+      const matches = available.filter(d => d.tableId === table.id)
+      if (matches.length > 1) { setDrafts(matches); setDraftsOpen(true); setFloorOpen(false); return }
+      const draft = matches[0]
+      const items = draft ? restoreParkedItems(draft.items) : []
+      clear(); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
+      setSelectedTable({ id: table.id, name: table.name }); setFloorOpen(false)
+    } catch (e) { setDraftError((e as Error).message) }
+  }
   const loadDrafts = async () => {
     setDraftError('')
     try { setDrafts(await api<ParkedOrder[]>('/api/drafts')); setDraftsOpen(true) }
@@ -77,8 +100,9 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       const body = { items: parkedItems(cart), customer: customer.trim() }
       const saved = activeDraft
         ? await api<ParkedOrder>('/api/drafts/' + activeDraft.id, { method: 'PATCH', body: { ...body, version: activeDraft.version } })
-        : await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { ...body, clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
+        : await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { ...body, tableId: selectedTable?.id ?? null, service: selectedTable ? 'dine_in' : 'takeaway', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
       setActiveDraft(null)
+      setSelectedTable(null)
       clear()
       setDrafts(prev => [saved, ...prev.filter(d => d.id !== saved.id)])
       setCartOpen(false)
@@ -89,7 +113,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
     try {
       const items = restoreParkedItems(draft.items)
-      clear(); setCart(items); setCustomer(draft.customer); setActiveDraft(draft)
+      clear(); setCart(items); setCustomer(draft.customer); setActiveDraft(draft); setSelectedTable(floor.tables.find(tb => tb.id === draft.tableId) ?? null)
       setDraftsOpen(false); setCartOpen(true); setDraftError('')
     } catch (e) { setDraftError((e as Error).message) }
   }
@@ -144,18 +168,19 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
   const confirmPayment = async (payment: Payment, cashGiven?: number, paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]) => {
+    let checkoutDraft = activeDraft
+    if (selectedTable && !checkoutDraft) {
+      checkoutDraft = await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { items: parkedItems(cart), customer: customer.trim(), tableId: selectedTable.id, service: 'dine_in', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
+      setActiveDraft(checkoutDraft)
+    }
     const order = await placeOrder(cart, { customer: customer.trim(), discountPct, expectedTotal: total, automaticDiscount: !!promotion, payment, cashGiven, paymentParts,
-      customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus })
+      customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus, ...(checkoutDraft ? { draftId: checkoutDraft.id, draftVersion: checkoutDraft.version } : {}) })
     setPaying(false)
     setCartOpen(false)
     clear()
     setReceipt(order)
-    if (activeDraft) {
-      const finished = activeDraft
-      setActiveDraft(null)
-      try { await api('/api/drafts/' + finished.id + '?version=' + finished.version, { method: 'DELETE' }) }
-      catch { /* Sale succeeded; stale parked draft can be removed from the list manually. */ }
-    }
+    setActiveDraft(null)
+    setSelectedTable(null)
   }
 
   const loadBonus = async () => {
@@ -169,7 +194,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
-      changeQty={changeQty} clear={() => { clear(); setActiveDraft(null) }} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
+      changeQty={changeQty} clear={() => { clear(); setActiveDraft(null); setSelectedTable(null) }} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )
 
@@ -193,7 +218,10 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       <main className="cashier-products flex min-w-0 flex-1 flex-col">
         {promotion && <p className="bg-amber-100 p-2 text-sm font-semibold">{t('Happy Hour')}: {promotion.name} · {promotion.percent}% · {t('Chegirmalar qo‘shilmaydi; kattarog‘i olinadi')}</p>}
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+          <button onClick={openFloor} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white">{t('Zal xaritasi')}</button>
+          <button onClick={() => setFunctionsOpen(true)} className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold">{t('Funksiyalar')}</button>
+          {selectedTable && <span className="self-center rounded-lg bg-sky-100 px-3 py-2 text-sm font-bold text-sky-900">{t('Stol')}: {selectedTable.name}</span>}
           <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
             <Search className="size-4 text-stone-400" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />
@@ -249,6 +277,20 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       )}
       {cartOpen && <div className="fixed inset-0 z-40 flex bg-white md:hidden">{cartPanel}</div>}
 
+      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
+        <div className="flex items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2><button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button></div>
+        <div className="flex flex-wrap gap-2 border-b p-3"><button onClick={() => setAreaId(null)} className={`rounded-lg px-4 py-2 ${areaId === null ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{t('Barcha zallar')}</button>{floor.areas.filter(a => a.active).map(a => <button key={a.id} onClick={() => setAreaId(a.id)} className={`rounded-lg px-4 py-2 ${areaId === a.id ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{a.name}</button>)}</div>
+        <div className="overflow-y-auto bg-slate-100 p-5"><p className="mb-4 text-sm text-slate-600">{t('Stolni tanlang')} · <span className="text-sky-700">● {t('Band')}</span> · ● {t('Bo‘sh')}</p>{draftError && <p role="alert" className="mb-3 text-red-700">{draftError}</p>}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">{floor.tables.filter(tb => tb.active && (areaId === null || tb.areaId === areaId) && floor.areas.some(a => a.id === tb.areaId && a.active)).map(tb => <button key={tb.id} onClick={() => void selectTable(tb)} className={`min-h-28 rounded-[2.5rem] px-3 py-4 text-center text-white shadow ${tb.occupied ? 'bg-sky-600 hover:bg-sky-700' : 'bg-slate-500 hover:bg-slate-600'}`}><strong className="block text-xl">{tb.name}</strong><span className="text-xs">{tb.occupied ? t('Band') : t('Bo‘sh')}</span>{tb.drafts[0]?.staff && <span className="block text-xs">{tb.drafts[0].staff}</span>}</button>)}</div>
+          {!floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
+        </div></div></div>}
+      {functionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="w-full max-w-xl rounded-2xl bg-white p-5 text-stone-900"><div className="mb-4 flex justify-between"><h2 className="text-xl font-bold">{t('Funksiyalar')}</h2><button onClick={() => setFunctionsOpen(false)} aria-label={t('Yopish')}><X /></button></div><div className="grid gap-3 sm:grid-cols-2">
+        <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); setExpenseOpen(true) }}>{t('Xarajat')}</button>
+        <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); onShift() }}>{t('Smena')}</button>
+        <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); void loadDrafts() }}>{t('Saqlangan buyurtmalar')}</button>
+        {(canCancel || canReprint) && <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); setHistoryOpen(true) }}>{t('Cheklar tarixi')}</button>}
+        {(session?.staff.role === 'admin' || session?.staff.role === 'owner') && <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { window.location.hash = 'admin' }}>{t('Admin')}</button>}
+        </div></div></div>}
       {draftsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl">
         <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Saqlangan buyurtmalar')}</h2><button onClick={() => setDraftsOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div>
         {draftError && <p role="alert" className="mb-3 text-sm text-red-700">{draftError}</p>}

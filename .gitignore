@@ -27,3 +27,4 @@ dist-ssr
 backend/.venv
 *.db
 *.egg-info
+.env.staging

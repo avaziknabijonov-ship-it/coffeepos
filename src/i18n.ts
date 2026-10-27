@@ -15,6 +15,18 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Stol": "Стол",
+  "Qurilmadan rasm tanlash": "Выбрать изображение на устройстве",
+  "Rasm": "Изображение",
+  "Kategoriya rasmi": "Изображение категории",
+  "Rasmni olib tashlash": "Убрать изображение",
+  "Rasm hajmi 3 MB dan oshmasin": "Размер изображения не должен превышать 3 МБ",
+  "Faqat JPG, PNG yoki WebP rasm yuklang": "Загрузите изображение JPG, PNG или WebP",
+  "Rasmlar uchun joy to‘ldi": "Место для изображений заполнено",
+  "Rasm topilmadi": "Изображение не найдено",
+  "Rasm yuklanmadi": "Не удалось загрузить изображение",
+  "Rasm faylini qurilmadan yuklang yoki bevosita rasm havolasini kiriting": "Загрузите файл с устройства или укажите прямую ссылку на изображение",
+  "JPG, PNG yoki WebP. Eng katta hajm: 3 MB. Google ulashish havolasi o‘rniga rasm faylini yuklang.": "JPG, PNG или WebP. Максимум: 3 МБ. Вместо ссылки Google загрузите файл изображения.",
   "Zal xaritasi": "Карта зала",
   "Funksiyalar": "Функции",
   "Barcha zallar": "Все залы",

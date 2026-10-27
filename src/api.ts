@@ -62,3 +62,16 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 // Resolve generated receipt paths against the same API backend as authenticated calls.
 export const publicApiUrl = (path: string) => new URL(`${BASE}${path}`, window.location.origin).href
+
+export async function uploadImage(file: File): Promise<string> {
+  if (file.size > 3 * 1024 * 1024) throw new Error(t('Rasm hajmi 3 MB dan oshmasin'))
+  const token = getToken(), branch = getBranch(), device = localStorage.getItem(DEVICE_KEY)
+  const res = await fetch(`${BASE}/api/images`, { method: 'POST', headers: {
+    'Content-Type': file.type || 'application/octet-stream', 'X-App-Version': APP_VERSION,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branch ? { 'X-Branch-Id': branch } : {}), ...(device ? { 'X-Device-Token': device } : {}),
+  }, body: file })
+  const data = await res.json()
+  if (!res.ok) throw new Error(tServer(typeof data.detail === 'string' ? data.detail : 'Rasm yuklanmadi'))
+  return data.url
+}

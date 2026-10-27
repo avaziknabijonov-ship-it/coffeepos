@@ -78,6 +78,26 @@ async function waitFor(test, label) {
   assert.fail(label)
 }
 try {
+  // Upload through the same picker used by managers for categories and products.
+  const imagePage = await pageFor('uz', 'light')
+  await imagePage.getByRole('button', { name: 'Menyu', exact: true }).click()
+  await imagePage.getByRole('button', { name: 'Rasm', exact: true }).first().click()
+  const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aGxkAAAAASUVORK5CYII=', 'base64')
+  await imagePage.getByLabel('Qurilmadan rasm tanlash', { exact: true }).setInputFiles({ name: 'category.png', mimeType: 'image/png', buffer: picture })
+  await waitFor(async () => (await imagePage.getByRole('textbox', { name: 'Rasm URL (https://...)', exact: true }).inputValue()).startsWith('/api/images/'), 'image uploaded')
+  await imagePage.getByRole('button', { name: 'Saqlash', exact: true }).click()
+  await imagePage.getByRole('dialog').waitFor({ state: 'hidden' })
+  await imagePage.getByRole('button', { name: 'Yangi mahsulot', exact: true }).click()
+  await imagePage.getByLabel('Qurilmadan rasm tanlash', { exact: true }).setInputFiles({ name: 'product.png', mimeType: 'image/png', buffer: picture })
+  await waitFor(async () => (await imagePage.getByRole('textbox', { name: 'Rasm URL (https://...)', exact: true }).inputValue()).startsWith('/api/images/'), 'product image uploaded')
+  await imagePage.getByRole('button', { name: 'Yopish', exact: true }).click()
+  await imagePage.evaluate(() => { location.hash = 'kassa' })
+  await imagePage.locator('.cashier-categories img').first().waitFor()
+  assert.ok(await imagePage.locator('.cashier-categories img').first().evaluate(el => el.complete && el.naturalWidth > 0))
+  await imagePage.reload()
+  await imagePage.locator('.cashier-categories img').first().waitFor()
+  await screenshot(imagePage, 'category-upload')
+  checked.push('category upload persisted through reload; product file picker upload')
   for (const lang of ['uz', 'ru']) for (const theme of ['light', 'dark']) {
     const page = await pageFor(lang, theme)
     assert.equal(await page.locator('html').getAttribute('data-theme'), theme)

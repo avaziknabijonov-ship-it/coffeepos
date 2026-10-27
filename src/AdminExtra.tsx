@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ImagePicker from './ImagePicker'
 import { t, tCatalogName } from './i18n'
 import { Pencil, Plus, Trash2, X, ChevronDown } from 'lucide-react'
 import { CATEGORIES, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, ROLE_LABEL, UNIT_LABEL, fmt, recipeCost, som, time } from './data'
@@ -35,6 +36,9 @@ export function MenuEditor() {
   useAppState()
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
   const [catName, setCatName] = useState('')
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageCat, setImageCat] = useState<string | null>(null)
+  const [categoryImage, setCategoryImage] = useState('')
   const [expandedCats, setExpandedCats] = useState<string[]>([])
   const [ing, setIng] = useState({ name: '', unit: 'g' as Unit, cost: '', min: '' })
   const role = useAppState().session?.staff.role
@@ -52,6 +56,7 @@ export function MenuEditor() {
                     <ChevronDown className={`size-4 ${expandedCats.includes(c.id) ? '' : '-rotate-90'}`} />
                     {tCatalogName(c.name)} <span className="rounded-full bg-stone-100 px-2 text-xs">{list.length}</span>
                   </button>
+                  <button className="rounded-lg border px-2 py-1" onClick={() => { setImageCat(c.id); setCategoryImage(c.imageUrl ?? '') }}>{t('Rasm')}</button>
                   <button aria-label={t('Kategoriya nomini o‘zgartirish')} title={t('Nomini o‘zgartirish')}
                     className="rounded-lg px-2 py-1 text-stone-600 hover:bg-stone-100"
                     onClick={() => {
@@ -114,6 +119,7 @@ export function MenuEditor() {
         <p className="mt-2 text-xs text-stone-500">{t("Narx 1 g, 1 ml yoki 1 dona uchun yoziladi. Masalan: 1 kg kofe 260 000 so'm bo'lsa, 1 g = 260.")}</p>
       </Section>
 
+      {imageCat && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div role="dialog" aria-modal="true" aria-label={t('Kategoriya rasmi')} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5"><h2 className="font-bold">{t('Kategoriya rasmi')}</h2><ImagePicker value={categoryImage} onChange={setCategoryImage} onBusyChange={setImageBusy} /><div className="flex gap-2"><button disabled={imageBusy} className={btn} onClick={async () => { const c = CATEGORIES.find(x => x.id === imageCat); if (c && await run(() => api(`/api/categories/${encodeURIComponent(c.id)}`, { method: 'PUT', body: { name: c.name, imageUrl: categoryImage.trim() } }))) setImageCat(null) }}>{t('Saqlash')}</button><button onClick={() => setImageCat(null)}>{t('Yopish')}</button></div></div></div>}
       {editing && <ProductForm product={editing === 'new' ? null : editing} canDelete={role === 'owner' || role === 'admin'} onClose={() => setEditing(null)} />}
     </div>
   )
@@ -151,8 +157,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
         <div className="space-y-4 overflow-y-auto px-5 py-4">
           <div className="grid gap-2 sm:grid-cols-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nomi')} className={input} />
-            <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder={t('Rasm URL (https://...)')} className={input} maxLength={512} />
-            {imageUrl.startsWith('https://') && <img alt={name} src={imageUrl} className="h-20 w-20 rounded-lg object-cover" />}
+            <ImagePicker value={imageUrl} onChange={setImageUrl} onBusyChange={setBusy} />
             <select value={cat} onChange={(e) => setCat(e.target.value)} className={input}>
               {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{tCatalogName(c.name)}</option>)}
             </select>

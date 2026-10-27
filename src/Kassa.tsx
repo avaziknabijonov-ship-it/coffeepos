@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import CashExpense from './CashExpense'
+import CatalogImage from './CatalogImage'
 import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -204,12 +205,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     <div className="cashier-warm flex h-full min-h-0">
       <aside data-motto={t('Yaxshi qahva — yaxshi kun')} className="cashier-categories hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r border-stone-200 bg-stone-100 p-3 md:flex lg:w-48">
         {CATEGORIES.map((c) => {
-          const Icon = CAT_ICON[c.id] ?? Coffee
           const active = !query && cat === c.id
           return (
             <button key={c.id} onClick={() => { setCat(c.id); setQuery('') }}
               className={`flex items-center gap-3 rounded-xl px-3 py-4 text-left font-medium ${active ? 'bg-stone-900 text-white shadow' : 'bg-white text-stone-700 hover:bg-stone-200'}`}>
-              <Icon className="size-5 shrink-0" />{tCatalogName(c.name)}
+              <CatalogImage src={c.imageUrl} alt={tCatalogName(c.name)} className="size-10 shrink-0 rounded-lg object-cover" />{tCatalogName(c.name)}
             </button>
           )
         })}
@@ -247,7 +247,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             return (
               <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
                 className="cashier-product-card group relative flex min-h-60 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
-                 {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={tCatalogName(p.name)} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
+                 {p.imageUrl ? <CatalogImage src={p.imageUrl} alt={tCatalogName(p.name)} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
                    <span className="cashier-product-fallback mb-2 grid h-36 w-full place-items-center rounded-xl"><span className={`cashier-fallback-icon grid size-16 place-items-center rounded-full ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-9" /></span></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
                 <span>

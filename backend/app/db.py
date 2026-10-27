@@ -86,6 +86,7 @@ class Category(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(64))
+    image_url: Mapped[str] = mapped_column(String(512), default="")
     sort: Mapped[int] = mapped_column(Integer, default=0)
 
 

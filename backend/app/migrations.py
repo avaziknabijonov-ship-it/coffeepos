@@ -163,6 +163,10 @@ def fiscal_status_column(engine) -> None:
     add_columns(engine, {"orders": ["fiscal_status VARCHAR(16)"]})
 
 
+def category_images(engine) -> None:
+    add_columns(engine, {"categories": ["image_url VARCHAR(512) NOT NULL DEFAULT ''"]})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
@@ -170,6 +174,7 @@ MIGRATIONS = [
     (4, "branch inventory approval", inventory_approval),
     (5, "tables, happy hour caps, loyalty restore, customer erasure", experience_columns),
     (6, "order fiscal status", fiscal_status_column),
+    (7, "category images", category_images),
 ]
 
 

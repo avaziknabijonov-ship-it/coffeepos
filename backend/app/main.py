@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .access_logs import install_receipt_access_filter
+from .images import router as images_router, validate_image_url
 from .combos import resolve_combo
 from .promotions import capped_discount, choose_promotion, discount_amount
 from . import seed
@@ -67,6 +68,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="CoffeePOS API", lifespan=lifespan)
+app.include_router(images_router)
 app.include_router(branches_router)
 app.include_router(inventory_router)
 app.include_router(tables_router)
@@ -251,7 +253,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
                 entry["active"] = False
         products_out.append(entry)
     return {
-        "categories": [{"id": c.key, "name": c.name} for c in cats],
+        "categories": [{"id": c.key, "name": c.name, "imageUrl": c.image_url} for c in cats],
         "products": products_out,
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
@@ -283,23 +285,28 @@ def stock_alerts(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
 
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+    imageUrl: str | None = Field(default=None, max_length=512)
 
 
 @app.post("/api/categories")
 def add_category(body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    validate_image_url(ctx, body.imageUrl or "")
     sort = len(rows(ctx.db, Category, ctx.cid))
-    cat = Category(company_id=ctx.cid, key=slugify(body.name), name=body.name.strip(), sort=sort)
+    cat = Category(company_id=ctx.cid, key=slugify(body.name), name=body.name.strip(), sort=sort, image_url=body.imageUrl or "")
     ctx.db.add(cat)
     ctx.db.commit()
-    return {"id": cat.key, "name": cat.name}
+    return {"id": cat.key, "name": cat.name, "imageUrl": cat.image_url}
 
 
 @app.put("/api/categories/{key}")
 def rename_category(key: str, body: CategoryIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     cat = get_row(ctx.db, Category, ctx.cid, key)
+    if body.imageUrl is not None:
+        validate_image_url(ctx, body.imageUrl)
+        cat.image_url = body.imageUrl
     cat.name = body.name.strip()
     ctx.db.commit()
-    return {"id": cat.key, "name": cat.name}
+    return {"id": cat.key, "name": cat.name, "imageUrl": cat.image_url}
 
 
 @app.delete("/api/categories/{key}")
@@ -335,8 +342,7 @@ class ProductIn(BaseModel):
 
 
 def validate_product(ctx: Ctx, body: ProductIn) -> None:
-    if body.imageUrl and not (body.imageUrl.startswith("https://") or body.imageUrl.startswith("/assets/")):
-        raise HTTPException(422, "Rasm uchun HTTPS yoki ichki /assets/ manzilini kiriting")
+    validate_image_url(ctx, body.imageUrl)
     get_row(ctx.db, Category, ctx.cid, body.cat)
     ing_keys = {i.key for i in rows(ctx.db, Ingredient, ctx.cid)}
     codes = [s.code for s in body.sizes]

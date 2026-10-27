@@ -21,7 +21,7 @@ const CAT_TINT: Record<string, string> = {
   dessert: 'bg-rose-100 text-rose-800',
 }
 type ParkedItem = { guest?: number; productId: string; size: string; modIds: string[]; qty: number }
-type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number; tableId: number | null; service: 'takeaway' | 'dine_in' }
+type ParkedOrder = { note?: string; guestCount?: number; waiter?: string; id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number; tableId: number | null; service: 'takeaway' | 'dine_in' }
 type FloorData = { areas: { id: number; name: string; active: boolean }[]; tables: { id: number; areaId: number; name: string; active: boolean; occupied: boolean; layout?: TableLayout | null; layoutVersion?: number; drafts: { id: number; staff: string }[] }[] }
 const parkedItems = (items: OrderItem[]): ParkedItem[] => items.map(i => ({
   productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, guest: i.guest ?? 1,
@@ -41,6 +41,10 @@ const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 export default function Kassa({ onShift }: { onShift: () => void }) {
   const { shift, menuVersion, orders, session } = useAppState()
   const [cat, setCat] = useState('')
+  const [note, setNote] = useState('')
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [actionFloor, setActionFloor] = useState<FloorData>({ areas: [], tables: [] })
+  const [actionStaff, setActionStaff] = useState<{ id: number; name: string }[]>([])
   const [guest, setGuest] = useState(1)
   const [guests, setGuests] = useState(1)
   const [query, setQuery] = useState('')
@@ -96,7 +100,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       if (matches.length > 1) { setDrafts(matches); setDraftsOpen(true); setFloorOpen(false); return }
       const draft = matches[0]
       const items = draft ? restoreParkedItems(draft.items) : []
-      clear(); setGuests(Math.max(1, ...items.map(i => i.guest ?? 1))); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
+      clear(); setGuests(Math.max(draft?.guestCount ?? 1, ...items.map(i => i.guest ?? 1))); setNote(draft?.note ?? ''); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
       setSelectedTable({ id: table.id, name: table.name }); setFloorOpen(false)
     } catch (e) { setDraftError((e as Error).message) }
   }
@@ -105,27 +109,61 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     try { setDrafts(await api<ParkedOrder[]>('/api/drafts')); setDraftsOpen(true) }
     catch (e) { setDraftError((e as Error).message); setDraftsOpen(true) }
   }
+  const persistDraft = async () => {
+    const body = { items: parkedItems(cart), customer: customer.trim(), note, guestCount: guests }
+    const saved = activeDraft
+      ? await api<ParkedOrder>('/api/drafts/' + activeDraft.id, { method: 'PATCH', body: { ...body, version: activeDraft.version } })
+      : await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { ...body, tableId: selectedTable?.id ?? null, service: selectedTable ? 'dine_in' : 'takeaway', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
+    setActiveDraft(saved)
+    return saved
+  }
   const saveDraft = async () => {
     if (!cart.length || draftBusy) return
     setDraftBusy(true); setDraftError('')
     try {
-      const body = { items: parkedItems(cart), customer: customer.trim() }
-      const saved = activeDraft
-        ? await api<ParkedOrder>('/api/drafts/' + activeDraft.id, { method: 'PATCH', body: { ...body, version: activeDraft.version } })
-        : await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { ...body, tableId: selectedTable?.id ?? null, service: selectedTable ? 'dine_in' : 'takeaway', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
-      setActiveDraft(null)
-      setSelectedTable(null)
-      clear()
+      const saved = await persistDraft()
+      setActiveDraft(null); setSelectedTable(null); clear()
       setDrafts(prev => [saved, ...prev.filter(d => d.id !== saved.id)])
       setCartOpen(false)
     } catch (e) { setDraftError((e as Error).message) }
     finally { setDraftBusy(false) }
   }
+  const draftAction = async (action: string, body: object) => {
+    if (!cart.length || draftBusy) return
+    setDraftBusy(true); setDraftError('')
+    try {
+      const saved = await persistDraft()
+      await api(`/api/drafts/${saved.id}/${action}`, { body: { ...body, version: saved.version } })
+      const updated = (await api<ParkedOrder[]>('/api/drafts')).find(d => d.id === saved.id)
+      if (!updated) throw new Error(t('Qoralama topilmadi'))
+      setActiveDraft(updated); setCart(restoreParkedItems(updated.items))
+      if (action === 'move') { setSelectedTable(actionFloor.tables.find(tb => tb.id === updated.tableId) ?? null) }
+      setActionsOpen(false)
+      if (action === 'split') { setDrafts(await api<ParkedOrder[]>('/api/drafts')); setDraftsOpen(true) }
+    } catch (e) { setDraftError((e as Error).message) }
+    finally { setDraftBusy(false) }
+  }
+  const clearOrder = async () => {
+    if (draftBusy || !window.confirm(t('Buyurtma tozalansinmi?'))) return
+    setDraftBusy(true); setDraftError('')
+    try {
+      if (activeDraft) await api('/api/drafts/' + activeDraft.id + '?version=' + activeDraft.version, { method: 'DELETE' })
+      clear(); setActiveDraft(null); setSelectedTable(null); setActionsOpen(false)
+    } catch (e) { setDraftError((e as Error).message) }
+    finally { setDraftBusy(false) }
+  }
+  const openActions = async () => {
+    setActionsOpen(true); setDraftError('')
+    try {
+      const latestFloor = await api<FloorData>('/api/floor'); setActionFloor(latestFloor); setFloor(latestFloor)
+      if (session?.staff.role === 'owner' || session?.staff.role === 'admin') setActionStaff(await api<{ id: number; name: string }[]>('/api/staff'))
+    } catch (e) { setDraftError((e as Error).message) }
+  }
   const resumeDraft = (draft: ParkedOrder) => {
     if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
     try {
       const items = restoreParkedItems(draft.items)
-      clear(); setGuests(Math.max(1, ...items.map(i => i.guest ?? 1))); setCart(items); setCustomer(draft.customer); setActiveDraft(draft); setSelectedTable(floor.tables.find(tb => tb.id === draft.tableId) ?? null)
+      clear(); setGuests(Math.max(draft?.guestCount ?? 1, ...items.map(i => i.guest ?? 1))); setNote(draft?.note ?? ''); setCart(items); setCustomer(draft.customer); setActiveDraft(draft); setSelectedTable(floor.tables.find(tb => tb.id === draft.tableId) ?? null)
       setDraftsOpen(false); setCartOpen(true); setDraftError('')
     } catch (e) { setDraftError((e as Error).message) }
   }
@@ -172,7 +210,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     setCart((c) => c.map((x) => (x.key === key ? { ...x, qty: x.qty + d } : x)).filter((x) => x.qty > 0))
   const clear = () => {
     setCart([])
-    setGuest(1); setGuests(1)
+    setGuest(1); setGuests(1); setNote('')
     setCustomer('')
     setDiscountPct(0)
     setCustomerPhone('')
@@ -185,10 +223,10 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const confirmPayment = async (payment: Payment, cashGiven?: number, paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]) => {
     let checkoutDraft = activeDraft
     if (selectedTable && !checkoutDraft) {
-      checkoutDraft = await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { items: parkedItems(cart), customer: customer.trim(), tableId: selectedTable.id, service: 'dine_in', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
+      checkoutDraft = await api<ParkedOrder>('/api/drafts', { method: 'POST', body: { items: parkedItems(cart), customer: customer.trim(), note, guestCount: guests, tableId: selectedTable.id, service: 'dine_in', clientKey: 'park_' + crypto.randomUUID().replace(/-/g, '') } })
       setActiveDraft(checkoutDraft)
     }
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, expectedTotal: total, automaticDiscount: !!promotion, payment, cashGiven, paymentParts,
+    const order = await placeOrder(cart, { customer: customer.trim(), note, guestCount: guests, discountPct, expectedTotal: total, automaticDiscount: !!promotion, payment, cashGiven, paymentParts,
       customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus, ...(checkoutDraft ? { draftId: checkoutDraft.id, draftVersion: checkoutDraft.version } : {}) })
     setPaying(false)
     setCartOpen(false)
@@ -205,11 +243,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const cartPanel = (
     <Cart
-      guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
+      onActions={openActions} guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
-      changeQty={changeQty} clear={() => { clear(); setActiveDraft(null); setSelectedTable(null) }} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
+      changeQty={changeQty} clear={clearOrder} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )
 
@@ -300,6 +338,16 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
           {floor.areas.filter(a => a.active && (areaId === null || a.id === areaId)).map(a => <section key={a.id} className="mb-4"><h3 className="mb-2 font-semibold">{a.name}</h3><FloorMap tables={floor.tables.filter(tb => tb.active && tb.areaId === a.id)} onSelect={tb => { const table = floor.tables.find(x => x.id === tb.id); if (table) void selectTable(table) }} /></section>)}
           {!floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
         </div></div></div>}
+      {actionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div role="dialog" aria-modal="true" aria-label={t('Chek amallari')} className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl bg-white p-5 text-stone-900"><div className="flex items-center justify-between"><h2 className="text-xl font-bold">{t('Chek amallari')}</h2><button onClick={() => setActionsOpen(false)} aria-label={t('Yopish')}><X /></button></div>
+        <label className="block text-sm font-semibold">{t('Chekka izoh')}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label>
+        <label className="block text-sm font-semibold">{t('Mehmonlar soni')}<input aria-label={t('Mehmonlar soni')} type="number" min={Math.max(1, ...cart.map(i => i.guest ?? 1))} max={50} value={guests} onChange={e => { const n = Math.max(1, ...cart.map(i => i.guest ?? 1), Math.min(50, Number(e.target.value) || 1)); setGuests(n); setGuest(g => Math.min(g, n)) }} className="ml-3 w-24 rounded-lg border p-2" /></label>
+        <label className="block text-sm font-semibold">{t('Stolni almashtirish')}<select aria-label={t('Stolni almashtirish')} disabled={draftBusy || !cart.length} value="" onChange={e => void draftAction('move', e.target.value === 'takeaway' ? { tableId: null, service: 'takeaway' } : { tableId: Number(e.target.value), service: 'dine_in' })} className="mt-1 w-full rounded-lg border p-3"><option value="">{t('Tanlang')}</option><option value="takeaway">{t('Olib ketish')}</option>{actionFloor.tables.filter(tb => tb.active && !tb.occupied).map(tb => <option key={tb.id} value={tb.id}>{tb.name}</option>)}</select></label>
+        <button disabled={draftBusy || new Set(cart.map(i => i.guest ?? 1)).size < 2} onClick={() => void draftAction('split', { guest })} className="w-full rounded-lg border p-3 text-left font-semibold disabled:opacity-40">{t('Chekni ajratish')} · {t('Mehmon')} {guest}</button>
+        {actionStaff.length > 0 && <label className="block text-sm font-semibold">{t('Mas’ul xodimni almashtirish')}<select aria-label={t('Mas’ul xodimni almashtirish')} disabled={draftBusy || !cart.length} value="" onChange={e => void draftAction('assign', { staffId: Number(e.target.value) })} className="mt-1 w-full rounded-lg border p-3"><option value="">{t('Tanlang')}</option>{actionStaff.map(staff => <option key={staff.id} value={staff.id}>{staff.name}</option>)}</select></label>}
+        <button disabled={draftBusy} onClick={clearOrder} className="w-full rounded-lg border border-red-300 p-3 text-left font-semibold text-red-700">{t('Buyurtmani tozalash')}</button>
+        {draftError && <p role="alert" className="text-sm text-red-700">{draftError}</p>}
+        <button onClick={() => setActionsOpen(false)} className="w-full rounded-lg bg-sky-700 p-3 font-bold text-white">{t('Tayyor')}</button>
+      </div></div>}
       {functionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="w-full max-w-xl rounded-2xl bg-white p-5 text-stone-900"><div className="mb-4 flex justify-between"><h2 className="text-xl font-bold">{t('Funksiyalar')}</h2><button onClick={() => setFunctionsOpen(false)} aria-label={t('Yopish')}><X /></button></div><div className="grid gap-3 sm:grid-cols-2">
         <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); setExpenseOpen(true) }}>{t('Xarajat')}</button>
         <button className="rounded-xl border p-4 text-left font-semibold" onClick={() => { setFunctionsOpen(false); onShift() }}>{t('Smena')}</button>
@@ -312,7 +360,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
         {draftError && <p role="alert" className="mb-3 text-sm text-red-700">{draftError}</p>}
         {!drafts.length && <p className="text-sm text-stone-500">{t('Saqlangan buyurtmalar yo‘q')}</p>}
         <div className="space-y-2">{drafts.map(d => <div key={d.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3">
-          <div className="min-w-0 flex-1"><b>{d.customer || t('Mijoz')}</b><div className="text-xs text-stone-500">{d.items.length} · {new Date(d.updatedAt).toLocaleString()}</div></div>
+          <div className="min-w-0 flex-1"><b>#{d.id} · {d.customer || t('Mijoz')}</b><div className="text-xs text-sky-700">{t('Mehmon')}: {[...new Set(d.items.map(i => i.guest ?? 1))].join(', ')}{d.waiter ? ' · ' + d.waiter : ''}</div><div className="text-xs text-stone-500">{d.items.length} · {new Date(d.updatedAt).toLocaleString()}</div></div>
           <button onClick={() => resumeDraft(d)} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">{t('Davom ettirish')}</button>
           <button disabled={draftBusy} onClick={() => removeDraft(d)} className="rounded-lg border px-3 py-2 text-sm text-red-700 disabled:opacity-40">{t('O‘chirish')}</button>
         </div>)}</div>
@@ -327,6 +375,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
 }
 
 function Cart(props: {
+  onActions: () => void
   guest: number; guests: number; setGuest: (n: number) => void; addGuest: () => void
   number: number; cart: OrderItem[]; customer: string; setCustomer: (v: string) => void
   customerPhone: string; setCustomerPhone: (v: string) => void
@@ -417,6 +466,7 @@ function Cart(props: {
           <button onClick={props.onDrafts} className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold">{t('Saqlangan buyurtmalar')}</button>
           <button disabled={!cart.length || props.draftBusy} onClick={props.onSave} className="flex-1 rounded-xl border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-800 disabled:opacity-40">{t('Saqlab qo‘yish')}</button>
         </div>
+        <button onClick={props.onActions} className="w-full rounded-xl border px-3 py-2 text-sm font-bold">⋯ {t('Chek amallari')}</button>
         <button disabled={cart.length === 0} onClick={props.onPay}
           className="flex w-full items-center justify-between rounded-2xl bg-amber-600 px-5 py-4 text-lg font-bold text-white shadow hover:bg-amber-700 disabled:bg-stone-300">
           <span>{t("To'lov")}</span><span>{som(props.total)}</span>
@@ -642,6 +692,8 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
           <div className="text-center font-bold">{company}</div>
           {order.pendingSync && <div className="my-2 border-2 border-dashed border-amber-700 p-2 text-center font-bold">{t('OFFLINE — SERVER TASDIQLAMAGAN. FISKAL CHEK EMAS.')}</div>}
           <div className="text-center text-stone-500">{new Date(order.createdAt).toLocaleDateString('ru-RU')} {time(order.createdAt)} · #{order.number}</div>
+          {order.note && <div className="mt-1">{t('Chekka izoh')}: {order.note}</div>}
+          {order.waiter && <div>{t('Mas’ul xodim')}: {order.waiter}</div>}
           {order.customer && <div className="mt-1 text-center">{t('Mijoz')}: {order.customer}</div>}
           <div className="my-2 border-t border-dashed border-stone-300" />
           {order.items.map((it) => (

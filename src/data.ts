@@ -20,7 +20,7 @@ export interface OrderItem {
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
 }
 export interface Order {
-  id: string; number: number; customer: string; items: OrderItem[]
+  note?: string; guestCount?: number; waiter?: string; id: string; number: number; customer: string; items: OrderItem[]
   subtotal: number; discount: number; total: number; cost: number
   payment: Payment; paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
 }

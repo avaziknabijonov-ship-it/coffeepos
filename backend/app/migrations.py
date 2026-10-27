@@ -171,6 +171,10 @@ def floor_layout(engine) -> None:
     add_columns(engine, {"dining_tables": ["layout JSON", "layout_version INTEGER NOT NULL DEFAULT 1"]})
 
 
+def order_actions(engine) -> None:
+    add_columns(engine, {name: ["note VARCHAR(500) NOT NULL DEFAULT ''", "guest_count INTEGER NOT NULL DEFAULT 1", "waiter_name VARCHAR(64) NOT NULL DEFAULT ''"] for name in ["orders", "draft_orders"]})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
@@ -180,6 +184,7 @@ MIGRATIONS = [
     (6, "order fiscal status", fiscal_status_column),
     (7, "category images", category_images),
     (8, "persistent floor layout", floor_layout),
+    (9, "order notes guests and responsibility", order_actions),
 ]
 
 

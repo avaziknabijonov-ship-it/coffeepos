@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .audit import record as audit_record
 from .core import CASHIERS, MANAGERS, Ctx, require
-from .db import DiningArea, DiningTable, DraftOrder, now_ms
+from .db import DiningArea, DiningTable, DraftOrder, Staff, now_ms
 
 router = APIRouter()
 Service = Literal["takeaway", "dine_in"]
@@ -208,3 +208,50 @@ def update_layout(table_id: int, body: LayoutIn, ctx: Ctx = Depends(require(*MAN
     audit_record(ctx, "table.layout", table.id, {}, layout)
     ctx.db.commit()
     return {"layout": layout, "layoutVersion": body.version + 1}
+
+
+class SplitIn(BaseModel):
+    version: int = Field(ge=1)
+    guest: int = Field(ge=1, le=50)
+
+
+@router.post("/api/drafts/{draft_id}/split", status_code=201)
+def split_draft(draft_id: int, body: SplitIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    draft = locked_draft(ctx, draft_id, body.version)
+    selected = [i for i in draft.items if i.get("guest", 1) == body.guest]
+    remaining = [i for i in draft.items if i.get("guest", 1) != body.guest]
+    if not selected or not remaining:
+        raise HTTPException(422, "Ajratish uchun kamida ikki mehmon buyurtmasi kerak")
+    result = ctx.db.execute(update(DraftOrder).where(DraftOrder.id == draft.id, DraftOrder.version == body.version).values(items=remaining, version=body.version + 1, updated_at=now_ms()))
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        raise HTTPException(409, "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring")
+    import secrets
+    other = DraftOrder(company_id=ctx.cid, branch_id=ctx.branch_id, client_key=secrets.token_hex(16), items=selected,
+                       customer=draft.customer, note=draft.note, guest_count=draft.guest_count, waiter_name=draft.waiter_name,
+                       table_id=draft.table_id, service=draft.service, staff_name=draft.staff_name)
+    ctx.db.add(other)
+    ctx.db.flush()
+    audit_record(ctx, "draft.split", draft.id, {}, {"id": other.id, "version": body.version + 1})
+    ctx.db.commit()
+    return {"sourceId": draft.id, "id": other.id}
+
+
+class ReassignIn(BaseModel):
+    version: int = Field(ge=1)
+    staffId: int
+
+
+@router.post("/api/drafts/{draft_id}/assign")
+def assign_draft(draft_id: int, body: ReassignIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    draft = locked_draft(ctx, draft_id, body.version)
+    staff = ctx.db.get(Staff, body.staffId)
+    if staff is None or staff.company_id != ctx.cid or not staff.active or (staff.branch_id is not None and staff.branch_id != ctx.branch_id):
+        raise HTTPException(404, "Xodim topilmadi")
+    result = ctx.db.execute(update(DraftOrder).where(DraftOrder.id == draft.id, DraftOrder.version == body.version).values(waiter_name=staff.name, version=body.version + 1, updated_at=now_ms()))
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        raise HTTPException(409, "Qoralama boshqa qurilmada o‘zgargan. Yangilab qayta tekshiring")
+    audit_record(ctx, "draft.assign", draft.id, {}, {"id": staff.id})
+    ctx.db.commit()
+    return {"id": draft.id, "waiter": staff.name, "version": body.version + 1}

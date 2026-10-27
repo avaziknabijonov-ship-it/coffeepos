@@ -15,6 +15,10 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Chek amallari": "Действия с чеком", "Chekka izoh": "Комментарий к чеку", "Mehmonlar soni": "Количество гостей",
+  "Stolni almashtirish": "Сменить стол", "Chekni ajratish": "Разделить чек", "Mas’ul xodimni almashtirish": "Сменить ответственного сотрудника",
+  "Buyurtmani tozalash": "Очистить заказ", "Buyurtma tozalansinmi?": "Очистить заказ?", "Mas’ul xodim": "Ответственный сотрудник",
+  "Ajratish uchun kamida ikki mehmon buyurtmasi kerak": "Для разделения нужны заказы как минимум двух гостей",
   "Mehmon": "Гость", "Mehmon qo‘shish": "Добавить гостя", "Barcha kategoriyalar": "Все категории",
   "Xaritada stolni tanlab, shakli va joylashuvini sozlang": "Выберите стол на карте, чтобы настроить форму и расположение",
   "Shakl": "Форма", "Dumaloq": "Круглый", "To‘rtburchak": "Прямоугольный", "Bar": "Бар", "VIP": "VIP",

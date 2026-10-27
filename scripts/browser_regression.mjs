@@ -144,6 +144,22 @@ try {
   await guestPage.locator('.cashier-checkout').getByRole('button', { name: 'Mehmon 2', exact: true }).waitFor()
   await screenshot(guestPage, 'guest-order-cashier')
   checked.push('two guests add same product separately, parked draft restores guest labels')
+  await guestPage.getByRole('button', { name: '⋯ Chek amallari', exact: true }).click()
+  await guestPage.getByRole('textbox', { name: 'Chekka izoh', exact: true }).fill('UI order note')
+  await guestPage.getByRole('spinbutton', { name: 'Mehmonlar soni', exact: true }).fill('4')
+  await screenshot(guestPage, 'order-actions-menu')
+  const staffSelect = guestPage.getByRole('combobox', { name: 'Mas’ul xodimni almashtirish', exact: true })
+  await waitFor(async () => (await staffSelect.locator('option').count()) > 1, 'staff choices loaded')
+  await staffSelect.selectOption(await staffSelect.locator('option').nth(1).getAttribute('value'))
+  await guestPage.getByRole('dialog').waitFor({ state: 'hidden' })
+  await guestPage.getByRole('button', { name: '⋯ Chek amallari', exact: true }).click()
+  await guestPage.getByRole('button', { name: 'Chekni ajratish · Mehmon 1', exact: true }).click()
+  await waitFor(async () => {
+    const drafts = await (await http.get('/api/drafts', { headers })).json()
+    return drafts.filter(d => d.note === 'UI order note').length === 2
+  }, 'split saved both drafts with metadata')
+  checked.push('order actions: note, guest count, assignment and guest split persisted')
+
   for (const lang of ['uz', 'ru']) for (const theme of ['light', 'dark']) {
     const page = await pageFor(lang, theme)
     assert.equal(await page.locator('html').getAttribute('data-theme'), theme)

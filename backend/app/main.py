@@ -103,7 +103,7 @@ def add_payment_totals(by_payment: dict[str, int], order: Order) -> None:
 
 def order_out(o: Order) -> dict:
     return {
-        "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
+        "note": o.note, "guestCount": o.guest_count, "waiter": o.waiter_name, "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "paymentParts": order_payment_parts(o), "cashGiven": o.cash_given, "status": o.status,
         "promotion": o.promotion_snapshot, "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
@@ -1131,7 +1131,7 @@ def customer_purchases(customer_id: int, before_id: int | None = None,
     if before_id is not None:
         query = query.where(Order.id < before_id)
     orders = ctx.db.scalars(query.order_by(Order.id.desc()).limit(51)).all()
-    return {"items": [{"id": str(o.id), "number": o.number, "createdAt": o.created_at,
+    return {"items": [{"note": o.note, "guestCount": o.guest_count, "waiter": o.waiter_name, "id": str(o.id), "number": o.number, "createdAt": o.created_at,
                        "total": o.total, "status": o.status} for o in orders[:50]],
             "nextCursor": orders[49].id if len(orders) > 50 else None}
 
@@ -1300,6 +1300,8 @@ class PaymentPartIn(BaseModel):
 
 
 class OrderIn(BaseModel):
+    note: str = Field(default="", max_length=500)
+    guestCount: int = Field(default=1, ge=1, le=50)
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
     discountPct: int = Field(default=0, ge=0, le=50)
@@ -1326,6 +1328,8 @@ def draft_table_name(db: Session, draft: DraftOrder | None) -> str | None:
 
 
 class DraftOrderIn(BaseModel):
+    note: str = Field(default="", max_length=500)
+    guestCount: int = Field(default=1, ge=1, le=50)
     clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
@@ -1334,6 +1338,8 @@ class DraftOrderIn(BaseModel):
 
 
 class DraftOrderUpdate(BaseModel):
+    note: str = Field(default="", max_length=500)
+    guestCount: int = Field(default=1, ge=1, le=50)
     version: int = Field(ge=1)
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
@@ -1341,7 +1347,7 @@ class DraftOrderUpdate(BaseModel):
 
 def draft_out(draft: DraftOrder) -> dict:
     return {"id": draft.id, "clientKey": draft.client_key, "items": draft.items,
-            "customer": draft.customer, "staff": draft.staff_name,
+            "customer": draft.customer, "staff": draft.staff_name, "note": draft.note, "guestCount": draft.guest_count, "waiter": draft.waiter_name,
             "version": draft.version, "createdAt": draft.created_at,
             "updatedAt": draft.updated_at, "tableId": draft.table_id, "service": draft.service or "takeaway"}
 
@@ -1362,7 +1368,7 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
     if existing:
         if existing.branch_id != ctx.branch_id:
             raise HTTPException(409, "Qoralama kaliti boshqa buyurtmaga tegishli")
-        if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
+        if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer or existing.note != body.note or existing.guest_count != max(body.guestCount, max(i.guest for i in body.items)):
             raise HTTPException(409, "Qoralama kaliti boshqa buyurtmaga tegishli")
         return draft_out(existing)
     table = validate_table(ctx, body.tableId, body.service)
@@ -1371,7 +1377,7 @@ def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> 
         raise HTTPException(409, "Stol band")
     draft = DraftOrder(company_id=ctx.cid, branch_id=ctx.branch_id, client_key=body.clientKey,
                        items=[item.model_dump() for item in body.items],
-                       customer=body.customer, staff_name=ctx.staff.name,
+                       customer=body.customer, note=body.note, guest_count=max(body.guestCount, max(i.guest for i in body.items)), staff_name=ctx.staff.name,
                        table_id=table.id if table else None, service=body.service)
     ctx.db.add(draft)
     try:
@@ -1390,7 +1396,7 @@ def update_draft(draft_id: int, body: DraftOrderUpdate,
         DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid, DraftOrder.branch_id == ctx.branch_id,
         DraftOrder.version == body.version
     ).values(items=[item.model_dump() for item in body.items],
-             customer=body.customer, version=body.version + 1,
+             customer=body.customer, note=body.note, guest_count=max(body.guestCount, max(i.guest for i in body.items)), version=body.version + 1,
              updated_at=now_ms()))
     if result.rowcount != 1:
         ctx.db.rollback()
@@ -1620,6 +1626,7 @@ def checkout(body: OrderIn, ctx: Ctx) -> dict:
     order = Order(
         company_id=cid, shift_id=shift.id, branch_id=shift.branch_id, staff_id=ctx.staff.id,
         number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
+        note=body.note, guest_count=max(body.guestCount, max(i.guest for i in body.items)), waiter_name=draft.waiter_name if draft else "",
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         client_key=body.clientKey,
         promotion_snapshot={"id": promotion.id, "name": promotion.name, "percent": promotion.percent,

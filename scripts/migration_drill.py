@@ -71,7 +71,7 @@ with TestClient(app) as c:
     with engine.connect() as db:
         q = lambda sql: db.execute(text(sql)).all()
         cid = q("SELECT id FROM companies WHERE slug = '%(slug)s'")[0][0]
-        check("schema_migrations 1-8 recorded", sorted(r[0] for r in q("SELECT version FROM schema_migrations")) == [1, 2, 3, 4, 5, 6, 7, 8])
+        check("schema_migrations 1-9 recorded", sorted(r[0] for r in q("SELECT version FROM schema_migrations")) == [1, 2, 3, 4, 5, 6, 7, 8, 9])
         check("default branch created", q(f"SELECT COUNT(*) FROM branches WHERE company_id = {cid} AND is_default = TRUE")[0][0] == 1)
         check("orders backfilled to branch", q(f"SELECT COUNT(*) FROM orders WHERE company_id = {cid} AND branch_id IS NULL")[0][0] == 0)
         check("shifts/expenses/stock moves backfilled", sum(q(f"SELECT COUNT(*) FROM {t} WHERE company_id = {cid} AND branch_id IS NULL")[0][0]

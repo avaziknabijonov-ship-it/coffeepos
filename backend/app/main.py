@@ -1569,6 +1569,53 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     return out
 
 # ---------- management financial snapshot ----------
+@app.get("/api/reports/staff")
+def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Historical name snapshots; refunds attributed to the original seller by refund date."""
+    if to_ms <= from_ms or to_ms - from_ms > 366 * 86400000:
+        raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
+    db, cid = ctx.db, ctx.cid
+    orders = db.scalars(select(Order).where(
+        Order.company_id == cid, Order.created_at >= from_ms, Order.created_at < to_ms
+    )).all()
+    result = {}
+    shifts = {}
+
+    def row(name):
+        if name not in result:
+            result[name] = {"name": name, "count": 0, "revenue": 0, "discounts": 0,
+                            "refunds": 0, "netRevenue": 0, "voidCount": 0, "voidSum": 0,
+                            "processedRefunds": 0, "byPayment": {}, "refundsByPayment": {}}
+            shifts[name] = set()
+        return result[name]
+
+    for order in orders:
+        item = row(order.staff_name)
+        shifts[order.staff_name].add(order.shift_id)
+        if order.status == "cancelled":
+            item["voidCount"] += 1
+            item["voidSum"] += order.total
+        else:
+            item["count"] += 1
+            item["revenue"] += order.total
+            item["discounts"] += order.discount
+            add_payment_totals(item["byPayment"], order)
+    # Join once, including sales outside the report period; never expose other tenants.
+    refunds = db.execute(select(OrderRefund, Order.staff_name).join(
+        Order, (Order.id == OrderRefund.order_id) & (Order.company_id == OrderRefund.company_id)
+    ).where(OrderRefund.company_id == cid, OrderRefund.created_at >= from_ms,
+            OrderRefund.created_at < to_ms)).all()
+    for refund, seller in refunds:
+        item = row(seller)
+        item["refunds"] += refund.amount
+        item["refundsByPayment"][refund.method] = item["refundsByPayment"].get(refund.method, 0) + refund.amount
+        row(refund.staff_name)["processedRefunds"] += refund.amount
+    for name, item in result.items():
+        item["netRevenue"] = item["revenue"] - item["refunds"]
+        item["shifts"] = len(shifts[name])
+    return {"from": from_ms, "to": to_ms, "rows": sorted(result.values(), key=lambda r: r["name"])}
+
+
 @app.get("/api/reports/finance")
 def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     """Cash-accounting approximation, not formal net profit or tax reporting."""

@@ -3,7 +3,6 @@ import { t, tCatalogName } from './i18n'
 import { exportExcel } from './exportExcel'
 import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
-import type { Payment } from './data'
 import { api } from './api'
 import { startOfToday, useAppState, sync, refreshMenu } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
@@ -43,7 +42,7 @@ export default function Admin() {
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
   const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
-  const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
+  const low = INGREDIENTS.filter((i) => i.min > 0 && (stock[i.id] ?? 0) <= i.min)
 
   return (
     <div className="admin-shell h-full overflow-y-auto bg-stone-50">
@@ -66,7 +65,7 @@ export default function Admin() {
           </nav>
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
-          {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
+          {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => ({ name: i.name, stock: stock[i.id] ?? 0, min: i.min, unit: i.unit }))} goStock={() => setView('stock')} />}
           {view === 'stock' && <StockOverview />}
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
@@ -109,7 +108,7 @@ function StockOverview() {
       <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th><th>{t('Amallar')}</th></tr></thead>
       <tbody>{INGREDIENTS.map(i => <tr key={i.id} className="border-t">
         <td className="py-2 font-medium">{tCatalogName(i.name)}</td><td>{t(UNIT_LABEL[i.unit])}</td>
-        <td className={(stock[i.id] ?? 0) < i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
+        <td className={i.min > 0 && (stock[i.id] ?? 0) <= i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
         <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td><td><button type="button" title={t('Mahsulotni o‘chirish')} aria-label={t('Mahsulotni o‘chirish')} disabled={removing !== null || Math.abs(stock[i.id] ?? 0) > 0.000001} onClick={() => void remove(i.id, i.name)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-30">{t('O‘chirish')}</button></td>
       </tr>)}</tbody>
     </table></div>
@@ -129,7 +128,7 @@ function Card({ title, children, className = '' }: { title?: string; children: R
   )
 }
 
-function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goStock: () => void }) {
+function Dashboard({ today, low, goStock }: { today: Orders; low: { name: string; stock: number; min: number; unit: string }[]; goStock: () => void }) {
   const active = today.filter(o => o.status !== 'cancelled' && !o.pendingSync)
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
@@ -160,7 +159,11 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
     }, {}),
   ).sort((a, b) => b.qty - a.qty).slice(0, 6)
 
-  const payments = (Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => ({ p, sum: active.filter((o) => o.payment === p).reduce((s, o) => s + o.total, 0) }))
+  const payments = (['naqd', 'karta', 'payme', 'click'] as const).map((p) => ({
+    p, sum: active.reduce((s, o) => s + (o.paymentParts
+      ? o.paymentParts.filter(part => part.method === p).reduce((v, part) => v + part.amount, 0)
+      : o.payment === p ? o.total : 0), 0),
+  }))
 
   return (
     <div className="premium-dashboard space-y-5">
@@ -168,7 +171,7 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
-          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.map(tCatalogName).join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
+          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.map(i => `${tCatalogName(i.name)} (${fmt(i.stock)}/${fmt(i.min)} ${t(i.unit)})`).join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
         </button>
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

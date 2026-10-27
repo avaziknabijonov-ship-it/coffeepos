@@ -136,6 +136,7 @@ class Order(Base):
     total: Mapped[int] = mapped_column(BigInteger)
     cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
+    payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
     cancelled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -268,3 +269,33 @@ class PayrollPlan(Base):
     deductions: Mapped[int] = mapped_column(BigInteger, default=0)
     note: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class DraftOrder(Base):
+    """Parked cart; never counted as a sale and never reserves stock."""
+    __tablename__ = "draft_orders"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    customer: Mapped[str] = mapped_column(String(64), default="")
+    staff_name: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class OrderRefund(Base):
+    """Recorded refunds only: external gateway transfer is never initiated here."""
+    __tablename__ = "order_refunds"
+    __table_args__ = (UniqueConstraint("company_id", "client_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(64))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    method: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(256))
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

@@ -10,14 +10,15 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, select, text
+from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, engine, now_ms,
 )
+from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
@@ -61,6 +62,8 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
+        if "payment_parts" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN payment_parts JSON"))
         if "cancelled_at" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN cancelled_at BIGINT"))
         if "cancelled_by" not in order_columns:
@@ -154,11 +157,21 @@ def staff_out(s: Staff) -> dict:
     return {"id": s.id, "name": s.name, "role": s.role, "active": s.active, "canBarista": bool(s.can_barista), "canCancelOrders": bool(s.can_cancel_orders), "canReprintReceipts": bool(s.can_reprint_receipts)}
 
 
+def order_payment_parts(order: Order) -> list[dict]:
+    """Legacy orders remain readable as one full-amount tender."""
+    return order.payment_parts or [{"method": order.payment, "amount": order.total}]
+
+
+def add_payment_totals(by_payment: dict[str, int], order: Order) -> None:
+    for part in order_payment_parts(order):
+        by_payment[part["method"]] = by_payment.get(part["method"], 0) + part["amount"]
+
+
 def order_out(o: Order) -> dict:
     return {
         "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
-        "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
+        "payment": o.payment, "paymentParts": order_payment_parts(o), "cashGiven": o.cash_given, "status": o.status,
         "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
@@ -310,6 +323,25 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
     }
+
+
+@app.get("/api/stock/alerts")
+def stock_alerts(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Current company-only low stock; min=0 disables alerts for an ingredient."""
+    items = []
+    for ingredient in rows(ctx.db, Ingredient, ctx.cid):
+        if ingredient.min <= 0 or ingredient.stock > ingredient.min:
+            continue
+        items.append({
+            "id": ingredient.key,
+            "name": ingredient.name,
+            "unit": ingredient.unit,
+            "stock": ingredient.stock,
+            "min": ingredient.min,
+            "shortfall": round(max(0.0, ingredient.min - ingredient.stock), 6),
+        })
+    items.sort(key=lambda item: (-item["shortfall"], item["name"], item["id"]))
+    return {"count": len(items), "items": items}
 
 
 class CategoryIn(BaseModel):
@@ -1018,7 +1050,7 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     orders = db.scalars(select(Order).where(Order.shift_id == shift.id, Order.status != "cancelled")).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        add_payment_totals(by_payment, o)
     # Cash expenses reduce the physically expected register balance.
     cutoff = shift.closed_at if shift.closed_at is not None else now_ms()
     cash_spent = sum(row.amount for row in db.scalars(select(Expense).where(
@@ -1027,13 +1059,20 @@ def shift_summary(db: Session, shift: Shift) -> dict:
         Expense.created_at >= shift.opened_at,
         Expense.created_at <= cutoff,
     )))
+    cash_refunded = sum(r.amount for r in db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == shift.company_id,
+        OrderRefund.method == "naqd",
+        OrderRefund.created_at >= shift.opened_at,
+        OrderRefund.created_at <= cutoff,
+    )))
     return {
         "shift": shift_out(shift),
+        "cashRefunds": cash_refunded,
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
         "cashExpenses": cash_spent,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent - cash_refunded,
     }
 
 
@@ -1080,15 +1119,114 @@ class OrderItemIn(BaseModel):
     qty: int = 1
 
 
+class PaymentPartIn(BaseModel):
+    method: Literal["naqd", "karta", "payme", "click"]
+    amount: int = Field(gt=0)
+
+
 class OrderIn(BaseModel):
     items: list[OrderItemIn] = Field(min_length=1, max_length=50)
     customer: str = Field(default="", max_length=64)
     discountPct: int = Field(default=0, ge=0, le=50)
-    payment: Literal["naqd", "karta", "payme", "click"]
+    payment: Literal["naqd", "karta", "payme", "click", "split"]
+    paymentParts: list[PaymentPartIn] | None = Field(default=None, max_length=4)
     cashGiven: int | None = Field(default=None, ge=0)
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+
+
+# ---------- parked orders (no payment, no stock deduction) ----------
+
+class DraftOrderIn(BaseModel):
+    clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+    items: list[OrderItemIn] = Field(min_length=1, max_length=50)
+    customer: str = Field(default="", max_length=64)
+
+
+class DraftOrderUpdate(BaseModel):
+    version: int = Field(ge=1)
+    items: list[OrderItemIn] = Field(min_length=1, max_length=50)
+    customer: str = Field(default="", max_length=64)
+
+
+def draft_out(draft: DraftOrder) -> dict:
+    return {"id": draft.id, "clientKey": draft.client_key, "items": draft.items,
+            "customer": draft.customer, "staff": draft.staff_name,
+            "version": draft.version, "createdAt": draft.created_at,
+            "updatedAt": draft.updated_at}
+
+
+@app.get("/api/drafts")
+def list_drafts(ctx: Ctx = Depends(require(*CASHIERS))) -> list[dict]:
+    drafts = ctx.db.scalars(select(DraftOrder).where(
+        DraftOrder.company_id == ctx.cid
+    ).order_by(DraftOrder.updated_at.desc()).limit(100)).all()
+    return [draft_out(d) for d in drafts]
+
+
+@app.post("/api/drafts", status_code=201)
+def create_draft(body: DraftOrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    existing = ctx.db.scalar(select(DraftOrder).where(
+        DraftOrder.company_id == ctx.cid, DraftOrder.client_key == body.clientKey
+    ))
+    if existing:
+        if existing.items != [item.model_dump() for item in body.items] or existing.customer != body.customer:
+            raise HTTPException(409, "Draft clientKey already used with different content")
+        return draft_out(existing)
+    draft = DraftOrder(company_id=ctx.cid, client_key=body.clientKey,
+                       items=[item.model_dump() for item in body.items],
+                       customer=body.customer, staff_name=ctx.staff.name)
+    ctx.db.add(draft)
+    try:
+        ctx.db.commit()
+    except IntegrityError:
+        ctx.db.rollback()
+        raise HTTPException(409, "Draft clientKey already exists")
+    ctx.db.refresh(draft)
+    return draft_out(draft)
+
+
+@app.patch("/api/drafts/{draft_id}")
+def update_draft(draft_id: int, body: DraftOrderUpdate,
+                 ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    result = ctx.db.execute(update(DraftOrder).where(
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+        DraftOrder.version == body.version
+    ).values(items=[item.model_dump() for item in body.items],
+             customer=body.customer, version=body.version + 1,
+             updated_at=now_ms()))
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        exists = ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+        ))
+        raise HTTPException(409 if exists else 404,
+                            "Draft changed on another device" if exists else "Draft not found")
+    ctx.db.commit()
+    draft = ctx.db.scalar(select(DraftOrder).where(
+        DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+    ))
+    return draft_out(draft)
+
+
+@app.delete("/api/drafts/{draft_id}", status_code=204)
+def delete_draft(draft_id: int, version: int,
+                 ctx: Ctx = Depends(require(*CASHIERS))) -> None:
+    result = ctx.db.execute(
+        delete(DraftOrder).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid,
+            DraftOrder.version == version
+        )
+    )
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        exists = ctx.db.scalar(select(DraftOrder.id).where(
+            DraftOrder.id == draft_id, DraftOrder.company_id == ctx.cid
+        ))
+        raise HTTPException(409 if exists else 404,
+                            "Draft changed on another device" if exists else "Draft not found")
+    ctx.db.commit()
 
 
 @app.get("/api/orders/history")
@@ -1169,7 +1307,23 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             raise HTTPException(409, "Bonus tizimi o'chirilgan")
     elif body.bonusRedeem:
         raise HTTPException(422, "Bonus ishlatish uchun mijoz telefoni kerak")
-    if body.payment == "naqd" and body.cashGiven is not None and body.cashGiven < total:
+    if body.payment == "split":
+        if body.paymentParts is None or len(body.paymentParts) < 2:
+            raise HTTPException(422, "Bo‘lingan to‘lov uchun kamida 2 usul kerak")
+        methods = [p.method for p in body.paymentParts]
+        if len(set(methods)) != len(methods):
+            raise HTTPException(422, "To‘lov usullari takrorlanmasin")
+        parts = [PaymentPart(method=p.method, amount=p.amount) for p in body.paymentParts]
+        try:
+            validate_split_payment(total, parts)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        if body.paymentParts is not None:
+            raise HTTPException(422, "Oddiy to‘lovda paymentParts bo‘lmasin")
+        parts = [PaymentPart(method=body.payment, amount=total)]
+    cash_amount = next((p.amount for p in parts if p.method == "naqd"), 0)
+    if body.cashGiven is not None and (cash_amount == 0 or body.cashGiven < cash_amount):
         raise HTTPException(400, "Berilgan pul yetarli emas")
 
     day_orders = db.scalars(
@@ -1181,7 +1335,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         client_key=body.clientKey,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
-        cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
+        payment_parts=[{"method": p.method, "amount": p.amount} for p in parts],
+        cash_given=body.cashGiven if cash_amount else None, staff_name=ctx.staff.name,
     )
     db.add(order)
     db.flush()
@@ -1214,6 +1369,84 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     return order_out(order)
 
 
+# ---------- manually recorded refunds (no payment gateway action) ----------
+
+class RefundIn(BaseModel):
+    clientKey: str = Field(pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+    amount: int = Field(gt=0)
+    method: Literal["naqd", "karta", "payme", "click"]
+    reason: str = Field(min_length=3, max_length=256)
+    externalConfirmed: bool
+
+
+def refund_out(refund: OrderRefund) -> dict:
+    return {
+        "id": refund.id, "orderId": refund.order_id, "clientKey": refund.client_key,
+        "amount": refund.amount, "method": refund.method, "reason": refund.reason,
+        "staff": refund.staff_name, "createdAt": refund.created_at,
+    }
+
+
+@app.get("/api/orders/{oid}/refunds")
+def list_order_refunds(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    order = ctx.db.scalar(select(Order.id).where(Order.id == oid, Order.company_id == ctx.cid))
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    refunds = ctx.db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == oid
+    ).order_by(OrderRefund.id)).all()
+    return [refund_out(r) for r in refunds]
+
+
+@app.post("/api/orders/{oid}/refunds", status_code=201)
+def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Audit an already completed refund. No transfer is initiated by this endpoint.
+
+    Do not restore ingredients here: financial refunds and physical returns are
+    distinct events. Gateway reversals must be verified outside this API.
+    """
+    if not body.externalConfirmed:
+        raise HTTPException(422, "Pul qaytarilgani tashqarida tasdiqlanishi kerak")
+    existing = ctx.db.scalar(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
+    ))
+    if existing:
+        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
+            oid, body.amount, body.method, body.reason.strip()
+        ):
+            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
+        return refund_out(existing)
+    order = ctx.db.scalar(select(Order).where(
+        Order.id == oid, Order.company_id == ctx.cid
+    ).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    if order.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan buyurtma uchun refund mumkin emas")
+    paid = {part["method"]: part["amount"] for part in order_payment_parts(order)}
+    if body.method not in paid:
+        raise HTTPException(422, "Ushbu usul bilan to‘lov olinmagan")
+    refunds = ctx.db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == oid
+    )).all()
+    already = sum(refund.amount for refund in refunds if refund.method == body.method)
+    try:
+        validate_refund(paid=paid[body.method], already_refunded=already, requested=body.amount)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    refund = OrderRefund(company_id=ctx.cid, order_id=oid, client_key=body.clientKey,
+                         amount=body.amount, method=body.method,
+                         reason=body.reason.strip(), staff_name=ctx.staff.name)
+    ctx.db.add(refund)
+    try:
+        ctx.db.commit()
+    except IntegrityError:
+        ctx.db.rollback()
+        raise HTTPException(409, "Qaytarish allaqachon saqlangan; qayta tekshiring")
+    ctx.db.refresh(refund)
+    return refund_out(refund)
+
+
 class CancelOrderIn(BaseModel):
     reason: str = Field(min_length=3, max_length=256)
 
@@ -1227,6 +1460,10 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
         raise HTTPException(404, "Buyurtma topilmadi")
     if order.status != "new":
         raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")
+    if ctx.db.scalar(select(OrderRefund.id).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.order_id == order.id
+    )):
+        raise HTTPException(409, "Qisman yoki to‘liq refund qayd etilgan buyurtmani bekor qilib bo‘lmaydi")
     shift = open_shift(ctx.db, ctx.cid)
     if shift is None or order.shift_id != shift.id:
         raise HTTPException(409, "Yopilgan smenadagi buyurtmani bekor qilib bo'lmaydi")
@@ -1333,7 +1570,13 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     )).all()
     by_payment: dict[str, int] = {}
     for o in orders:
-        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        add_payment_totals(by_payment, o)
+    refunds = db.scalars(select(OrderRefund).where(
+        OrderRefund.company_id == cid, OrderRefund.created_at >= start,
+    )).all()
+    refunds_by_payment: dict[str, int] = {}
+    for refund in refunds:
+        refunds_by_payment[refund.method] = refunds_by_payment.get(refund.method, 0) + refund.amount
 
     daily = []
     for d in range(days - 1, -1, -1):
@@ -1341,24 +1584,27 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
         day_sales = [o for o in orders if lo <= o.created_at < hi]
         day_expenses = sum(e.amount for e in expenses if lo <= e.created_at < hi)
         day_wages = sum(w.amount for w in wages if lo <= w.created_at < hi)
+        day_refunds = sum(r.amount for r in refunds if lo <= r.created_at < hi)
         revenue = sum(o.total for o in day_sales)
         cogs = sum(o.cost for o in day_sales)
         daily.append({
             "day": lo, "orders": len(day_sales), "revenue": revenue,
-            "cogs": cogs, "grossProfit": revenue - cogs,
+            "refunds": day_refunds, "netRevenue": revenue - day_refunds,
+            "cogs": cogs, "grossProfit": revenue - day_refunds - cogs,
             "expenses": day_expenses, "staffPayments": day_wages,
-            "operatingBalance": revenue - cogs - day_expenses - day_wages,
+            "operatingBalance": revenue - day_refunds - cogs - day_expenses - day_wages,
         })
     def total(key: str) -> int:
         return sum(day[key] for day in daily)
     return {
         "days": days, "start": start,
         "orders": total("orders"), "revenue": total("revenue"),
+        "refunds": total("refunds"), "netRevenue": total("netRevenue"),
         "cogs": total("cogs"), "grossProfit": total("grossProfit"),
         "expenses": total("expenses"), "staffPayments": total("staffPayments"),
         "operatingBalance": total("operatingBalance"),
-        "byPayment": by_payment, "daily": daily,
-        "note": "Tax, supplier debts, pending salaries and other liabilities are not included.",
+        "byPayment": by_payment, "refundsByPayment": refunds_by_payment, "daily": daily,
+        "note": "Refunds are recorded manually after external confirmation; stock and COGS are not reversed. Tax, supplier debts, pending salaries and other liabilities are not included.",
     }
 
 

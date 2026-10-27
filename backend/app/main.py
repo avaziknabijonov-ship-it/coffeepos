@@ -15,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import seed
+from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, engine, now_ms,
 )
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
@@ -84,6 +85,7 @@ def migrate() -> None:
 def init_db() -> None:
     Base.metadata.create_all(engine)
     migrate()
+    install_guards(engine)
     if os.environ.get("SEED_DEMO", "1") != "1":
         return
     with SessionLocal() as db:
@@ -710,6 +712,11 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
             ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=diff, reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
         i.stock = line.counted
     inv.lines, inv.shortage, inv.surplus = lines, shortage, surplus
+    audit_record(ctx, "inventory.count", inv.id, {}, {
+        "shortage": shortage, "surplus": surplus,
+        "lines": [{"ingredient": line["ing"], "expected": line["expected"],
+                   "counted": line["counted"], "difference": line["diff"]} for line in lines],
+    })
     ctx.db.commit()
     return inventory_out(inv)
 
@@ -1453,6 +1460,10 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
                          reason=reason, staff_name=ctx.staff.name)
     ctx.db.add(refund)
     try:
+        ctx.db.flush()
+        audit_record(ctx, "order.refund", refund.id, {}, {
+            "orderId": oid, "amount": refund.amount, "method": refund.method,
+        })
         ctx.db.commit()
     except IntegrityError:
         ctx.db.rollback()
@@ -1512,6 +1523,7 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
     order.cancelled_at = now_ms()
     order.cancelled_by = ctx.staff.name
     order.cancel_reason = body.reason.strip()
+    audit_record(ctx, "order.cancel", order.id, {"status": "new"}, {"status": "cancelled", "amount": order.total})
     ctx.db.commit()
     return order_out(order)
 
@@ -1569,6 +1581,24 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     return out
 
 # ---------- management financial snapshot ----------
+@app.get("/api/audit")
+def audit_history(before_id: int | None = None, limit: int = 50, action: str = "",
+                  ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if limit < 1 or limit > 100 or (before_id is not None and before_id < 1):
+        raise HTTPException(422, "Audit filtri noto‘g‘ri")
+    query = select(AuditEvent).where(AuditEvent.company_id == ctx.cid)
+    if before_id is not None:
+        query = query.where(AuditEvent.id < before_id)
+    if action:
+        query = query.where(AuditEvent.action == action)
+    events = ctx.db.scalars(query.order_by(AuditEvent.id.desc()).limit(limit + 1)).all()
+    page = events[:limit]
+    return {"items": [{"id": e.id, "actorId": e.actor_id, "actor": e.actor_name,
+                       "action": e.action, "entityId": e.entity_id, "before": e.before,
+                       "after": e.after, "createdAt": e.created_at} for e in page],
+            "nextCursor": page[-1].id if len(events) > limit else None}
+
+
 @app.get("/api/reports/staff")
 def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     """Historical name snapshots; refunds attributed to the original seller by refund date."""

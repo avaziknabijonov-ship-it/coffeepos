@@ -1,4 +1,5 @@
 import os
+import hashlib
 import re
 import secrets
 from collections.abc import Iterator
@@ -9,15 +10,21 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, inspect, select, text, update
+from sqlalchemy import delete, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .access_logs import install_receipt_access_filter
+from .combos import resolve_combo
+from .promotions import choose_promotion, discount_amount
 from . import seed
+from .audit import install_guards, record as audit_record
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, DraftOrder, OrderRefund, AuditEvent, Promotion, ReceiptLink, Device, DevicePolicy, engine, now_ms,
 )
+from .receipts import make_receipt_token, read_receipt_token, receipt_html, TTL as RECEIPT_TTL
 from .payment_rules import PaymentPart, validate_refund, validate_split_payment
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -57,11 +64,24 @@ def migrate() -> None:
         if "can_reprint_receipts" not in staff_permissions:
             conn.execute(text("ALTER TABLE staff ADD COLUMN can_reprint_receipts BOOLEAN NOT NULL DEFAULT FALSE"))
     product_columns = {c["name"] for c in inspect(engine).get_columns("products")}
+    if "combo_components" not in product_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE products ADD COLUMN combo_components JSON"))
     if "image_url" not in product_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
+    customer_columns = {c["name"] for c in inspect(engine).get_columns("customers")}
+    with engine.begin() as conn:
+        if "analytics_consent" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN analytics_consent BOOLEAN NOT NULL DEFAULT FALSE"))
+        if "consent_updated_at" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_updated_at BIGINT"))
+        if "consent_actor_id" not in customer_columns:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN consent_actor_id INTEGER"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
+        if "promotion_snapshot" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN promotion_snapshot JSON"))
         if "payment_parts" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_parts JSON"))
         if "cancelled_at" not in order_columns:
@@ -84,6 +104,7 @@ def migrate() -> None:
 def init_db() -> None:
     Base.metadata.create_all(engine)
     migrate()
+    install_guards(engine)
     if os.environ.get("SEED_DEMO", "1") != "1":
         return
     with SessionLocal() as db:
@@ -97,6 +118,7 @@ def init_db() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    install_receipt_access_filter()
     init_db()
     yield
 
@@ -120,8 +142,8 @@ def get_db() -> Iterator[Session]:
 
 
 class Ctx:
-    def __init__(self, db: Session, staff: Staff, company: Company):
-        self.db, self.staff, self.company = db, staff, company
+    def __init__(self, db: Session, staff: Staff, company: Company, device: Device | None = None):
+        self.db, self.staff, self.company, self.device = db, staff, company, device
 
     @property
     def cid(self) -> int:
@@ -135,11 +157,20 @@ def auth(db: Session = Depends(get_db), authorization: str = Header(default=""))
     staff = db.get(Staff, int(claims["sub"]))
     if not staff or not staff.active or staff.company_id != claims["cid"]:
         raise HTTPException(401, "Qaytadan kiring")
+    device = db.get(Device, claims['did']) if 'did' in claims else None
+    if 'did' in claims and (device is None or not device.active or device.company_id != staff.company_id):
+        raise HTTPException(401, "Qurilma ruxsati bekor qilingan. Rahbarga murojaat qiling")
+    policy = db.get(DevicePolicy, staff.company_id)
+    if policy and policy.required and staff.role not in MANAGERS and device is None:
+        raise HTTPException(401, "Ro‘yxatdan o‘tgan qurilma talab qilinadi")
+    if device is not None and device.last_seen_at < now_ms() - 60_000:
+        db.execute(update(Device).where(Device.id == device.id, Device.active.is_(True)).values(last_seen_at=now_ms()))
+        db.commit()
     if os.environ.get("ENFORCE_LICENSES", "0") == "1":
         subscription = db.get(Subscription, staff.company_id)
         if not subscription or subscription.status != "active" or subscription.expires_at <= now_ms():
             raise HTTPException(403, "Obuna faol emas. Administratorga murojaat qiling")
-    return Ctx(db, staff, db.get(Company, staff.company_id))
+    return Ctx(db, staff, db.get(Company, staff.company_id), device)
 
 
 def require(*roles: str):
@@ -149,6 +180,82 @@ def require(*roles: str):
         return ctx
 
     return dep
+
+
+# ---------- enrolled devices ----------
+
+class DeviceEnrollIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class DevicePolicyIn(BaseModel):
+    required: bool
+
+
+def device_out(device: Device):
+    return {"id": device.id, "name": device.name, "active": device.active,
+            "createdAt": device.created_at, "lastSeenAt": device.last_seen_at,
+            "revokedAt": device.revoked_at}
+
+
+@app.get("/api/devices")
+def list_devices(ctx: Ctx = Depends(require(*MANAGERS))):
+    policy = ctx.db.get(DevicePolicy, ctx.cid)
+    return {"items": [device_out(d) for d in ctx.db.scalars(select(Device).where(
+        Device.company_id == ctx.cid).order_by(Device.id.desc()))],
+        "required": bool(policy and policy.required),
+        "currentDeviceId": ctx.device.id if ctx.device else None}
+
+
+@app.post("/api/devices", status_code=201)
+def enroll_device(body: DeviceEnrollIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Qurilma nomini kiriting")
+    credential = secrets.token_urlsafe(32)
+    device = Device(company_id=ctx.cid, name=name, enrolled_by=ctx.staff.id,
+                    secret_hash=hashlib.sha256(credential.encode()).hexdigest())
+    ctx.db.add(device)
+    ctx.db.flush()
+    audit_record(ctx, "device.enroll", device.id, {}, {"status": "active"})
+    token = make_token(ctx.db, ctx.staff.id, ctx.cid, device.id)
+    ctx.db.commit()
+    # Only this authenticated enrollment response contains the device credential.
+    return {"device": device_out(device), "deviceSecret": credential, "token": token}
+
+
+@app.post("/api/devices/{device_id}/revoke")
+def revoke_device(device_id: int, ctx: Ctx = Depends(require(*MANAGERS))):
+    device = ctx.db.scalar(select(Device).where(
+        Device.id == device_id, Device.company_id == ctx.cid).with_for_update().execution_options(populate_existing=True))
+    if device is None:
+        raise HTTPException(404, "Qurilma topilmadi")
+    if device.active:
+        device.active, device.revoked_at = False, now_ms()
+        audit_record(ctx, "device.revoke", device.id, {"status": "active"}, {"status": "revoked"})
+    ctx.db.commit()
+    return device_out(device)
+
+
+@app.put("/api/devices/policy")
+def set_device_policy(body: DevicePolicyIn, ctx: Ctx = Depends(require("owner"))):
+    # Owners can recover from loss of the last enrolled browser using PIN login.
+    # Cashier/barista tokens, including pre-existing unbound tokens, obey policy.
+    ctx.db.scalar(select(Company).where(Company.id == ctx.cid).with_for_update())
+    policy = ctx.db.scalar(select(DevicePolicy).where(
+        DevicePolicy.company_id == ctx.cid).execution_options(populate_existing=True))
+    before = bool(policy and policy.required)
+    if policy is None:
+        policy = DevicePolicy(company_id=ctx.cid, required=body.required)
+        ctx.db.add(policy)
+    else:
+        policy.required = body.required
+    if before != body.required:
+        audit_record(ctx, "device.policy", ctx.cid,
+                     {"status": "required" if before else "optional"},
+                     {"status": "required" if body.required else "optional"})
+    ctx.db.commit()
+    return {"required": policy.required}
 
 
 # ---------- serializers ----------
@@ -172,7 +279,7 @@ def order_out(o: Order) -> dict:
         "id": str(o.id), "number": o.number, "customer": o.customer, "items": o.items,
         "subtotal": o.subtotal, "discount": o.discount, "total": o.total, "cost": o.cost,
         "payment": o.payment, "paymentParts": order_payment_parts(o), "cashGiven": o.cash_given, "status": o.status,
-        "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
+        "promotion": o.promotion_snapshot, "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
     }
@@ -183,7 +290,7 @@ def ingredient_out(i: Ingredient) -> dict:
 
 
 def product_out(p: Product) -> dict:
-    return {"id": p.key, "cat": p.cat, "name": p.name, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+    return {"id": p.key, "cat": p.cat, "name": p.name, "comboComponents": p.combo_components, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
 
 
 def shift_out(s: Shift | None) -> dict | None:
@@ -257,6 +364,7 @@ PIN_RE = r"^\d{4,6}$"
 
 
 class LoginIn(BaseModel):
+    deviceSecret: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{32,128}$")
     company: str = Field(min_length=1, max_length=64)
     pin: str = Field(pattern=PIN_RE)
 
@@ -278,9 +386,22 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
     if not staff:
         limiter.fail(key)
         raise HTTPException(401, "Kofe bar yoki PIN noto'g'ri")
+    device = None
+    if body.deviceSecret:
+        device = db.scalar(select(Device).where(
+            Device.company_id == company.id,
+            Device.secret_hash == hashlib.sha256(body.deviceSecret.encode()).hexdigest()))
+        if device is None or not device.active:
+            raise HTTPException(403, "Qurilma ruxsati bekor qilingan. Rahbarga murojaat qiling")
+    policy = db.get(DevicePolicy, company.id)
+    if policy and policy.required and staff.role not in MANAGERS and device is None:
+        raise HTTPException(403, "Ro‘yxatdan o‘tgan qurilma talab qilinadi")
+    if device:
+        device.last_seen_at = now_ms()
+        db.commit()
     limiter.reset(key)
     return {
-        "token": make_token(db, staff.id, company.id),
+        "token": make_token(db, staff.id, company.id, device.id if device else None),
         "staff": staff_out(staff),
         "company": {"slug": company.slug, "name": company.name},
     }
@@ -317,9 +438,22 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
     cats = sorted(rows(db, Category, cid), key=lambda c: (c.sort, c.id))
     prods = sorted(rows(db, Product, cid), key=lambda p: (p.sort, p.id))
     mods = sorted(rows(db, Modifier, cid), key=lambda m: (m.sort, m.id))
+    product_map = {p.key: p for p in prods}
+    ingredient_map = {i.key: i for i in rows(db, Ingredient, cid)}
+    modifier_map = {m.key: m for m in mods}
+    products_out = []
+    for product in prods:
+        entry = product_out(product)
+        if product.combo_components:
+            try:
+                resolved = resolve_combo(product, product_map, modifier_map, ingredient_map)
+                entry["sizes"] = resolved.sizes
+            except HTTPException:
+                entry["active"] = False
+        products_out.append(entry)
     return {
         "categories": [{"id": c.key, "name": c.name} for c in cats],
-        "products": [product_out(p) for p in prods],
+        "products": products_out,
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
     }
@@ -426,6 +560,8 @@ def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
 @app.put("/api/products/{key}")
 def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     p = get_row(ctx.db, Product, ctx.cid, key)
+    if p.combo_components:
+        raise HTTPException(409, "Combo mahsulotni Combo bo‘limidan tahrirlang")
     validate_product(ctx, body)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
     p.image_url = body.imageUrl
@@ -448,9 +584,63 @@ def set_product_active(key: str, body: ActiveIn, ctx: Ctx = Depends(require(*CAS
 
 @app.delete("/api/products/{key}")
 def delete_product(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    ctx.db.delete(get_row(ctx.db, Product, ctx.cid, key))
+    product = get_row(ctx.db, Product, ctx.cid, key)
+    for combo in rows(ctx.db, Product, ctx.cid):
+        if any(c["productId"] == key for c in (combo.combo_components or [])):
+            raise HTTPException(409, "Mahsulot combo tarkibida ishlatilmoqda")
+    ctx.db.delete(product)
     ctx.db.commit()
     return {"ok": True}
+
+
+class ComboComponentIn(BaseModel):
+    productId: str = Field(min_length=1, max_length=64)
+    size: str = Field(min_length=1, max_length=16)
+    qty: int = Field(ge=1, le=10)
+
+
+class ComboIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    cat: str
+    price: int = Field(ge=0)
+    components: list[ComboComponentIn] = Field(min_length=2, max_length=10)
+    active: bool = True
+
+
+def save_combo(body, ctx, product=None):
+    get_row(ctx.db, Category, ctx.cid, body.cat)
+    components = [c.model_dump() for c in body.components]
+    if not body.name.strip() or len({(c["productId"], c["size"]) for c in components}) != len(components):
+        raise HTTPException(422, "Combo nomi va tarkibini tekshiring")
+    if product is None:
+        product = Product(company_id=ctx.cid, key="combo-" + secrets.token_hex(8), sort=len(rows(ctx.db, Product, ctx.cid)))
+    product.name, product.cat, product.mods, product.active = body.name.strip(), body.cat, [], body.active
+    product.combo_components = components
+    product.sizes = [{"code": "-", "label": "Combo", "price": body.price, "recipe": []}]
+    resolved = resolve_combo(product, {p.key: p for p in rows(ctx.db, Product, ctx.cid)},
+                             {m.key: m for m in rows(ctx.db, Modifier, ctx.cid)},
+                             {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)})
+    ctx.db.add(product)
+    ctx.db.commit()
+    return {**product_out(product), "sizes": resolved.sizes}
+
+
+@app.get("/api/combos")
+def list_combos(ctx: Ctx = Depends(require(*MANAGERS))):
+    return [product_out(p) for p in rows(ctx.db, Product, ctx.cid) if p.combo_components]
+
+
+@app.post("/api/combos", status_code=201)
+def add_combo(body: ComboIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    return save_combo(body, ctx)
+
+
+@app.put("/api/combos/{key}")
+def edit_combo(key: str, body: ComboIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    product = get_row(ctx.db, Product, ctx.cid, key)
+    if not product.combo_components:
+        raise HTTPException(409, "Bu mahsulot combo emas")
+    return save_combo(body, ctx, product)
 
 
 class ModifierIn(BaseModel):
@@ -710,6 +900,11 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
             ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=diff, reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
         i.stock = line.counted
     inv.lines, inv.shortage, inv.surplus = lines, shortage, surplus
+    audit_record(ctx, "inventory.count", inv.id, {}, {
+        "shortage": shortage, "surplus": surplus,
+        "lines": [{"ingredient": line["ing"], "expected": line["expected"],
+                   "counted": line["counted"], "difference": line["diff"]} for line in lines],
+    })
     ctx.db.commit()
     return inventory_out(inv)
 
@@ -980,6 +1175,100 @@ def bonus_customer_get(phone: str, ctx: Ctx = Depends(require(*CASHIERS))) -> di
             "redemptionLimitPercent": config.redemption_limit_percent}
 
 
+def masked_phone(phone: str) -> str:
+    return "***" + phone[-4:]
+
+
+@app.get("/api/customers")
+def customer_list(before_id: int | None = None, limit: int = 50,
+                  ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if not 1 <= limit <= 100 or (before_id is not None and before_id < 1):
+        raise HTTPException(422, "Mijoz filtri noto‘g‘ri")
+    query = select(Customer).where(Customer.company_id == ctx.cid)
+    if before_id is not None:
+        query = query.where(Customer.id < before_id)
+    customers = ctx.db.scalars(query.order_by(Customer.id.desc()).limit(limit + 1)).all()
+    page = customers[:limit]
+    return {"items": [{"id": c.id, "name": c.name, "phoneMasked": masked_phone(c.phone),
+                       "analyticsConsent": c.analytics_consent, "consentUpdatedAt": c.consent_updated_at}
+                      for c in page], "nextCursor": page[-1].id if len(customers) > limit else None}
+
+
+class CustomerConsentIn(BaseModel):
+    granted: bool
+    operatorConfirmed: bool = False
+
+
+@app.put("/api/customers/{customer_id}/analytics-consent")
+def customer_consent(customer_id: int, body: CustomerConsentIn,
+                     ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    customer = ctx.db.scalar(select(Customer).where(
+        Customer.id == customer_id, Customer.company_id == ctx.cid).with_for_update())
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    if body.granted and not body.operatorConfirmed:
+        raise HTTPException(422, "Mijoz roziligi olinganini tasdiqlang")
+    if customer.analytics_consent != body.granted:
+        before = customer.analytics_consent
+        customer.analytics_consent = body.granted
+        customer.consent_updated_at, customer.consent_actor_id = now_ms(), ctx.staff.id
+        audit_record(ctx, "customer.analytics_consent", customer.id,
+                     {"analyticsConsent": before}, {"analyticsConsent": body.granted})
+        ctx.db.commit()
+    return {"id": customer.id, "analyticsConsent": customer.analytics_consent,
+            "consentUpdatedAt": customer.consent_updated_at}
+
+
+@app.get("/api/reports/customers")
+def customer_analytics(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if not 1 <= days <= 92:
+        raise HTTPException(422, "Davr 1-92 kun bo‘lsin")
+    start, end = start_of_day_ms(days - 1), now_ms()
+    # Consent is checked at read time, so revocation immediately excludes history.
+    consenting_count = ctx.db.scalar(select(func.count(Customer.id)).where(
+        Customer.company_id == ctx.cid, Customer.analytics_consent.is_(True)))
+    pairs = ctx.db.execute(select(Order, Customer.created_at).join(Customer, (Order.customer_id == Customer.id) &
+        (Order.company_id == Customer.company_id)).where(
+        Order.company_id == ctx.cid, Customer.analytics_consent.is_(True),
+        Order.status != "cancelled", Order.created_at >= start, Order.created_at <= end)).all()
+    orders = [pair[0] for pair in pairs]
+    visits = {}
+    cohorts = {}
+    for order, customer_created_at in pairs:
+        visits[order.customer_id] = visits.get(order.customer_id, 0) + 1
+        cohort = datetime.fromtimestamp(customer_created_at / 1000, TZ).strftime("%Y-%m")
+        month = datetime.fromtimestamp(order.created_at / 1000, TZ).strftime("%Y-%m")
+        key = (cohort, month)
+        entry = cohorts.setdefault(key, {"customers": set(), "orders": 0, "revenue": 0})
+        entry["customers"].add(order.customer_id)
+        entry["orders"] += 1
+        entry["revenue"] += order.total
+    return {"days": days, "start": start, "end": end, "consentingCustomers": consenting_count,
+            "purchasingCustomers": len(visits), "repeatCustomers": sum(n > 1 for n in visits.values()),
+            "orders": len(orders), "revenue": sum(o.total for o in orders),
+            "cohorts": [{"cohort": key[0], "month": key[1], "customers": len(v["customers"]),
+                         "orders": v["orders"], "revenue": v["revenue"]} for key, v in sorted(cohorts.items())]}
+
+
+@app.get("/api/customers/{customer_id}/purchases")
+def customer_purchases(customer_id: int, before_id: int | None = None,
+                       ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    customer = ctx.db.scalar(select(Customer).where(Customer.id == customer_id, Customer.company_id == ctx.cid))
+    if customer is None:
+        raise HTTPException(404, "Mijoz topilmadi")
+    if not customer.analytics_consent:
+        raise HTTPException(403, "Mijoz tahlilga rozilik bermagan")
+    if before_id is not None and before_id < 1:
+        raise HTTPException(422, "Mijoz filtri noto‘g‘ri")
+    query = select(Order).where(Order.company_id == ctx.cid, Order.customer_id == customer.id)
+    if before_id is not None:
+        query = query.where(Order.id < before_id)
+    orders = ctx.db.scalars(query.order_by(Order.id.desc()).limit(51)).all()
+    return {"items": [{"id": str(o.id), "number": o.number, "createdAt": o.created_at,
+                       "total": o.total, "status": o.status} for o in orders[:50]],
+            "nextCursor": orders[49].id if len(orders) > 50 else None}
+
+
 # ---------- staff ----------
 
 class StaffIn(BaseModel):
@@ -1131,6 +1420,7 @@ class OrderIn(BaseModel):
     payment: Literal["naqd", "karta", "payme", "click", "split"]
     paymentParts: list[PaymentPartIn] | None = Field(default=None, max_length=4)
     cashGiven: int | None = Field(default=None, ge=0)
+    expectedTotal: int | None = Field(default=None, ge=0)
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
@@ -1271,7 +1561,10 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         product = prods.get(it.productId)
         if not product:
             raise HTTPException(400, "Mahsulot topilmadi")
-        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        resolved = resolve_combo(product, prods, mods, ings)
+        built = build_item(resolved, it.size, it.modIds, it.qty, mods, ings)
+        if getattr(resolved, "combo_items", None):
+            built["components"] = resolved.combo_items
         same = next((x for x in items if x["key"] == built["key"]), None)
         if same:
             same["qty"] += built["qty"]
@@ -1279,7 +1572,11 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             items.append(built)
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
-    discount = round(subtotal * body.discountPct / 100 / 100) * 100
+    promotion = choose_promotion(rows(db, Promotion, cid), datetime.now(TZ))
+    if promotion and body.expectedTotal is None:
+        raise HTTPException(409, "Aksiya faol. Kassani yangilang va summani tekshiring")
+    effective_percent = max(body.discountPct, promotion.percent if promotion else 0)
+    discount = discount_amount(subtotal, effective_percent)
     total = subtotal - discount
     phone = body.customerPhone.strip()
     customer = None
@@ -1307,6 +1604,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             raise HTTPException(409, "Bonus tizimi o'chirilgan")
     elif body.bonusRedeem:
         raise HTTPException(422, "Bonus ishlatish uchun mijoz telefoni kerak")
+    if body.expectedTotal is not None and body.expectedTotal != total:
+        raise HTTPException(409, "Narx yoki aksiya o‘zgardi. Summani yangilab qayta tekshiring")
     if body.payment == "split":
         if body.paymentParts is None or len(body.paymentParts) < 2:
             raise HTTPException(422, "Bo‘lingan to‘lov uchun kamida 2 usul kerak")
@@ -1333,6 +1632,8 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         company_id=cid, shift_id=shift.id, number=max(day_orders, default=0) + 1, customer=body.customer.strip(),
         customer_id=customer.id if customer is not None else None, bonus_used=redeemed, bonus_earned=earned,
         client_key=body.clientKey,
+        promotion_snapshot={"id": promotion.id, "name": promotion.name, "percent": promotion.percent,
+                            "timezone": str(TZ)} if promotion and promotion.percent >= body.discountPct else None,
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         payment_parts=[{"method": p.method, "amount": p.amount} for p in parts],
@@ -1367,6 +1668,53 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
                 return order_out(duplicate)
         raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
     return order_out(order)
+
+
+@app.post("/api/orders/{oid}/receipt-link")
+def receipt_link(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    token, grant = make_receipt_token(ctx.db, order)
+    audit_record(ctx, "receipt.issue", order.id, {}, {"status": "active"})
+    ctx.db.commit()
+    return {"path": "/api/public/receipts/" + token, "linkId": grant.id,
+            "expiresIn": RECEIPT_TTL, "fiscal": False}
+
+
+@app.delete("/api/orders/{oid}/receipt-links")
+def revoke_receipt_links(oid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    # Serialize issue/revoke through the order row on PostgreSQL.
+    order = ctx.db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    result = ctx.db.execute(update(ReceiptLink).where(
+        ReceiptLink.order_id == oid, ReceiptLink.company_id == ctx.cid,
+        ReceiptLink.revoked_at.is_(None), ReceiptLink.expires_at > now_ms()
+    ).values(revoked_at=now_ms()))
+    count = result.rowcount
+    if count:
+        audit_record(ctx, "receipt.revoke", oid, {"status": "active"}, {"status": "revoked"})
+    ctx.db.commit()
+    return {"revoked": count}
+
+
+@app.get("/api/public/receipts/{token}", response_class=HTMLResponse)
+def public_receipt(token: str, lang: Literal["uz", "ru"] = "uz", db: Session = Depends(get_db)):
+    claims = read_receipt_token(db, token)
+    if not claims:
+        raise HTTPException(404, "Chek havolasi yaroqsiz yoki muddati tugagan")
+    order = db.scalar(select(Order).where(Order.id == claims["oid"], Order.company_id == claims["cid"]))
+    company = db.get(Company, claims["cid"])
+    if order is None or company is None:
+        raise HTTPException(404, "Chek havolasi yaroqsiz yoki muddati tugagan")
+    refunded = sum(db.scalars(select(OrderRefund.amount).where(
+        OrderRefund.company_id == company.id, OrderRefund.order_id == order.id)))
+    return HTMLResponse(receipt_html(order, company.name, refunded, lang, TZ), headers={
+        "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    })
 
 
 # ---------- manually recorded refunds (no payment gateway action) ----------
@@ -1407,20 +1755,34 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
     """
     if not body.externalConfirmed:
         raise HTTPException(422, "Pul qaytarilgani tashqarida tasdiqlanishi kerak")
+    reason = body.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(422, "Qaytarish sababini kiriting")
+
+    def replay(existing: OrderRefund) -> dict:
+        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
+            oid, body.amount, body.method, reason
+        ):
+            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
+        return refund_out(existing)
+
     existing = ctx.db.scalar(select(OrderRefund).where(
         OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
     ))
     if existing:
-        if (existing.order_id, existing.amount, existing.method, existing.reason) != (
-            oid, body.amount, body.method, body.reason.strip()
-        ):
-            raise HTTPException(409, "Qaytarish kaliti boshqa operatsiyaga tegishli")
-        return refund_out(existing)
+        return replay(existing)
     order = ctx.db.scalar(select(Order).where(
         Order.id == oid, Order.company_id == ctx.cid
     ).with_for_update())
     if order is None:
         raise HTTPException(404, "Buyurtma topilmadi")
+    # Another request with the same key may have committed while we waited for
+    # the order lock. Recheck before calculating the remaining refundable sum.
+    existing = ctx.db.scalar(select(OrderRefund).where(
+        OrderRefund.company_id == ctx.cid, OrderRefund.client_key == body.clientKey
+    ))
+    if existing:
+        return replay(existing)
     if order.status == "cancelled":
         raise HTTPException(409, "Bekor qilingan buyurtma uchun refund mumkin emas")
     paid = {part["method"]: part["amount"] for part in order_payment_parts(order)}
@@ -1436,9 +1798,13 @@ def record_refund(oid: int, body: RefundIn, ctx: Ctx = Depends(require(*MANAGERS
         raise HTTPException(422, str(exc)) from exc
     refund = OrderRefund(company_id=ctx.cid, order_id=oid, client_key=body.clientKey,
                          amount=body.amount, method=body.method,
-                         reason=body.reason.strip(), staff_name=ctx.staff.name)
+                         reason=reason, staff_name=ctx.staff.name)
     ctx.db.add(refund)
     try:
+        ctx.db.flush()
+        audit_record(ctx, "order.refund", refund.id, {}, {
+            "orderId": oid, "amount": refund.amount, "method": refund.method,
+        })
         ctx.db.commit()
     except IntegrityError:
         ctx.db.rollback()
@@ -1455,8 +1821,11 @@ class CancelOrderIn(BaseModel):
 def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dict:
     if ctx.staff.role not in MANAGERS and not (ctx.staff.role == "kassir" and ctx.staff.can_cancel_orders):
         raise HTTPException(403, "Otmena uchun dostup berilmagan")
-    order = ctx.db.get(Order, oid)
-    if order is None or order.company_id != ctx.cid:
+    # Serialize cancellation with refunds and other cancellations for this order.
+    order = ctx.db.scalar(select(Order).where(
+        Order.id == oid, Order.company_id == ctx.cid
+    ).with_for_update())
+    if order is None:
         raise HTTPException(404, "Buyurtma topilmadi")
     if order.status != "new":
         raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")
@@ -1495,6 +1864,7 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
     order.cancelled_at = now_ms()
     order.cancelled_by = ctx.staff.name
     order.cancel_reason = body.reason.strip()
+    audit_record(ctx, "order.cancel", order.id, {"status": "new"}, {"status": "cancelled", "amount": order.total})
     ctx.db.commit()
     return order_out(order)
 
@@ -1552,6 +1922,125 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     return out
 
 # ---------- management financial snapshot ----------
+@app.get("/api/audit")
+def audit_history(before_id: int | None = None, limit: int = 50, action: str = "",
+                  ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    if limit < 1 or limit > 100 or (before_id is not None and before_id < 1):
+        raise HTTPException(422, "Audit filtri noto‘g‘ri")
+    query = select(AuditEvent).where(AuditEvent.company_id == ctx.cid)
+    if before_id is not None:
+        query = query.where(AuditEvent.id < before_id)
+    if action:
+        query = query.where(AuditEvent.action == action)
+    events = ctx.db.scalars(query.order_by(AuditEvent.id.desc()).limit(limit + 1)).all()
+    page = events[:limit]
+    return {"items": [{"id": e.id, "actorId": e.actor_id, "actor": e.actor_name,
+                       "action": e.action, "entityId": e.entity_id, "before": e.before,
+                       "after": e.after, "createdAt": e.created_at} for e in page],
+            "nextCursor": page[-1].id if len(events) > limit else None}
+
+
+class PromotionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    startTime: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    endTime: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    weekdays: list[int] = Field(min_length=1, max_length=7)
+    percent: int = Field(ge=1, le=50)
+    priority: int = Field(default=0, ge=0, le=100)
+    active: bool = True
+
+
+def promotion_out(p):
+    return {"id": p.id, "name": p.name, "startTime": p.start_time, "endTime": p.end_time,
+            "weekdays": p.weekdays, "percent": p.percent, "priority": p.priority, "active": p.active}
+
+
+@app.get("/api/promotions/active")
+def active_promotion(ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    now = datetime.now(TZ)
+    promotion = choose_promotion(rows(ctx.db, Promotion, ctx.cid), now)
+    return {"timezone": str(TZ), "serverTime": now.isoformat(),
+            "promotion": promotion_out(promotion) if promotion else None}
+
+
+@app.get("/api/promotions")
+def list_promotions(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [promotion_out(p) for p in rows(ctx.db, Promotion, ctx.cid)]
+
+
+def save_promotion(body, ctx, promotion=None):
+    if not body.name.strip() or body.startTime == body.endTime or any(type(d) is not int or d < 0 or d > 6 for d in body.weekdays) or len(set(body.weekdays)) != len(body.weekdays):
+        raise HTTPException(422, "Aksiya jadvalini tekshiring")
+    if promotion is None:
+        promotion = Promotion(company_id=ctx.cid)
+        ctx.db.add(promotion)
+    promotion.name, promotion.start_time, promotion.end_time = body.name.strip(), body.startTime, body.endTime
+    promotion.weekdays, promotion.percent = body.weekdays, body.percent
+    promotion.priority, promotion.active = body.priority, body.active
+    ctx.db.commit()
+    return promotion_out(promotion)
+
+
+@app.post("/api/promotions", status_code=201)
+def add_promotion(body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    return save_promotion(body, ctx)
+
+
+@app.put("/api/promotions/{pid}")
+def edit_promotion(pid: int, body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))):
+    promotion = ctx.db.scalar(select(Promotion).where(Promotion.id == pid, Promotion.company_id == ctx.cid))
+    if promotion is None:
+        raise HTTPException(404, "Topilmadi")
+    return save_promotion(body, ctx, promotion)
+
+
+@app.get("/api/reports/staff")
+def staff_report(from_ms: int, to_ms: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Historical name snapshots; refunds attributed to the original seller by refund date."""
+    if to_ms <= from_ms or to_ms - from_ms > 366 * 86400000:
+        raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
+    db, cid = ctx.db, ctx.cid
+    orders = db.scalars(select(Order).where(
+        Order.company_id == cid, Order.created_at >= from_ms, Order.created_at < to_ms
+    )).all()
+    result = {}
+    shifts = {}
+
+    def row(name):
+        if name not in result:
+            result[name] = {"name": name, "count": 0, "revenue": 0, "discounts": 0,
+                            "refunds": 0, "netRevenue": 0, "voidCount": 0, "voidSum": 0,
+                            "processedRefunds": 0, "byPayment": {}, "refundsByPayment": {}}
+            shifts[name] = set()
+        return result[name]
+
+    for order in orders:
+        item = row(order.staff_name)
+        shifts[order.staff_name].add(order.shift_id)
+        if order.status == "cancelled":
+            item["voidCount"] += 1
+            item["voidSum"] += order.total
+        else:
+            item["count"] += 1
+            item["revenue"] += order.total
+            item["discounts"] += order.discount
+            add_payment_totals(item["byPayment"], order)
+    # Join once, including sales outside the report period; never expose other tenants.
+    refunds = db.execute(select(OrderRefund, Order.staff_name).join(
+        Order, (Order.id == OrderRefund.order_id) & (Order.company_id == OrderRefund.company_id)
+    ).where(OrderRefund.company_id == cid, OrderRefund.created_at >= from_ms,
+            OrderRefund.created_at < to_ms)).all()
+    for refund, seller in refunds:
+        item = row(seller)
+        item["refunds"] += refund.amount
+        item["refundsByPayment"][refund.method] = item["refundsByPayment"].get(refund.method, 0) + refund.amount
+        row(refund.staff_name)["processedRefunds"] += refund.amount
+    for name, item in result.items():
+        item["netRevenue"] = item["revenue"] - item["refunds"]
+        item["shifts"] = len(shifts[name])
+    return {"from": from_ms, "to": to_ms, "rows": sorted(result.values(), key=lambda r: r["name"])}
+
+
 @app.get("/api/reports/finance")
 def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     """Cash-accounting approximation, not formal net profit or tax reporting."""

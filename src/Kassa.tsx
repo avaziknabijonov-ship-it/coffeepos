@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import CashExpense from './CashExpense'
 import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
+import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, discountAmount, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState, sync } from './store'
 import { OpenShift } from './Shift'
@@ -43,6 +43,16 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [bonusError, setBonusError] = useState('')
   const [bonusRedeem, setBonusRedeem] = useState(0)
   const [discountPct, setDiscountPct] = useState(0)
+  const [promotion, setPromotion] = useState<{ name: string; percent: number } | null>(null)
+  useEffect(() => {
+    let active = true
+    const refresh = () => api<{ promotion: { name: string; percent: number } | null }>('/api/promotions/active')
+      .then(result => { if (active) setPromotion(result.promotion) }).catch(() => { /* Expected total protects stale pricing. */ })
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 15000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [session?.company.slug])
+
   const [modal, setModal] = useState<Product | null>(null)
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<Order | null>(null)
@@ -108,7 +118,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }, [cat, query, menuVersion])
 
   const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.qty, 0)
-  const discount = Math.round((subtotal * discountPct) / 100 / 100) * 100
+  const effectivePercent = Math.max(discountPct, promotion?.percent ?? 0)
+  const discount = discountAmount(subtotal, effectivePercent)
   const maxRedeem = bonusInfo?.enabled ? Math.min(bonusInfo.balance, Math.floor((subtotal - discount) * bonusInfo.redemptionLimitPercent / 100)) : 0
   const effectiveBonus = Math.min(bonusRedeem, maxRedeem)
   const total = subtotal - discount - effectiveBonus
@@ -133,7 +144,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const onTile = (p: Product) => (needsModal(p) ? setModal(p) : addToCart(buildItem(p, p.sizes[0], [], 1)))
 
   const confirmPayment = async (payment: Payment, cashGiven?: number, paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]) => {
-    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, payment, cashGiven, paymentParts,
+    const order = await placeOrder(cart, { customer: customer.trim(), discountPct, expectedTotal: total, automaticDiscount: !!promotion, payment, cashGiven, paymentParts,
       customerPhone: bonusInfo?.enabled ? customerPhone.trim() : '', bonusRedeem: effectiveBonus })
     setPaying(false)
     setCartOpen(false)
@@ -157,7 +168,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
-      discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
+      appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
       changeQty={changeQty} clear={() => { clear(); setActiveDraft(null) }} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )
@@ -180,6 +191,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       </aside>
 
       <main className="cashier-products flex min-w-0 flex-1 flex-col">
+        {promotion && <p className="bg-amber-100 p-2 text-sm font-semibold">{t('Happy Hour')}: {promotion.name} · {promotion.percent}% · {t('Chegirmalar qo‘shilmaydi; kattarog‘i olinadi')}</p>}
         <div className="space-y-3 border-b border-stone-200 bg-white p-3">
           <div className="flex gap-2">
           <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 focus-within:border-amber-500">
@@ -261,7 +273,7 @@ function Cart(props: {
   customerPhone: string; setCustomerPhone: (v: string) => void
   bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
   setBonusRedeem: (v: number) => void; loadBonus: () => void
-  discountPct: number; setDiscountPct: (v: number) => void; subtotal: number; discount: number; total: number
+  appliedDiscountPct: number; discountPct: number; setDiscountPct: (v: number) => void; subtotal: number; discount: number; total: number
   changeQty: (key: string, d: number) => void; clear: () => void; onSave: () => void; onDrafts: () => void; draftBusy: boolean; draftError: string; onPay: () => void; onClose?: () => void
 }) {
   const { cart } = props
@@ -337,7 +349,7 @@ function Cart(props: {
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">
             <div className="flex justify-between"><span>{t('Oraliq summa')}</span><span>{som(props.subtotal)}</span></div>
-            <div className="flex justify-between"><span>{t('Chegirma')} {props.discountPct}%</span><span>−{som(props.discount)}</span></div>
+            <div className="flex justify-between"><span>{t('Chegirma')} {props.appliedDiscountPct}%</span><span>−{som(props.discount)}</span></div>
           </div>
         )}
         {props.draftError && <p role="alert" className="text-sm text-red-700">{props.draftError}</p>}

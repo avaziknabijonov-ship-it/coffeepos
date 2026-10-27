@@ -85,6 +85,7 @@ class Product(Base):
     key: Mapped[str] = mapped_column(String(64))
     cat: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
+    combo_components: Mapped[list | None] = mapped_column(JSON, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), default="")
     mods: Mapped[list] = mapped_column(JSON, default=list)
     sizes: Mapped[list] = mapped_column(JSON, default=list)
@@ -137,6 +138,7 @@ class Order(Base):
     cost: Mapped[int] = mapped_column(BigInteger)
     payment: Mapped[str] = mapped_column(String(16))
     payment_parts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    promotion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cash_given: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new")
     cancelled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -234,6 +236,9 @@ class Customer(Base):
     phone: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(64), default="")
     bonus_balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    analytics_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_updated_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    consent_actor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
 
 
@@ -299,3 +304,61 @@ class OrderRefund(Base):
     reason: Mapped[str] = mapped_column(String(256))
     staff_name: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class AuditEvent(Base):
+    """Append-only operational audit; sensitive free text is deliberately excluded."""
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(Integer)
+    actor_name: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(48), index=True)
+    entity_id: Mapped[int] = mapped_column(Integer)
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class Promotion(Base):
+    __tablename__ = 'promotions'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    start_time: Mapped[str] = mapped_column(String(5))
+    end_time: Mapped[str] = mapped_column(String(5))
+    weekdays: Mapped[list] = mapped_column(JSON)
+    percent: Mapped[int] = mapped_column(Integer)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ReceiptLink(Base):
+    """Revocable receipt grants; bearer tokens are never stored."""
+    __tablename__ = 'receipt_links'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey('orders.id'), index=True)
+    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Device(Base):
+    """Logical browser/APK enrollment, not a hardware fingerprint."""
+    __tablename__ = 'devices'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    enrolled_by: Mapped[int] = mapped_column(ForeignKey('staff.id'))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    last_seen_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    revoked_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class DevicePolicy(Base):
+    __tablename__ = 'device_policies'
+    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), primary_key=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)

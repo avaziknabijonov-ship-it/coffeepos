@@ -37,14 +37,22 @@ def secret_key(db: Session) -> str:
     return row.value
 
 
-def make_token(db: Session, staff_id: int, company_id: int) -> str:
+def make_token(db: Session, staff_id: int, company_id: int, device_id: int | None = None) -> str:
     payload = {"sub": str(staff_id), "cid": company_id, "exp": int(time.time()) + TOKEN_TTL}
+    if device_id is not None:
+        payload["did"] = device_id
     return jwt.encode(payload, secret_key(db), algorithm="HS256")
 
 
 def read_token(db: Session, token: str) -> dict | None:
     try:
-        return jwt.decode(token, secret_key(db), algorithms=["HS256"])
+        claims = jwt.decode(token, secret_key(db), algorithms=["HS256"],
+                            options={"require": ["sub", "cid", "exp"]})
+        if (not isinstance(claims['sub'], str) or not claims['sub'].isdecimal()
+                or type(claims['cid']) is not int
+                or ('did' in claims and type(claims['did']) is not int)):
+            return None
+        return claims
     except jwt.PyJWTError:
         return None
 

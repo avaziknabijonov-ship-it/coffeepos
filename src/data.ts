@@ -5,7 +5,7 @@ export interface Ingredient { id: string; name: string; unit: Unit; cost: number
 export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
-export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
+export interface Product { comboComponents?: { productId: string; size: string; qty: number }[] | null; id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
 export interface Category { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
@@ -14,6 +14,7 @@ export interface Menu { categories: Category[]; products: Product[]; modifiers: 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'split'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
+  components?: { productId: string; name: string; size: string; qty: number; unitPrice: number }[]
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
 }
@@ -77,3 +78,5 @@ export function buildItem(p: Product, size: Size, modIds: string[], qty: number)
     consumption,
   }
 }
+
+export { discountAmount } from './pricing'

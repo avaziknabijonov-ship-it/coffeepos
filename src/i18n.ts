@@ -15,6 +15,10 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Qaytarilgan mablag‘": "Возвращённые средства",
+  "Qaytarishdan keyingi tushum": "Выручка после возвратов",
+  "Pul qaytarish tannarx va omborni avtomatik tiklamaydi.": "Возврат денег автоматически не восстанавливает себестоимость и остатки.",
+
   "Xato": "Ошибка",
   "Pul qaytarish yozuvlari": "Записи возвратов средств",
   "Bu amal pul yubormaydi. Faqat tashqarida bajarilgan qaytarishni qayd etadi. Ombor va bonus avtomatik qaytarilmaydi.": "Это действие не переводит деньги. Оно фиксирует уже выполненный возврат. Склад и бонусы автоматически не восстанавливаются.",

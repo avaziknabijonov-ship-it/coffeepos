@@ -3,6 +3,8 @@ import { api, getBranch, setBranch, setDeviceToken } from './api'
 import { t, tCatalogName } from './i18n'
 import { INGREDIENTS, som } from './data'
 import { sync } from './store'
+import FloorMap, { defaultLayout } from './FloorMap'
+import type { MapTable, TableLayout } from './FloorMap'
 
 const box = 'space-y-3 rounded-2xl border bg-white p-4'
 const input = 'rounded border p-2'
@@ -79,10 +81,13 @@ export function BranchesPanel() {
 }
 
 type DraftRef = { id: number; version: number; items: number; staff: string }
-type Floor = { areas: { id: number; name: string }[]; tables: { id: number; areaId: number; name: string; seats: number; active: boolean; occupied: boolean; drafts: DraftRef[] }[]; takeaway: DraftRef[] }
+type Floor = { areas: { id: number; name: string }[]; tables: { id: number; areaId: number; name: string; seats: number; active: boolean; occupied: boolean; layout?: TableLayout | null; layoutVersion?: number; drafts: DraftRef[] }[]; takeaway: DraftRef[] }
 
 export function FloorPanel() {
   const [floor, load, error, setError] = useLoad<Floor>('/api/floor', { areas: [], tables: [], takeaway: [] })
+  const [layoutTable, setLayoutTable] = useState<MapTable | null>(null)
+  const [layout, setLayout] = useState<TableLayout>({ x: 0, y: 0, width: 110, height: 110, shape: 'round' })
+  const [layoutBusy, setLayoutBusy] = useState(false)
   const [area, setArea] = useState('')
   const [table, setTable] = useState({ areaId: '', name: '', seats: 2 })
   const move = (d: DraftRef, value: string) => run(setError, () => api(`/api/drafts/${d.id}/move`, { body: value === 'takeaway' ? { version: d.version, service: 'takeaway' } : { version: d.version, tableId: Number(value), service: 'dine_in' } }), load)
@@ -115,6 +120,13 @@ export function FloorPanel() {
       <input aria-label={t('O‘rinlar')} className={'w-20 ' + input} type="number" min="1" max="50" value={table.seats} onChange={e => setTable({ ...table, seats: Number(e.target.value) })} />
       <button className={primary}>{t('Stol qo‘shish')}</button>
     </form>
+    <p className="text-sm text-stone-600">{t('Xaritada stolni tanlab, shakli va joylashuvini sozlang')}</p>
+    {layoutTable && <form className="flex flex-wrap items-end gap-3 rounded-xl border p-3" onSubmit={async e => { e.preventDefault(); setLayoutBusy(true); await run(setError, () => api(`/api/tables/${layoutTable.id}/layout`, { method: 'PATCH', body: { ...layout, version: layoutTable.layoutVersion ?? 1 } }), async () => { setLayoutTable(null); await load() }); setLayoutBusy(false) }}>
+      <strong>{layoutTable.name}</strong><label>{t('Shakl')}<select aria-label={t('Shakl')} className={input} value={layout.shape} onChange={e => setLayout({ ...layout, shape: e.target.value as TableLayout['shape'] })}>{(['round', 'rectangle', 'bar', 'vip'] as const).map((value, i) => <option key={value} value={value}>{t(['Dumaloq', 'To‘rtburchak', 'Bar', 'VIP'][i])}</option>)}</select></label>
+      {(['x', 'y', 'width', 'height'] as const).map((key, i) => <label key={key} className="text-sm">{t(['Chapdan', 'Yuqoridan', 'Kenglik', 'Balandlik'][i])}<input aria-label={t(['Chapdan', 'Yuqoridan', 'Kenglik', 'Balandlik'][i])} type="number" required min={key === 'x' || key === 'y' ? 0 : 60} max={key === 'x' ? 940 : key === 'y' ? 540 : key === 'width' ? 400 : 500} value={layout[key]} onChange={e => setLayout({ ...layout, [key]: Number(e.target.value) })} className={'block w-24 ' + input} /></label>)}
+      <button disabled={layoutBusy} className={primary}>{t('Saqlash')}</button><button type="button" onClick={() => setLayoutTable(null)} className={btn}>{t('Yopish')}</button>
+    </form>}
+    {floor.areas.map(a => <section key={'map-' + a.id}><h3 className="mb-2 font-semibold">{a.name}</h3><FloorMap tables={floor.tables.filter(tb => tb.active && tb.areaId === a.id).map(tb => tb.id === layoutTable?.id ? { ...tb, layout } : tb)} selected={layoutTable?.id} onSelect={tb => { setLayoutTable(tb); setLayout(tb.layout ?? defaultLayout(tb, floor.tables.filter(x => x.areaId === a.id && x.active).findIndex(x => x.id === tb.id))) }} /></section>)}
     {floor.areas.map(a => <div key={a.id}><h3 className="font-semibold">{a.name}</h3>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{floor.tables.filter(tb => tb.areaId === a.id).map(tb => <div key={tb.id} className={`rounded border p-2 ${tb.occupied ? 'operations-highlight border-amber-500 bg-amber-50 text-stone-900' : ''}`}>
         <div className="font-medium">{tb.name} · {tb.seats} · {tb.occupied ? t('Band') : t('Bo‘sh')}</div>{tb.drafts.map(draftRow)}

@@ -2,8 +2,8 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .audit import record as audit_record
@@ -40,7 +40,7 @@ class MergeIn(BaseModel):
 
 def table_out(t: DiningTable, drafts: list[DraftOrder]) -> dict:
     return {"id": t.id, "areaId": t.area_id, "name": t.name, "seats": t.seats, "active": t.active,
-            "occupied": bool(drafts), "drafts": [{"id": d.id, "version": d.version, "items": len(d.items),
+            "layout": t.layout, "layoutVersion": t.layout_version, "occupied": bool(drafts), "drafts": [{"id": d.id, "version": d.version, "items": len(d.items),
                                                   "staff": d.staff_name, "updatedAt": d.updated_at} for d in drafts]}
 
 
@@ -177,3 +177,34 @@ def merge_drafts(draft_id: int, body: MergeIn, ctx: Ctx = Depends(require(*MANAG
     ctx.db.delete(source)
     ctx.db.commit()
     return {"id": target.id, "tableId": target.table_id, "items": target.items, "version": target.version}
+
+
+class LayoutIn(BaseModel):
+    x: int = Field(ge=0, le=940)
+    y: int = Field(ge=0, le=540)
+    width: int = Field(ge=60, le=400)
+    height: int = Field(ge=60, le=500)
+    shape: Literal["round", "rectangle", "bar", "vip"] = "round"
+    version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def inside_canvas(self):
+        if self.x + self.width > 1000 or self.y + self.height > 600:
+            raise ValueError("Stol xarita chegarasidan chiqmasin")
+        return self
+
+
+@router.patch("/api/tables/{table_id}/layout")
+def update_layout(table_id: int, body: LayoutIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    table = branch_table(ctx, table_id)
+    layout = body.model_dump(exclude={"version"})
+    result = ctx.db.execute(update(DiningTable).where(
+        DiningTable.id == table.id, DiningTable.company_id == ctx.cid,
+        DiningTable.branch_id == ctx.branch_id, DiningTable.layout_version == body.version
+    ).values(layout=layout, layout_version=body.version + 1))
+    if result.rowcount != 1:
+        ctx.db.rollback()
+        raise HTTPException(409, "Xarita boshqa qurilmada o‘zgargan. Yangilang")
+    audit_record(ctx, "table.layout", table.id, {}, layout)
+    ctx.db.commit()
+    return {"layout": layout, "layoutVersion": body.version + 1}

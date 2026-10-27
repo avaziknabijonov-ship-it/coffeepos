@@ -15,6 +15,10 @@ export function setLangValue(l: Lang) {
 const UZ: Record<string, string> = { "staff:O'chirish": "O'chirish", 'cash:Berildi': 'Berildi' }
 
 const RU: Record<string, string> = {
+  "Xaritada stolni tanlab, shakli va joylashuvini sozlang": "Выберите стол на карте, чтобы настроить форму и расположение",
+  "Shakl": "Форма", "Dumaloq": "Круглый", "To‘rtburchak": "Прямоугольный", "Bar": "Бар", "VIP": "VIP",
+  "Chapdan": "Слева", "Yuqoridan": "Сверху", "Kenglik": "Ширина", "Balandlik": "Высота",
+  "Xarita boshqa qurilmada o‘zgargan. Yangilang": "Карта изменена на другом устройстве. Обновите данные",
   "Stol": "Стол",
   "Qurilmadan rasm tanlash": "Выбрать изображение на устройстве",
   "Rasm": "Изображение",

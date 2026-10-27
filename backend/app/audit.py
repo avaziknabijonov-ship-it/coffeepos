@@ -7,7 +7,7 @@ _ALLOWED = {'status', 'amount', 'method', 'orderId', 'shortage', 'surplus', 'lin
             'items', 'key', 'qty', 'restocked', 'costReversed', 'bonusReversed', 'openingCash',
             'closingCash', 'expectedCash', 'branchId', 'category', 'payment', 'stock', 'delta', 'note',
             'name', 'active', 'prices', 'code', 'price', 'id', 'role', 'canBarista', 'canCancelOrders',
-            'canReprintReceipts', 'pinChanged', 'version', 'outstanding', 'isDefault'}
+            'x', 'y', 'width', 'height', 'shape', 'canReprintReceipts', 'pinChanged', 'version', 'outstanding', 'isDefault'}
 
 
 def safe_snapshot(value):

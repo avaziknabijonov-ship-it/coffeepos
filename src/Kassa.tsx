@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import CashExpense from './CashExpense'
 import CatalogImage from './CatalogImage'
+import FloorMap from './FloorMap'
+import type { TableLayout } from './FloorMap'
 import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -20,7 +22,7 @@ const CAT_TINT: Record<string, string> = {
 }
 type ParkedItem = { productId: string; size: string; modIds: string[]; qty: number }
 type ParkedOrder = { id: number; clientKey: string; items: ParkedItem[]; customer: string; staff: string; version: number; updatedAt: number; tableId: number | null; service: 'takeaway' | 'dine_in' }
-type FloorData = { areas: { id: number; name: string; active: boolean }[]; tables: { id: number; areaId: number; name: string; active: boolean; occupied: boolean; drafts: { id: number; staff: string }[] }[] }
+type FloorData = { areas: { id: number; name: string; active: boolean }[]; tables: { id: number; areaId: number; name: string; active: boolean; occupied: boolean; layout?: TableLayout | null; layoutVersion?: number; drafts: { id: number; staff: string }[] }[] }
 const parkedItems = (items: OrderItem[]): ParkedItem[] => items.map(i => ({
   productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
 }))
@@ -76,6 +78,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     setDraftError(''); setFloorOpen(true)
     try { setFloor(await api<FloorData>('/api/floor')) } catch (e) { setDraftError((e as Error).message) }
   }
+  useEffect(() => {
+    if (!floorOpen) return
+    const timer = window.setInterval(() => { void api<FloorData>('/api/floor').then(setFloor).catch(e => setDraftError((e as Error).message)) }, 10000)
+    return () => window.clearInterval(timer)
+  }, [floorOpen])
   const selectTable = async (table: FloorData['tables'][number]) => {
     if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
     setDraftError('')
@@ -277,11 +284,11 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       )}
       {cartOpen && <div className="fixed inset-0 z-40 flex bg-white md:hidden">{cartPanel}</div>}
 
-      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
+      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
         <div className="flex items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2><button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button></div>
         <div className="flex flex-wrap gap-2 border-b p-3"><button onClick={() => setAreaId(null)} className={`rounded-lg px-4 py-2 ${areaId === null ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{t('Barcha zallar')}</button>{floor.areas.filter(a => a.active).map(a => <button key={a.id} onClick={() => setAreaId(a.id)} className={`rounded-lg px-4 py-2 ${areaId === a.id ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{a.name}</button>)}</div>
         <div className="overflow-y-auto bg-slate-100 p-5"><p className="mb-4 text-sm text-slate-600">{t('Stolni tanlang')} · <span className="text-sky-700">● {t('Band')}</span> · ● {t('Bo‘sh')}</p>{draftError && <p role="alert" className="mb-3 text-red-700">{draftError}</p>}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">{floor.tables.filter(tb => tb.active && (areaId === null || tb.areaId === areaId) && floor.areas.some(a => a.id === tb.areaId && a.active)).map(tb => <button key={tb.id} onClick={() => void selectTable(tb)} className={`min-h-28 rounded-[2.5rem] px-3 py-4 text-center text-white shadow ${tb.occupied ? 'bg-sky-600 hover:bg-sky-700' : 'bg-slate-500 hover:bg-slate-600'}`}><strong className="block text-xl">{tb.name}</strong><span className="text-xs">{tb.occupied ? t('Band') : t('Bo‘sh')}</span>{tb.drafts[0]?.staff && <span className="block text-xs">{tb.drafts[0].staff}</span>}</button>)}</div>
+          {floor.areas.filter(a => a.active && (areaId === null || a.id === areaId)).map(a => <section key={a.id} className="mb-4"><h3 className="mb-2 font-semibold">{a.name}</h3><FloorMap tables={floor.tables.filter(tb => tb.active && tb.areaId === a.id)} onSelect={tb => { const table = floor.tables.find(x => x.id === tb.id); if (table) void selectTable(table) }} /></section>)}
           {!floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
         </div></div></div>}
       {functionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="w-full max-w-xl rounded-2xl bg-white p-5 text-stone-900"><div className="mb-4 flex justify-between"><h2 className="text-xl font-bold">{t('Funksiyalar')}</h2><button onClick={() => setFunctionsOpen(false)} aria-label={t('Yopish')}><X /></button></div><div className="grid gap-3 sm:grid-cols-2">

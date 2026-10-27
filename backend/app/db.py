@@ -469,6 +469,8 @@ class DiningTable(Base):
     area_id: Mapped[int] = mapped_column(ForeignKey("dining_areas.id"), index=True)
     name: Mapped[str] = mapped_column(String(64))
     seats: Mapped[int] = mapped_column(Integer, default=2)
+    layout: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    layout_version: Mapped[int] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

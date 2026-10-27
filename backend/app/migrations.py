@@ -167,6 +167,10 @@ def category_images(engine) -> None:
     add_columns(engine, {"categories": ["image_url VARCHAR(512) NOT NULL DEFAULT ''"]})
 
 
+def floor_layout(engine) -> None:
+    add_columns(engine, {"dining_tables": ["layout JSON", "layout_version INTEGER NOT NULL DEFAULT 1"]})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
@@ -175,6 +179,7 @@ MIGRATIONS = [
     (5, "tables, happy hour caps, loyalty restore, customer erasure", experience_columns),
     (6, "order fiscal status", fiscal_status_column),
     (7, "category images", category_images),
+    (8, "persistent floor layout", floor_layout),
 ]
 
 

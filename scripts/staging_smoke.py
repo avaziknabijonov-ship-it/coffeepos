@@ -41,7 +41,7 @@ def key():
 
 
 for _ in range(60):  # nginx can answer before the API finished startup (502)
-    if call("GET", "/api/auth/me")[0] in (200, 401):
+    if call("GET", "/api/branches")[0] == 401:
         break
     time.sleep(2)
 else:

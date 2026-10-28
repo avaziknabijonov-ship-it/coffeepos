@@ -68,6 +68,7 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
   const [modal, setModal] = useState<Product | null>(null)
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<Order | null>(null)
+  const [returnToFloor, setReturnToFloor] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -77,32 +78,42 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
   const [activeDraft, setActiveDraft] = useState<ParkedOrder | null>(null)
   const [draftError, setDraftError] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
-  const [floorOpen, setFloorOpen] = useState(false)
+  const [floorOpen, setFloorOpen] = useState(true)
+  const [floorLoading, setFloorLoading] = useState(true)
   const [functionsOpen, setFunctionsOpen] = useState(false)
   const [floor, setFloor] = useState<FloorData>({ areas: [], tables: [] })
   const [areaId, setAreaId] = useState<number | null>(null)
+  const [openingTable, setOpeningTable] = useState<{ id: number; name: string } | null>(null)
+  const [openingGuests, setOpeningGuests] = useState('1')
   const [selectedTable, setSelectedTable] = useState<{ id: number; name: string } | null>(null)
-  const openFloor = async () => {
-    setDraftError(''); setFloorOpen(true)
-    try { setFloor(await api<FloorData>('/api/floor')) } catch (e) { setDraftError((e as Error).message) }
+  const openFloor = () => {
+    setDraftError(''); setFloorLoading(true); setFloorOpen(true)
   }
   useEffect(() => {
     if (!floorOpen) return
-    const timer = window.setInterval(() => { void api<FloorData>('/api/floor').then(setFloor).catch(e => setDraftError((e as Error).message)) }, 10000)
-    return () => window.clearInterval(timer)
-  }, [floorOpen])
+    let active = true
+    const refresh = () => api<FloorData>('/api/floor').then(result => {
+      if (active) { setFloor(result); setFloorLoading(false); setDraftError('') }
+    }).catch(e => { if (active) { setDraftError((e as Error).message); setFloorLoading(false) } })
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 10000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [floorOpen, session?.company.slug])
   const selectTable = async (table: FloorData['tables'][number]) => {
+    if (draftBusy) return
     if (cart.length && !window.confirm(t('Joriy savat almashtirilsinmi?'))) return
-    setDraftError('')
+    setDraftError(''); setDraftBusy(true)
     try {
       const available = await api<ParkedOrder[]>('/api/drafts')
       const matches = available.filter(d => d.tableId === table.id)
       if (matches.length > 1) { setDrafts(matches); setDraftsOpen(true); setFloorOpen(false); return }
       const draft = matches[0]
+      if (!draft) { setOpeningGuests('1'); setOpeningTable({ id: table.id, name: table.name }); return }
       const items = draft ? restoreParkedItems(draft.items) : []
       clear(); setGuests(Math.max(draft?.guestCount ?? 1, ...items.map(i => i.guest ?? 1))); setNote(draft?.note ?? ''); setCart(items); setCustomer(draft?.customer ?? ''); setActiveDraft(draft ?? null)
       setSelectedTable({ id: table.id, name: table.name }); setFloorOpen(false)
     } catch (e) { setDraftError((e as Error).message) }
+    finally { setDraftBusy(false) }
   }
   const loadDrafts = async () => {
     setDraftError('')
@@ -231,6 +242,7 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
     setPaying(false)
     setCartOpen(false)
     clear()
+    setReturnToFloor(selectedTable !== null)
     setReceipt(order)
     setActiveDraft(null)
     setSelectedTable(null)
@@ -332,13 +344,26 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
       )}
       {cartOpen && <div className="fixed inset-0 z-40 flex bg-white md:hidden">{cartPanel}</div>}
 
-      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
-        <div className="flex items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2><button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button></div>
+      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div role="dialog" aria-modal="true" aria-label={t('Zal xaritasi')} className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
+        <div className="flex items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2>{!selectedTable && !cart.length ? <button onClick={() => setFloorOpen(false)} className="ml-auto rounded-lg border px-4 py-2">{t('Olib ketish')}</button> : <button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button>}</div>
         <div className="flex flex-wrap gap-2 border-b p-3"><button onClick={() => setAreaId(null)} className={`rounded-lg px-4 py-2 ${areaId === null ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{t('Barcha zallar')}</button>{floor.areas.filter(a => a.active).map(a => <button key={a.id} onClick={() => setAreaId(a.id)} className={`rounded-lg px-4 py-2 ${areaId === a.id ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{a.name}</button>)}</div>
         <div className="overflow-y-auto bg-slate-100 p-5"><p className="mb-4 text-sm text-slate-600">{t('Stolni tanlang')} · <span className="text-sky-700">● {t('Band')}</span> · ● {t('Bo‘sh')}</p>{draftError && <p role="alert" className="mb-3 text-red-700">{draftError}</p>}
           {floor.areas.filter(a => a.active && (areaId === null || a.id === areaId)).map(a => <section key={a.id} className="mb-4"><h3 className="mb-2 font-semibold">{a.name}</h3><FloorMap tables={floor.tables.filter(tb => tb.active && tb.areaId === a.id)} onSelect={tb => { const table = floor.tables.find(x => x.id === tb.id); if (table) void selectTable(table) }} /></section>)}
-          {!floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
+          {floorLoading && <p role="status" className="py-6 text-center">{t('Yuklanmoqda…')}</p>}
+          {!floorLoading && !draftError && !floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
         </div></div></div>}
+      {openingTable && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"><form role="dialog" aria-modal="true" aria-label={t('Mehmonlar soni')} className="w-full max-w-sm space-y-5 rounded-2xl bg-white p-6 text-stone-900 shadow-xl" onSubmit={e => {
+        e.preventDefault()
+        const count = Number(openingGuests)
+        if (!Number.isInteger(count) || count < 1 || count > 50) return
+        clear(); setGuests(count); setActiveDraft(null); setSelectedTable(openingTable)
+        setOpeningTable(null); setFloorOpen(false)
+      }}>
+        <h2 className="text-xl font-bold">{t('Stol')}: {openingTable.name}</h2>
+        <label className="block font-semibold">{t('Mehmonlar soni')}<input autoFocus type="number" min={1} max={50} step={1} required value={openingGuests} onChange={e => setOpeningGuests(e.target.value)} className="mt-2 w-full rounded-xl border p-4 text-2xl" /></label>
+        <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4, 5, 6, 7, 8].map(n => <button type="button" key={n} onClick={() => setOpeningGuests(String(n))} className={`rounded-lg border py-3 text-lg font-bold ${Number(openingGuests) === n ? 'bg-sky-700 text-white' : 'bg-stone-50'}`}>{n}</button>)}</div>
+        <div className="flex gap-3"><button type="button" onClick={() => setOpeningTable(null)} className="rounded-xl border px-4 py-3">{t('Yopish')}</button><button type="submit" className="flex-1 rounded-xl bg-sky-700 px-4 py-3 font-bold text-white">{t('Davom ettirish')}</button></div>
+      </form></div>}
       {actionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div role="dialog" aria-modal="true" aria-label={t('Chek amallari')} className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl bg-white p-5 text-stone-900"><div className="flex items-center justify-between"><h2 className="text-xl font-bold">{t('Chek amallari')}</h2><button onClick={() => setActionsOpen(false)} aria-label={t('Yopish')}><X /></button></div>
         <label className="block text-sm font-semibold">{t('Chekka izoh')}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label>
         <label className="block text-sm font-semibold">{t('Mehmonlar soni')}<input aria-label={t('Mehmonlar soni')} type="number" min={Math.max(1, ...cart.map(i => i.guest ?? 1))} max={50} value={guests} onChange={e => { const n = Math.max(1, ...cart.map(i => i.guest ?? 1), Math.min(50, Number(e.target.value) || 1)); setGuests(n); setGuest(g => Math.min(g, n)) }} className="ml-3 w-24 rounded-lg border p-2" /></label>
@@ -368,7 +393,7 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
       </div></div>}
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { addToCart(it); setModal(null) }} />}
       {paying && <PaymentModal total={total} onClose={() => setPaying(false)} onConfirm={confirmPayment} />}
-      {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
+      {receipt && <ReceiptModal order={receipt} onClose={() => { setReceipt(null); if (returnToFloor) openFloor(); setReturnToFloor(false) }} />}
       {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</h2><button onClick={() => setHistoryOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">{t('Otmena')}: {orders.filter(o => o.status === 'cancelled').length}</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `${t('Otmena')} · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>tCatalogName(i.name)).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">{t('Perechek')}</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">{t('Otmena')}</button>}</div>)}</div></div></div>}
       {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
     </div>

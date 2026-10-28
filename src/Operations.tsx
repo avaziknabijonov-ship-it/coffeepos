@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, getBranch, setBranch, setDeviceToken } from './api'
 import { t, tCatalogName } from './i18n'
 import { INGREDIENTS, som } from './data'
 import { sync } from './store'
-import FloorMap, { defaultLayout } from './FloorMap'
-import type { MapTable, TableLayout } from './FloorMap'
+import FloorMap from './FloorMap'
+import { defaultLayout } from './floorLayout'
+import type { MapTable, TableLayout } from './floorLayout'
 
 const box = 'space-y-3 rounded-2xl border bg-white p-4'
 const input = 'rounded border p-2'
@@ -16,10 +17,19 @@ const key = () => crypto.randomUUID().replaceAll('-', '')
 function useLoad<T>(path: string, initial: T): [T, () => Promise<void>, string, (e: string) => void] {
   const [data, setData] = useState<T>(initial)
   const [error, setError] = useState('')
-  const load = async () => {
-    try { setData(await api<T>(path)); setError('') } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [path])
+  const requestId = useRef({ value: 0 })
+  const load = useCallback(async () => {
+    const id = ++requestId.current.value
+    try { const value = await api<T>(path); if (id === requestId.current.value) { setData(value); setError('') } }
+    catch (e) { if (id === requestId.current.value) setError((e as Error).message) }
+  }, [path])
+  useEffect(() => {
+    const id = ++requestId.current.value
+    void api<T>(path).then(value => { if (id === requestId.current.value) { setData(value); setError('') } })
+      .catch(e => { if (id === requestId.current.value) setError((e as Error).message) })
+    const requestState = requestId.current
+    return () => { ++requestState.value }
+  }, [path])
   return [data, load, error, setError]
 }
 

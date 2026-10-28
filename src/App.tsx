@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { t } from './i18n'
 import LangSwitch from './LangSwitch'
 import ThemeSwitch from './ThemeSwitch'
@@ -6,11 +6,11 @@ import UpdateNotice from './UpdateNotice'
 import { ChefHat, Coffee, LayoutDashboard, LogOut, Store, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
-import HookahPOS from './HookahPOS'
-import Barista from './Barista'
-import Admin from './Admin'
+const HookahPOS = lazy(() => import('./HookahPOS'))
+const Barista = lazy(() => import('./Barista'))
+const Admin = lazy(() => import('./Admin'))
 import Login from './Login'
-import Superadmin from './Superadmin'
+const Superadmin = lazy(() => import('./Superadmin'))
 import { CloseShiftModal } from './Shift'
 import { ROLE_LABEL } from './data'
 import type { Role } from './data'
@@ -34,11 +34,13 @@ export default function App() {
   const [platform, setPlatform] = useState(() => window.location.hash === '#superadmin')
   useEffect(() => { const onHash = () => setPlatform(window.location.hash === '#superadmin'); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash) }, [])
   const { phase, session } = useAppState()
-  if (platform) return <Superadmin />
+  if (platform) return <Suspense fallback={<Loading />}><Superadmin /></Suspense>
   if (phase === 'loading') return <div className="grid h-dvh place-items-center text-stone-500">{t('Yuklanmoqda…')}</div>
   if (phase === 'login' || !session) return <Login />
-  return <Main role={session.staff.role} />
+  return <Suspense fallback={<Loading />}><Main role={session.staff.role} /></Suspense>
 }
+
+function Loading() { return <div role="status" className="grid h-dvh place-items-center text-stone-500">{t('Yuklanmoqda…')}</div> }
 
 function Main({ role }: { role: Role }) {
   const { orders, shift, session, online, pendingCount, pendingError } = useAppState()

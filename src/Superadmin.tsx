@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { t, tServer } from './i18n'
 import LangSwitch from './LangSwitch'
 import { useAppState } from './store'
@@ -40,15 +40,18 @@ export default function Superadmin() {
     return res.json() as Promise<T>
   }
 
+  const keyRevision = useRef(0)
   async function load(nextOffset = offset) {
+    const revision = keyRevision.current
     setError('')
     try {
       const r = await request<Result>('/companies?limit=' + limit + '&offset=' + nextOffset)
+      if (revision !== keyRevision.current) return
       setCompanies(r.items); setOffset(nextOffset); setAuthenticated(true)
-    } catch (e) { setAuthenticated(false); setError((e as Error).message) }
+    } catch (e) { if (revision === keyRevision.current) { setAuthenticated(false); setError((e as Error).message) } }
   }
   // Deliberately never persist the platform key in browser storage.
-  useEffect(() => { setAuthenticated(false); setCompanies([]) }, [key])
+  const changeKey = (value: string) => { ++keyRevision.current; setKey(value); setAuthenticated(false); setCompanies([]); setModuleChoices({}); setError('') }
   async function create() {
     setBusy(true); setError('')
     try {
@@ -71,7 +74,7 @@ export default function Superadmin() {
       <header className="flex items-center justify-between"><h1 className="text-2xl font-bold">{t("CoffeePOS · Superadmin")}</h1><div className="flex items-center gap-3"><LangSwitch light /><a className="text-sm underline" href="/#admin">CoffeePOS</a></div></header>
       <section className="rounded-xl bg-white p-5">
         <label className="block text-sm font-semibold">{t("Maxfiy superadmin kaliti (faqat shu sahifada)")}</label>
-        <div className="mt-2 flex gap-2"><input className={field} type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="SUPERADMIN_KEY" /><button className="rounded-lg bg-stone-900 px-4 text-white" onClick={() => load(0)}>{t("Kirish")}</button></div>
+        <div className="mt-2 flex gap-2"><input className={field} type="password" autoComplete="off" value={key} disabled={busy} onChange={e => changeKey(e.target.value)} placeholder="SUPERADMIN_KEY" /><button className="rounded-lg bg-stone-900 px-4 text-white" onClick={() => load(0)}>{t("Kirish")}</button></div>
         <p className="mt-2 text-xs text-stone-500">{t("Kalit brauzer xotirasiga saqlanmaydi. Hech kimga yubormang.")}</p>
         {error && <p className="mt-2 text-sm text-red-600" role="alert">{error}</p>}
       </section>

@@ -229,6 +229,48 @@ try {
   const state = await (await http.get('/api/sync', { headers })).json()
   assert.equal(state.orders.filter(o => o.customer === 'Offline Test').length, 2, 'no duplicate sales after repeated sync')
   checked.push('reconnect and repeated sync: exactly two server orders')
+  // Older responses must never replace the report selected by a newer filter.
+  const financePage = await pageFor('uz', 'light')
+  const financeReport = await (await http.get('/api/reports/finance?days=30', { headers })).json()
+  let releaseOldFinance
+  let oldFinanceSeen = false
+  const oldFinance = new Promise(resolve => { releaseOldFinance = resolve })
+  await financePage.route('**/api/reports/finance?days=*', async route => {
+    if (route.request().url().endsWith('days=30')) { oldFinanceSeen = true; await oldFinance }
+    const current = route.request().url().endsWith('days=7')
+    await route.fulfill({ json: { ...financeReport, revenue: current ? 777777 : 999999, daily: [] } })
+  })
+  await financePage.getByRole('button', { name: 'Moliya hisoboti', exact: true }).click()
+  await waitFor(async () => oldFinanceSeen, 'old finance request started')
+  await financePage.getByRole('combobox', { name: 'Davr', exact: true }).selectOption('7')
+  await financePage.getByText("777 777 so'm", { exact: true }).waitFor()
+  const oldFinanceResponse = financePage.waitForResponse(response => response.url().endsWith('/api/reports/finance?days=30'))
+  releaseOldFinance()
+  await oldFinanceResponse
+  await financePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert.equal(await financePage.getByText("999 999 so'm", { exact: true }).count(), 0)
+  assert.ok(await financePage.getByText("777 777 so'm", { exact: true }).isVisible())
+  checked.push('finance: delayed old period cannot replace the new period report')
+
+  const keyPage = await pageFor('uz', 'light')
+  await keyPage.goto(base + '/#superadmin')
+  let releaseOldKey
+  let oldKeySeen = false
+  const oldKey = new Promise(resolve => { releaseOldKey = resolve })
+  await keyPage.route('**/api/superadmin/companies?*', async route => {
+    oldKeySeen = true; await oldKey
+    await route.fulfill({ json: { items: [], offset: 0, limit: 100 } })
+  })
+  await keyPage.locator('input[type="password"]').fill('disposable-old-key-for-regression-only')
+  await keyPage.getByRole('button', { name: 'Kirish', exact: true }).click()
+  await waitFor(async () => oldKeySeen, 'old platform-key request started')
+  await keyPage.locator('input[type="password"]').fill('disposable-new-key-for-regression-only')
+  const oldKeyResponse = keyPage.waitForResponse(response => response.url().includes('/api/superadmin/companies?'))
+  releaseOldKey()
+  await oldKeyResponse
+  await keyPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert.equal(await keyPage.getByRole('heading', { name: 'Qahvaxonalar va litsenziyalar', exact: true }).count(), 0)
+  checked.push('superadmin: response for an old key cannot restore authenticated UI')
   const licensePage = await pageFor('uz', 'light')
   await licensePage.goto(base + '/#superadmin')
   await licensePage.locator('input[type="password"]').fill(process.env.SUPERADMIN_KEY)

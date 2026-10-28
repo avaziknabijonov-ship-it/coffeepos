@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t, tCatalogName } from './i18n'
 import { exportExcel } from './exportExcel'
 import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
@@ -157,6 +157,11 @@ function Card({ title, children, className = '' }: { title?: string; children: R
 }
 
 function Dashboard({ today, low, goStock, hookah = false }: { hookah?: boolean; today: Orders; low: { name: string; stock: number; min: number; unit: string }[]; goStock: () => void }) {
+  const [displayDate, setDisplayDate] = useState(() => new Date().toLocaleDateString())
+  useEffect(() => {
+    const timer = window.setInterval(() => setDisplayDate(new Date().toLocaleDateString()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
   const active = today.filter(o => o.status !== 'cancelled' && !o.pendingSync)
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
@@ -195,7 +200,7 @@ function Dashboard({ today, low, goStock, hookah = false }: { hookah?: boolean; 
 
   return (
     <div className="premium-dashboard space-y-5">
-      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{hookah ? t("Kalyanxona hisoboti") : t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
+      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{hookah ? t("Kalyanxona hisoboti") : t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{displayDate} · {t("Bugun")}</div></div>
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
@@ -337,20 +342,32 @@ function Orders({ today }: { today: Orders }) {
   const [printing, setPrinting] = useState<HistoricalOrder | null>(null)
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
+  const requestId = useRef({ value: 0 })
+  const fetchHistory = useCallback(async () => {
+    const start = new Date(from + 'T00:00:00').getTime()
+    const end = new Date(to + 'T00:00:00').getTime() + 86400000
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error(t('Sana oralig‘ini to‘g‘ri tanlang'))
+    const params = new URLSearchParams({ from_ms: String(start), to_ms: String(end) })
+    if (staff) params.set('staff', staff)
+    if (shiftId) params.set('shift_id', shiftId)
+    return api<HistoricalOrder[]>('/api/orders/history?' + params.toString())
+  }, [from, to, staff, shiftId])
   const reload = async () => {
+    const id = ++requestId.current.value
     setBusy(true); setActionError('')
-    try {
-      const start = new Date(from + 'T00:00:00').getTime()
-      const end = new Date(to + 'T00:00:00').getTime() + 86400000
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error(t('Sana oralig‘ini to‘g‘ri tanlang'))
-      const params = new URLSearchParams({ from_ms: String(start), to_ms: String(end) })
-      if (staff) params.set('staff', staff)
-      if (shiftId) params.set('shift_id', shiftId)
-      setHistory(await api<HistoricalOrder[]>('/api/orders/history?' + params.toString()))
-    } catch(e) { setActionError((e as Error).message) } finally { setBusy(false) }
+    try { const data = await fetchHistory(); if (id === requestId.current.value) setHistory(data) }
+    catch(e) { if (id === requestId.current.value) setActionError((e as Error).message) }
+    finally { if (id === requestId.current.value) setBusy(false) }
   }
-  useEffect(() => { void api<HistoricalShift[]>('/api/shifts').then(setShifts).catch(()=>{} ) }, [])
-  useEffect(() => { void reload() }, [from, to, staff, shiftId])
+  useEffect(() => { let active = true; void api<HistoricalShift[]>('/api/shifts').then(data => { if (active) setShifts(data) }).catch(()=>{} ); return () => { active = false } }, [])
+  useEffect(() => {
+    const id = ++requestId.current.value
+    void fetchHistory().then(data => { if (id === requestId.current.value) { setHistory(data); setActionError('') } })
+      .catch(e => { if (id === requestId.current.value) setActionError((e as Error).message) })
+      .finally(() => { if (id === requestId.current.value) setBusy(false) })
+    const requestState = requestId.current
+    return () => { ++requestState.value }
+  }, [fetchHistory])
   const list = [...history].sort((a,b)=>b.createdAt-a.createdAt)
   const cancelled = list.filter(o=>o.status === 'cancelled')
   const actual = list.filter(o=>o.status !== 'cancelled')

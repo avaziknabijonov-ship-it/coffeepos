@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { api } from './api'
 import { exportExcel } from './exportExcel'
 import { som, PAYMENT_LABEL } from './data'
@@ -19,13 +19,23 @@ export default function Finance() {
   const [report, setReport] = useState<FinanceReport | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const requestId = useRef({ value: 0 })
   const refresh = async () => {
+    const id = ++requestId.current.value
     setLoading(true); setError('')
-    try { setReport(await api<FinanceReport>('/api/reports/finance?days=' + days)) }
-    catch(e) { setError((e as Error).message) }
-    finally { setLoading(false) }
+    try { const data = await api<FinanceReport>('/api/reports/finance?days=' + days); if (id === requestId.current.value) setReport(data) }
+    catch(e) { if (id === requestId.current.value) setError((e as Error).message) }
+    finally { if (id === requestId.current.value) setLoading(false) }
   }
-  useEffect(() => { void refresh() }, [days])
+  useEffect(() => {
+    const id = ++requestId.current.value
+    void api<FinanceReport>('/api/reports/finance?days=' + days).then(data => {
+      if (id === requestId.current.value) { setReport(data); setError('') }
+    }).catch(e => { if (id === requestId.current.value) setError((e as Error).message) })
+      .finally(() => { if (id === requestId.current.value) setLoading(false) })
+    const requestState = requestId.current
+    return () => { ++requestState.value }
+  }, [days])
   const box = 'rounded-xl border border-stone-200 bg-white p-4'
   const cards = report ? [
     [t('Tushum'), report.revenue],
@@ -43,7 +53,7 @@ export default function Finance() {
         <div><h2 className="text-lg font-semibold">{t('Moliya hisoboti')}</h2>
           <p className="text-sm text-stone-500">{t('Sotuv, tannarx, xarajat va berilgan oylik/avanslar')}</p></div>
         <div className="flex items-center gap-2">
-          <select aria-label={t('Davr')} value={days} onChange={e=>setDays(Number(e.target.value))} className="rounded-lg border px-3 py-2 text-sm">
+          <select aria-label={t('Davr')} value={days} onChange={e=>{ setLoading(true); setError(''); setDays(Number(e.target.value)) }} className="rounded-lg border px-3 py-2 text-sm">
             <option value={7}>{t('Oxirgi 7 kun')}</option><option value={30}>{t('Oxirgi 30 kun')}</option>
             <option value={90}>{t('Oxirgi 90 kun')}</option>
           </select>

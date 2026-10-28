@@ -172,3 +172,46 @@ html { font-family: 'Manrope', 'Segoe UI', sans-serif; }
 .cashier-warm.hookah-cashier .cashier-product-card { border-color:#d6c8e5; }
 .cashier-warm.hookah-cashier .cashier-add-button { background:linear-gradient(110deg,#674586,#3d5469) !important; color:#fff !important; }
 .admin-shell.hookah-admin > div > aside nav span.flex-1 { white-space:normal !important; line-height:1.35; }
+
+/* Cashier follows the selected theme too. Keep paper receipts light when printing. */
+@media screen {
+  [data-theme="light"] .cashier-warm .cashier-checkout { background-color:#fffdf9 !important; }
+  [data-theme="dark"] .app-cashier .premium-app-header {
+    background:#201c21 !important; color:#f7f0e6 !important; border-color:#51464d;
+  }
+  [data-theme="dark"] .app-cashier .premium-app-header .text-white,
+  [data-theme="dark"] .app-cashier .premium-app-header .text-stone-300,
+  [data-theme="dark"] .app-cashier .premium-app-brand span:nth-child(2) { color:#f7f0e6 !important; }
+  [data-theme="dark"] .app-cashier .premium-app-header .admin-return { background:#302831 !important; color:#f7f0e6 !important; border-color:#97858b; }
+  [data-theme="dark"] .cashier-warm { background:#151317; color:#f7f0e6; }
+  [data-theme="dark"] .cashier-warm .cashier-products,
+  [data-theme="dark"] .cashier-warm .cashier-categories,
+  [data-theme="dark"] .cashier-warm .cashier-products > div:first-child { background:#19161c !important; border-color:#51464d !important; }
+  [data-theme="dark"] .cashier-warm .cashier-checkout { background:#201c23 !important; color:#f7f0e6; border-color:#51464d !important; }
+  [data-theme="dark"] .cashier-warm .cashier-product-card,
+  [data-theme="dark"] .cashier-warm .cashier-cart-row,
+  [data-theme="dark"] .cashier-warm .bg-white { background:#28232b !important; color:#f7f0e6; border-color:#61525c !important; }
+  [data-theme="dark"] .cashier-warm .bg-stone-50,
+  [data-theme="dark"] .cashier-warm .bg-slate-100 { background:#211d25 !important; }
+  [data-theme="dark"] .cashier-warm .bg-stone-100 { background:#3b323e !important; }
+  [data-theme="dark"] .cashier-warm .text-stone-900,
+  [data-theme="dark"] .cashier-warm .text-stone-800,
+  [data-theme="dark"] .cashier-warm .text-stone-700,
+  [data-theme="dark"] .cashier-warm .text-stone-600 { color:#f7f0e6 !important; }
+  [data-theme="dark"] .cashier-warm .text-stone-500,
+  [data-theme="dark"] .cashier-warm .text-stone-400,
+  [data-theme="dark"] .cashier-warm .text-slate-600 { color:#c4b7c4 !important; }
+  [data-theme="dark"] .cashier-warm .text-amber-700,
+  [data-theme="dark"] .cashier-warm .text-amber-800 { color:#ffd29b !important; }
+  [data-theme="dark"] .cashier-warm .text-sky-700 { color:#8cd5ff !important; }
+  [data-theme="dark"] .cashier-warm .bg-sky-100 { background:#193a50 !important; color:#c2eaff !important; }
+  [data-theme="dark"] .cashier-warm .border-stone-200,
+  [data-theme="dark"] .cashier-warm .cashier-cart > div:first-child,
+  [data-theme="dark"] .cashier-warm .cashier-categories button { border-color:#61525c !important; }
+  [data-theme="dark"] .cashier-warm input,
+  [data-theme="dark"] .cashier-warm select,
+  [data-theme="dark"] .cashier-warm textarea { background:#302a34 !important; color:#f7f0e6 !important; border-color:#796977 !important; }
+  [data-theme="dark"] .cashier-warm input::placeholder,
+  [data-theme="dark"] .cashier-warm textarea::placeholder { color:#c4b7c4; }
+  [data-theme="dark"] .cashier-warm .bg-transparent { background:transparent !important; }
+}

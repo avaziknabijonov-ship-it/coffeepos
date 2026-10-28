@@ -41,7 +41,7 @@ async function pageFor(lang, theme) {
     localStorage.setItem('coffeepos-token', token)
     localStorage.setItem('coffeepos-company', slug)
     localStorage.setItem('coffeepos-lang', lang)
-    localStorage.setItem('coffeepos-theme', theme)
+    if (!localStorage.getItem('coffeepos-theme')) localStorage.setItem('coffeepos-theme', theme)
   }, { token: auth.token, slug, lang, theme })
   const page = await context.newPage()
   page.on('pageerror', error => errors.push(error.message))
@@ -212,6 +212,28 @@ try {
     assert.equal(motto, lang === 'uz' ? 'Yaxshi qahva — yaxshi kun' : 'Хороший кофе — хороший день')
     await screenshot(page, `${lang}-${theme}-cashier`)
     checked.push(`${lang}/${theme}: cashier`)
+    await page.getByRole('dialog', { name: lang === 'uz' ? 'Zal xaritasi' : 'Карта зала', exact: true }).getByRole('button', { name: lang === 'uz' ? 'Olib ketish' : 'С собой', exact: true }).click()
+    const surface = page.locator('.cashier-checkout')
+    const beforeTheme = await surface.evaluate(el => getComputedStyle(el).backgroundColor)
+    const modeButton = page.getByRole('button', { name: lang === 'uz' ? (theme === 'dark' ? 'Tun' : 'Kun') : (theme === 'dark' ? 'Тёмная' : 'Светлая'), exact: true })
+    await modeButton.click()
+    const nextMode = theme === 'dark' ? 'system' : 'dark'
+    await waitFor(() => page.evaluate(mode => localStorage.getItem('coffeepos-theme') === mode, nextMode), 'theme setting saved')
+    if (theme === 'dark') {
+      // System resolves light in this browser; test the explicit cycle to light too.
+      await page.getByRole('button', { name: lang === 'uz' ? 'Avto' : 'Авто', exact: true }).click()
+    }
+    const afterTheme = await surface.evaluate(el => getComputedStyle(el).backgroundColor)
+    assert.notEqual(beforeTheme, afterTheme, 'theme must change the actual cashier surface')
+    const resolved = await page.evaluate(() => document.documentElement.dataset.theme)
+    await page.reload()
+    await waitFor(() => page.evaluate(expected => document.documentElement.dataset.theme === expected, resolved), 'theme survives reload')
+    await page.getByRole('dialog', { name: lang === 'uz' ? 'Zal xaritasi' : 'Карта зала', exact: true }).getByRole('button', { name: lang === 'uz' ? 'Olib ketish' : 'С собой', exact: true }).click()
+    assert.equal(await surface.evaluate(el => getComputedStyle(el).backgroundColor), afterTheme)
+    assert.ok(await contrast(surface) >= 4.5, 'cart text contrast in the toggled theme')
+    await screenshot(page, `${lang}-${theme}-theme-toggled`)
+    checked.push(`${lang}/${theme}: actual cashier theme toggles and persists on reload`)
+
   }
   // Two independent browser storages, with backend outage followed by reconnect.
   const a = await pageFor('uz', 'light')

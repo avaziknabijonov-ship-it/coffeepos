@@ -269,6 +269,7 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
     <div className={`cashier-warm cashier-reference ${hookah ? 'hookah-cashier' : ''} flex h-full min-h-0`}>
 
 
+      {!floorOpen && <>
       <main className="cashier-products flex min-w-0 flex-1 flex-col">
         {hookah && <div className="border-b bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">{t('Kalyanxona')} · {t('Stollar, mehmonlar va alohida cheklar')}</div>}
         {promotion && <p className="bg-amber-100 p-2 text-sm font-semibold">{t('Happy Hour')}: {promotion.name} · {promotion.percent}% · {t('Chegirmalar qo‘shilmaydi; kattarog‘i olinadi')}</p>}
@@ -341,14 +342,15 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
       )}
       {cartOpen && <div className="fixed inset-0 z-40 flex bg-white md:hidden">{cartPanel}</div>}
 
-      {floorOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div role="dialog" aria-modal="true" aria-label={t('Zal xaritasi')} className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white text-stone-900 shadow-xl">
-        <div className="flex items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2>{!selectedTable && !cart.length ? <button onClick={() => setFloorOpen(false)} className="ml-auto rounded-lg border px-4 py-2">{t('Olib ketish')}</button> : <button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button>}</div>
-        <div className="flex flex-wrap gap-2 border-b p-3"><button onClick={() => setAreaId(null)} className={`rounded-lg px-4 py-2 ${areaId === null ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{t('Barcha zallar')}</button>{floor.areas.filter(a => a.active).map(a => <button key={a.id} onClick={() => setAreaId(a.id)} className={`rounded-lg px-4 py-2 ${areaId === a.id ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{a.name}</button>)}</div>
-        <div className="overflow-y-auto bg-slate-100 p-5"><p className="mb-4 text-sm text-slate-600">{t('Stolni tanlang')} · <span className="text-sky-700">● {t('Band')}</span> · ● {t('Bo‘sh')}</p>{draftError && <p role="alert" className="mb-3 text-red-700">{draftError}</p>}
+      </>}
+      {floorOpen && <section role="region" aria-label={t('Zal xaritasi')} className="cashier-floor flex h-full min-h-0 w-full flex-col overflow-hidden bg-white text-stone-900">
+        <div className="flex shrink-0 items-center justify-between border-b p-4"><h2 className="text-xl font-bold">{t('Zal xaritasi')}</h2><button onClick={() => setFunctionsOpen(true)} className="ml-auto mr-3 rounded-lg border px-4 py-2 font-semibold">{t('Funksiyalar')}</button>{!selectedTable && !cart.length ? <button onClick={() => setFloorOpen(false)} className="rounded-lg border px-4 py-2">{t('Olib ketish')}</button> : <button onClick={() => setFloorOpen(false)} aria-label={t('Yopish')}><X /></button>}</div>
+        <div className="flex shrink-0 flex-wrap gap-2 border-b p-3"><button onClick={() => setAreaId(null)} className={`rounded-lg px-4 py-2 ${areaId === null ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{t('Barcha zallar')}</button>{floor.areas.filter(a => a.active).map(a => <button key={a.id} onClick={() => setAreaId(a.id)} className={`rounded-lg px-4 py-2 ${areaId === a.id ? 'bg-slate-800 text-white' : 'bg-stone-100'}`}>{a.name}</button>)}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-5"><p className="mb-4 text-sm text-slate-600">{t('Stolni tanlang')} · <span className="text-sky-700">● {t('Band')}</span> · ● {t('Bo‘sh')}</p>{draftError && <p role="alert" className="mb-3 text-red-700">{draftError}</p>}
           {floor.areas.filter(a => a.active && (areaId === null || a.id === areaId)).map(a => <section key={a.id} className="mb-4"><h3 className="mb-2 font-semibold">{a.name}</h3><FloorMap tables={floor.tables.filter(tb => tb.active && tb.areaId === a.id)} onSelect={tb => { const table = floor.tables.find(x => x.id === tb.id); if (table) void selectTable(table) }} /></section>)}
           {floorLoading && <p role="status" className="py-6 text-center">{t('Yuklanmoqda…')}</p>}
           {!floorLoading && !draftError && !floor.tables.some(tb => tb.active) && <p className="py-8 text-center text-slate-600">{t('Stollar hali yaratilmagan. Admin bo‘limida zal va stollarni qo‘shing.')}</p>}
-        </div></div></div>}
+        </div></section>}
       {openingTable && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"><form role="dialog" aria-modal="true" aria-label={t('Mehmonlar soni')} className="w-full max-w-sm space-y-5 rounded-2xl bg-white p-6 text-stone-900 shadow-xl" onSubmit={e => {
         e.preventDefault()
         const count = Number(openingGuests)

@@ -5,7 +5,7 @@ import CatalogImage from './CatalogImage'
 import FloorMap from './FloorMap'
 import type { TableLayout } from './floorLayout'
 import { t, tCatalogName } from './i18n'
-import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
+import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, discountAmount, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
@@ -258,8 +258,8 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
       hookah={hookah} onActions={openActions} guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
-      appliedDiscountPct={effectivePercent} discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
-      changeQty={changeQty} clear={clearOrder} onSave={saveDraft} onDrafts={loadDrafts} draftBusy={draftBusy} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
+      appliedDiscountPct={effectivePercent} subtotal={subtotal} discount={discount} total={total}
+      changeQty={changeQty} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )
 
@@ -283,9 +283,6 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Mahsulot qidirish')} className="w-full bg-transparent outline-none" />
             {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
-          {(canCancel || canReprint) && <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-amber-700 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950 hover:bg-amber-100">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</button>}
-          <button onClick={() => setExpenseOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Xarajat')}</button>
-          <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
           </div>
           <div className="-mx-3 flex gap-2 overflow-x-auto px-3 md:hidden">
             {CATEGORIES.map((c) => (
@@ -365,6 +362,8 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
         <div className="flex gap-3"><button type="button" onClick={() => setOpeningTable(null)} className="rounded-xl border px-4 py-3">{t('Yopish')}</button><button type="submit" className="flex-1 rounded-xl bg-sky-700 px-4 py-3 font-bold text-white">{t('Davom ettirish')}</button></div>
       </form></div>}
       {actionsOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div role="dialog" aria-modal="true" aria-label={t('Chek amallari')} className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl bg-white p-5 text-stone-900"><div className="flex items-center justify-between"><h2 className="text-xl font-bold">{t('Chek amallari')}</h2><button onClick={() => setActionsOpen(false)} aria-label={t('Yopish')}><X /></button></div>
+        <div className="grid grid-cols-2 gap-2"><button disabled={!cart.length || draftBusy} onClick={() => { setActionsOpen(false); void saveDraft() }} className="rounded-xl border p-3 font-semibold disabled:opacity-40">{t('Saqlab qo‘yish')}</button><button onClick={() => { setActionsOpen(false); void loadDrafts() }} className="rounded-xl border p-3 font-semibold">{t('Saqlangan buyurtmalar')}</button></div>
+        <label className="block text-sm font-semibold">{t('Chegirma')} %<input aria-label={t('Chegirma foizi')} type="number" min={0} max={50} step={1} value={discountPct} onChange={e => setDiscountPct(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))} className="ml-3 w-24 rounded-lg border p-2" /></label>
         <label className="block text-sm font-semibold">{t('Chekka izoh')}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label>
         <label className="block text-sm font-semibold">{t('Mehmonlar soni')}<input aria-label={t('Mehmonlar soni')} type="number" min={Math.max(1, ...cart.map(i => i.guest ?? 1))} max={50} value={guests} onChange={e => { const n = Math.max(1, ...cart.map(i => i.guest ?? 1), Math.min(50, Number(e.target.value) || 1)); setGuests(n); setGuest(g => Math.min(g, n)) }} className="ml-3 w-24 rounded-lg border p-2" /></label>
         <label className="block text-sm font-semibold">{t('Stolni almashtirish')}<select aria-label={t('Stolni almashtirish')} disabled={draftBusy || !cart.length} value="" onChange={e => void draftAction('move', e.target.value === 'takeaway' ? { tableId: null, service: 'takeaway' } : { tableId: Number(e.target.value), service: 'dine_in' })} className="mt-1 w-full rounded-lg border p-3"><option value="">{t('Tanlang')}</option><option value="takeaway">{t('Olib ketish')}</option>{actionFloor.tables.filter(tb => tb.active && !tb.occupied).map(tb => <option key={tb.id} value={tb.id}>{tb.name}</option>)}</select></label>
@@ -408,27 +407,23 @@ function Cart(props: {
   customerPhone: string; setCustomerPhone: (v: string) => void
   bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
   setBonusRedeem: (v: number) => void; loadBonus: () => void
-  appliedDiscountPct: number; discountPct: number; setDiscountPct: (v: number) => void; subtotal: number; discount: number; total: number
-  changeQty: (key: string, d: number) => void; clear: () => void; onSave: () => void; onDrafts: () => void; draftBusy: boolean; draftError: string; onPay: () => void; onClose?: () => void
+  appliedDiscountPct: number; subtotal: number; discount: number; total: number
+  changeQty: (key: string, d: number) => void; draftError: string; onPay: () => void; onClose?: () => void
 }) {
   const { cart } = props
   return (
-    <div className="flex min-h-0 w-full flex-col">
-      <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+    <div className="cashier-cart flex min-h-0 w-full flex-col overflow-y-auto">
+      <div className="flex shrink-0 items-center justify-between border-b border-stone-200 px-4 py-2">
         <div>
           <div className="text-xs text-stone-500">{t('Yangi buyurtma')}</div>
           <div className="text-lg font-bold">#{props.number}</div>
         </div>
         <div className="flex items-center gap-1">
-          {cart.length > 0 && (
-            <button onClick={props.clear} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-stone-500 hover:bg-stone-100">
-              <Trash2 className="size-4" />{t('Tozalash')}
-            </button>
-          )}
           {props.onClose && <button onClick={props.onClose} aria-label={t('Yopish')} className="rounded-lg p-2 hover:bg-stone-100"><X className="size-5" /></button>}
         </div>
       </div>
-      <div className="px-4 pt-3">
+      <details className="cashier-customer shrink-0 border-b px-4 py-2"><summary className="cursor-pointer text-sm font-semibold">{t('Mijoz')}{props.customer ? ` · ${props.customer}` : ''}{props.bonusInfo?.enabled ? ` · ${som(props.bonusInfo.balance)}` : ''}</summary>
+      <div className="pt-3">
         <input value={props.customer} onChange={(e) => props.setCustomer(e.target.value)} placeholder={t(props.hookah ? 'Mijoz ismi' : 'Mijoz ismi (stakan uchun)')}
           className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 outline-none focus:border-amber-500" />
       </div>
@@ -447,15 +442,16 @@ function Cart(props: {
           <label>{t('Ishlatish')} <input className="w-24 rounded border bg-white p-1" type="number" min={0} max={props.maxRedeem} step={1} value={props.bonusRedeem} onChange={e => props.setBonusRedeem(Math.max(0, Math.min(Number(e.target.value) || 0, props.maxRedeem)))} /></label>
         </div>}
       </div>
-      <div className="flex flex-wrap gap-2 border-b px-4 py-3">{Array.from({ length: props.guests }, (_, index) => index + 1).map(n => <button key={n} onClick={() => props.setGuest(n)} className={`rounded-lg px-3 py-2 text-sm font-bold ${n === props.guest ? 'bg-sky-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{t('Mehmon')} {n}</button>)}<button disabled={props.guests >= 50} onClick={props.addGuest} className="rounded-lg border px-3 py-2 text-sm font-bold text-sky-700">+ {t('Mehmon qo‘shish')}</button></div>
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+      </details>
+      <div className="cashier-guests flex shrink-0 gap-2 overflow-x-auto border-b px-4 py-2">{Array.from({ length: props.guests }, (_, index) => index + 1).map(n => <button key={n} onClick={() => props.setGuest(n)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-bold ${n === props.guest ? 'bg-sky-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{t('Mehmon')} {n}</button>)}<button disabled={props.guests >= 50} onClick={props.addGuest} className="shrink-0 rounded-lg border px-3 py-2 text-sm font-bold text-sky-700">+ {t('Mehmon qo‘shish')}</button></div>
+      <div role="region" aria-label={t('Savat')} className="cashier-cart-items min-h-40 flex-1 space-y-2 overflow-y-auto px-3 py-2">
         {cart.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-10 text-center text-stone-400">
             <ShoppingBag className="size-10" />{t("Savat bo'sh. Mahsulotni tanlang.")}
           </div>
         )}
         {cart.map((it) => (
-          <div key={it.key} className="rounded-xl border border-stone-200 p-3">
+          <div key={it.key} className="cashier-cart-row rounded-xl border border-stone-200 p-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-xs text-sky-700">{t('Mehmon')} {it.guest ?? 1}</div><div className="font-semibold">{tCatalogName(it.name)}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
@@ -472,15 +468,7 @@ function Cart(props: {
           </div>
         ))}
       </div>
-      <div className="space-y-3 border-t border-stone-200 p-4">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-stone-500">{t('Chegirma')}</span>
-          <input aria-label={t('Chegirma foizi')} type="number" inputMode="numeric"
-            min={0} max={50} step={1} value={props.discountPct}
-            onChange={e => props.setDiscountPct(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))}
-            className="w-20 rounded-lg border border-stone-200 px-3 py-2 text-center font-semibold" />
-          <span className="font-semibold">%</span>
-        </div>
+      <div className="cashier-cart-footer shrink-0 space-y-2 border-t border-stone-200 p-3">
         {props.bonusRedeem > 0 && <div className="flex justify-between text-sm text-amber-700"><span>{t('Bonus ishlatildi')}</span><span>−{som(props.bonusRedeem)}</span></div>}
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">
@@ -489,15 +477,11 @@ function Cart(props: {
           </div>
         )}
         {props.draftError && <p role="alert" className="text-sm text-red-700">{props.draftError}</p>}
-        <div className="flex gap-2">
-          <button onClick={props.onDrafts} className="flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold">{t('Saqlangan buyurtmalar')}</button>
-          <button disabled={!cart.length || props.draftBusy} onClick={props.onSave} className="flex-1 rounded-xl border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-800 disabled:opacity-40">{t('Saqlab qo‘yish')}</button>
-        </div>
-        <button onClick={props.onActions} className="w-full rounded-xl border px-3 py-2 text-sm font-bold">⋯ {t('Chek amallari')}</button>
+        <div className="flex gap-2"><button onClick={props.onActions} aria-label={t('Chek amallari')} className="shrink-0 rounded-xl border px-4 text-xl font-bold">⋯</button>
         <button disabled={cart.length === 0} onClick={props.onPay}
-          className="flex w-full items-center justify-between rounded-2xl bg-amber-600 px-5 py-4 text-lg font-bold text-white shadow hover:bg-amber-700 disabled:bg-stone-300">
+          className="flex min-w-0 flex-1 items-center justify-between rounded-2xl bg-amber-600 px-5 py-4 text-lg font-bold text-white shadow hover:bg-amber-700 disabled:bg-stone-300">
           <span>{t("To'lov")}</span><span>{som(props.total)}</span>
-        </button>
+        </button></div>
       </div>
     </div>
   )

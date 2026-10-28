@@ -5,24 +5,102 @@ on:
   pull_request:
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: coffeepos_ci_test
+          POSTGRES_USER: coffeepos_test
+          POSTGRES_PASSWORD: disposable-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U coffeepos_test -d coffeepos_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
       - run: python -m pip install -e './backend[dev]'
       - run: python -m pytest backend/tests -q
         env:
           PYTHONPATH: backend
+          COFFEEPOS_TEST_POSTGRES_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://coffeepos_test:disposable-ci-password@127.0.0.1:5432/coffeepos_ci_test' || '' }}
+      - name: Legacy -> current schema upgrade drill
+        run: python scripts/migration_drill.py ${{ matrix.database == 'postgres' && '--postgres postgresql+psycopg://coffeepos_test:disposable-ci-password@127.0.0.1:5432/coffeepos_ci_test' || '' }}
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
       - run: node scripts/check-i18n.mjs
+      - run: npm test
+      - run: npm run lint
       - run: npm run build
+  staging-smoke:
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Disposable staging secrets (never production)
+        run: |
+          printf 'POSTGRES_PASSWORD=%s\nSECRET_KEY=%s\nSUPERADMIN_KEY=%s\nSTAGING_PORT=8080\n' \
+            "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > deploy/staging/.env.staging
+      - run: docker compose -p coffeepos-staging --env-file deploy/staging/.env.staging -f deploy/staging/docker-compose.staging.yml up -d --build --wait
+      - name: Cross-module smoke test
+        run: |
+          set -a; . deploy/staging/.env.staging; set +a
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8080/ >/dev/null && break; sleep 2; done
+          python3 scripts/staging_smoke.py http://127.0.0.1:8080 "$SUPERADMIN_KEY"
+      - name: Encrypted backup + restore drill
+        run: |
+          head -c 32 /dev/urandom | base64 > /tmp/backup-pass
+          BACKUP_DIR=/tmp/backups BACKUP_PASSPHRASE_FILE=/tmp/backup-pass \
+            PG_DUMP_CMD="docker compose -p coffeepos-staging --env-file deploy/staging/.env.staging -f deploy/staging/docker-compose.staging.yml exec -T db pg_dump --no-owner --no-privileges -U coffeepos_staging coffeepos_staging" \
+            deploy/backup.sh
+          BACKUP_PASSPHRASE_FILE=/tmp/backup-pass deploy/restore_drill.sh "$(ls /tmp/backups/*.sql.enc | head -1)"
+      - if: always()
+        run: docker compose -p coffeepos-staging --env-file deploy/staging/.env.staging -f deploy/staging/docker-compose.staging.yml logs api --tail 100
+
+  browser-regression:
+    runs-on: ubuntu-24.04
+    needs: [frontend]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: python -m pip install -e './backend[dev]'
+      - name: Prepare pinned browser (same package used by local regression)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/coffeepos-browser-package" --no-package-lock --no-save @sparticuz/chromium@153.0.0
+          node scripts/prepare_browser.mjs "$RUNNER_TEMP/coffeepos-browser-package/node_modules/@sparticuz/chromium" "$RUNNER_TEMP/coffeepos-browser-bin"
+      - name: Isolated browser regression (UZ/RU, themes, offline replay)
+        run: python scripts/run_browser_regression.py
+        env:
+          UI_SCREENSHOT_DIR: browser-evidence
+          CHROMIUM_EXECUTABLE_PATH: ${{ runner.temp }}/coffeepos-browser-bin/chromium
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: browser-regression-evidence
+          path: browser-evidence
+          retention-days: 7

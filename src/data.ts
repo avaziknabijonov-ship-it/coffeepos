@@ -5,29 +5,31 @@ export interface Ingredient { id: string; name: string; unit: Unit; cost: number
 export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
-export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
-export interface Category { id: string; name: string }
+export interface Product { comboComponents?: { productId: string; size: string; qty: number }[] | null; id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
+export interface Category { id: string; name: string; imageUrl?: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
 export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
 
-export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
+export type Payment = 'naqd' | 'karta' | 'payme' | 'click' | 'split'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
+  guest?: number;
+  components?: { productId: string; name: string; size: string; qty: number; unitPrice: number }[]
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
 }
 export interface Order {
-  id: string; number: number; customer: string; items: OrderItem[]
+  note?: string; guestCount?: number; waiter?: string; id: string; number: number; customer: string; items: OrderItem[]
   subtotal: number; discount: number; total: number; cost: number
-  payment: Payment; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
+  payment: Payment; paymentParts?: { method: Exclude<Payment, "split">; amount: number }[]; cashGiven?: number | null; status: Status; createdAt: number; readyAt?: number | null; barista: string; cancelledAt?: number | null; cancelledBy?: string | null; cancelReason?: string | null; pendingSync?: boolean
 }
 
 export const fmt = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 export const som = (n: number) => `${fmt(n)} ${t("so'm")}`
 export const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
-export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click' }
+export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Karta', payme: 'Payme', click: 'Click', split: 'Aralash' }
 export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi', cancelled: 'Bekor qilingan' }
 export const UNIT_LABEL: Record<Unit, string> = { g: 'g', ml: 'ml', dona: 'dona' }
 
@@ -77,3 +79,5 @@ export function buildItem(p: Product, size: Size, modIds: string[], qty: number)
     consumption,
   }
 }
+
+export { discountAmount } from './pricing'

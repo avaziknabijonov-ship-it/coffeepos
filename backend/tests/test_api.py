@@ -1,8 +1,14 @@
 import os
 import tempfile
+from urllib.parse import urlparse
 
 os.environ["ALLOW_PUBLIC_REGISTRATION"] = "1"
-os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/test.db"
+postgres_test_url = os.environ.get("COFFEEPOS_TEST_POSTGRES_URL")
+if postgres_test_url:
+    parsed = urlparse(postgres_test_url)
+    if parsed.hostname not in ("localhost", "127.0.0.1") or parsed.path != "/coffeepos_ci_test":
+        raise RuntimeError("Tests require a local, dedicated coffeepos_ci_test database")
+os.environ["DATABASE_URL"] = postgres_test_url or f"sqlite:///{tempfile.mkdtemp()}/test.db"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

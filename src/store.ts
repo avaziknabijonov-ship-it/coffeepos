@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from 'react'
-import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
-import { setMenu } from './data'
+import { getQueuedSales, isOfflineConflict, queueCashSale, removeQueuedSale } from './offline'
+import { setMenu, discountAmount } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
-import { getLang, setLangValue } from './i18n'
+import { getLang, setLangValue, t } from './i18n'
 import type { Lang } from './i18n'
 
-export interface Session { staff: { id: number; name: string; role: Role; canBarista?: boolean; canCancelOrders?: boolean; canReprintReceipts?: boolean }; company: { slug: string; name: string } }
+export interface Session { staff: { id: number; name: string; role: Role; canBarista?: boolean; canCancelOrders?: boolean; canReprintReceipts?: boolean }; company: { slug: string; name: string; modules?: string[] } }
 export interface ShiftInfo {
   shift: { id: number; staff: string; openedAt: number; openingCash: number; closedAt?: number | null; closingCash?: number | null; expectedCash?: number | null }
   orders: number
@@ -68,34 +68,49 @@ let pushing = false
 async function pushPendingSales() {
   if (pushing || !state.session) return
   pushing = true
-  const company = state.session.company.slug
+  const session = state.session
+  const token = getToken()
+  const company = session.company.slug
+  const active = () => state.session === session && getToken() === token
   try {
     for (const sale of getQueuedSales(company)) {
+      if (!active()) break
       try {
-        await api<Order>('/api/orders', { body: sale.body })
+        await api<Order>('/api/orders', { body: { ...sale.body, offline: true, offlineCreatedAt: sale.createdAt } })
         removeQueuedSale(company, sale.clientKey)
-        set({ pendingError: '' })
+        if (active()) set({ pendingError: '' })
       } catch (e) {
-        set({ pendingError: (e as Error).message })
+        if (isOfflineConflict(e)) {
+          removeQueuedSale(company, sale.clientKey)
+          if (active()) set({ pendingError: t('Oflayn savdo ziddiyatga tushdi, menejer tekshiradi') })
+          continue
+        }
+        if (active()) set({ pendingError: (e as Error).message })
         break
       }
     }
   } finally {
-    set({ pendingCount: getQueuedSales(company).length })
     pushing = false
+    if (active()) set({ pendingCount: getQueuedSales(company).length })
   }
 }
 
 export async function sync() {
+  const session = state.session
+  const token = getToken()
+  const active = () => state.session === session && getToken() === token
   try {
     await pushPendingSales()
+    if (!active()) return
     const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }>(`/api/sync?since=${startOfToday()}`)
-    const company = state.session?.company.slug
+    if (!active()) return
+    const company = session?.company.slug
     if (company) {
       try { localStorage.setItem(syncCache(company), JSON.stringify(d)) } catch { /* cache is optional */ }
     }
     set({ orders: d.orders, stock: d.stock, shift: d.shift, online: true })
   } catch (e) {
+    if (!active()) return
     if (e instanceof ApiError && e.status === 401) logout()
     else set({ online: false })
   }
@@ -178,23 +193,23 @@ export function logout() {
 export const nextNumber = () =>
   state.orders.filter((o) => o.createdAt >= startOfToday()).reduce((m, o) => Math.max(m, o.number), 0) + 1
 
-export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
+export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; expectedTotal?: number; automaticDiscount?: boolean; payment: Payment; paymentParts?: { method: Exclude<Payment, 'split'>; amount: number }[]; cashGiven?: number; customerPhone?: string; bonusRedeem?: number; draftId?: number; draftVersion?: number; note?: string; guestCount?: number }) {
   const clientKey = crypto.randomUUID()
   const payload = { ...o, clientKey, items: items.map((i) => ({
-    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, guest: i.guest ?? 1,
   })) }
   let order: Order
   try {
     order = await api<Order>('/api/orders', { body: payload })
   } catch (e) {
-    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
+    if (!(e instanceof ApiError && (e.status === 0 || [502, 503, 504].includes(e.status)) && !o.note && !items.some(item => (item.guest ?? 1) > 1) && !o.draftId && !o.automaticDiscount && o.payment === 'naqd' && !o.customerPhone && !o.bonusRedeem && state.shift && state.session)) throw e
     const company = state.session.company.slug
     const sale = queueCashSale(company, {
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,
-      payment: 'naqd', cashGiven: o.cashGiven,
+      payment: 'naqd', cashGiven: o.cashGiven, expectedTotal: o.expectedTotal,
     })
     const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
-    const discount = Math.round(subtotal * o.discountPct / 100 / 100) * 100
+    const discount = discountAmount(subtotal, o.discountPct)
     order = {
       id: 'offline:' + clientKey, number: nextNumber(), customer: o.customer,
       items, subtotal, discount, total: subtotal - discount,

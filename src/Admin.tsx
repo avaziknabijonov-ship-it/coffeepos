@@ -1,9 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t, tCatalogName } from './i18n'
 import { exportExcel } from './exportExcel'
 import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
-import type { Payment } from './data'
 import { api } from './api'
 import { startOfToday, useAppState, sync, refreshMenu } from './store'
 import PurchaseInvoices from './PurchaseInvoices'
@@ -13,12 +12,28 @@ import Finance from './Finance'
 import Payroll from './Payroll'
 import CashierReport from './CashierReport'
 import PrinterSettings from './PrinterSettings'
+import RefundPanel from './RefundPanel'
+import AuditLog from './AuditLog'
+import ReceiptLink from './ReceiptLink'
+import Promotions from './Promotions'
+import CustomerAnalytics from './CustomerAnalytics'
+import Combos from './Combos'
+import { BranchesPanel, CashControlPanel, DevicesPanel, FloorPanel, IntegrationsPanel } from './Operations'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 
-type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'branches' | 'floor' | 'cashControl' | 'integrations' | 'devices' | 'combos' | 'customers' | 'promotions' | 'audit' | 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'audit', label: 'Audit jurnali' },
+  { id: 'branches', label: 'Filiallar va transfer' },
+  { id: 'floor', label: 'Zal va stollar' },
+  { id: 'cashControl', label: 'Kassa va inventar nazorati' },
+  { id: 'integrations', label: 'Fiskal va Telegram' },
+  { id: 'devices', label: 'Qurilmalar va oflayn' },
+  { id: 'promotions', label: 'Happy Hour' },
+  { id: 'customers', label: 'Mijozlar tahlili' },
+  { id: 'combos', label: 'Combo mahsulotlar' },
   { id: 'stock', label: 'Ombor' },
   { id: 'receiving', label: 'Prixod' },
   { id: 'inventory', label: 'Inventarizatsiya' },
@@ -34,24 +49,26 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { branches: Warehouse, floor: LayoutDashboard, cashControl: CircleDollarSign, integrations: Receipt, devices: Printer, combos: ShoppingCart, customers: Users, promotions: Gift, audit: BookOpen, dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
-export default function Admin() {
+const HOOKAH_LABELS: Partial<Record<View, string>> = { dashboard: 'Kalyanxona hisoboti', floor: 'Zal, Bar va VIP', stock: 'Tamaki va sarf materiallari', receiving: 'Tamaki va bar kirimi', menu: 'Kalyan va bar menyusi', recipes: 'Aralashmalar va sarf retseptlari', staff: 'Kalyanchilar va kassirlar' }
+
+export default function Admin({ hookah = false }: { hookah?: boolean }) {
   const [view, setView] = useState<View>('dashboard')
   const { orders, stock, menuVersion } = useAppState()
   void menuVersion
   const today = useMemo(() => orders.filter((o) => o.createdAt >= startOfToday()), [orders])
-  const low = INGREDIENTS.filter((i) => (stock[i.id] ?? 0) < i.min)
+  const low = INGREDIENTS.filter((i) => i.min > 0 && (stock[i.id] ?? 0) <= i.min)
 
   return (
-    <div className="admin-shell h-full overflow-y-auto bg-stone-50">
+    <div className={`admin-shell ${hookah ? 'hookah-admin' : ''} h-full overflow-y-auto bg-stone-50`}>
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-3 md:flex-row md:gap-5 md:p-5">
-        <aside className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
+        <aside data-motto={hookah ? t('Kalyanxona boshqaruvi') : t('Yaxshi qahva — yaxshi kun')} className="shrink-0 self-start rounded-2xl border border-stone-200 bg-white p-3 shadow-sm md:sticky md:top-4 md:w-56 lg:w-60">
           <div className="mb-3 hidden px-3 pt-2 md:block">
             <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">{t('Boshqaruv')}</p>
-            <h2 className="mt-1 text-lg font-bold text-stone-900">{t('Admin panel')}</h2>
+            <h2 className="mt-1 text-lg font-bold text-stone-900">{hookah ? t('Kalyanxona boshqaruvi') : t('Admin panel')}</h2>
           </div>
           <nav aria-label={t('Admin bo‘limlari')} className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
             {VIEWS.map((v) => {
@@ -59,26 +76,36 @@ export default function Admin() {
               return <button key={v.id} onClick={() => setView(v.id)} aria-current={view === v.id ? 'page' : undefined}
                 className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors md:w-full ${view === v.id ? 'bg-stone-900 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'}`}>
                 <Icon className="size-[18px] shrink-0" />
-                <span className="flex-1 whitespace-nowrap">{t(v.label)}</span>
+                <span className="flex-1 whitespace-nowrap">{t(hookah ? HOOKAH_LABELS[v.id] ?? v.label : v.label)}</span>
                 {v.id === 'stock' && low.length > 0 && <span className="rounded-full bg-red-500 px-1.5 text-xs text-white">{low.length}</span>}
               </button>
             })}
           </nav>
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
-          {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
+          {hookah && <div className="hookah-section-heading"><span>{t('Kalyanxona moduli')}</span><h1>{t(HOOKAH_LABELS[view] ?? VIEWS.find(v => v.id === view)?.label ?? 'Kalyanxona boshqaruvi')}</h1><p>{t('Kalyan, bar, mehmonlar va zal uchun yagona boshqaruv')}</p></div>}
+          {view === 'dashboard' && <Dashboard hookah={hookah} today={today} low={low.map((i) => ({ name: i.name, stock: stock[i.id] ?? 0, min: i.min, unit: i.unit }))} goStock={() => setView('stock')} />}
           {view === 'stock' && <StockOverview />}
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
-          {view === 'menu' && <MenuEditor />}
+          {view === 'menu' && <MenuEditor hookah={hookah} />}
           {view === 'recipes' && <Recipes onEdit={() => setView('menu')} />}
           {view === 'orders' && <Orders today={today} />}
           {view === 'cashierReport' && <CashierReport />}
-          {view === 'staff' && <StaffView />}
+          {view === 'staff' && <StaffView hookah={hookah} />}
           {view === 'shifts' && <ShiftsView />}
           {view === 'expenses' && <Expenses />}
           {view === 'bonus' && <BonusSettings />}
           {view === 'finance' && <Finance />}
+          {view === 'audit' && <AuditLog />}
+          {view === 'promotions' && <Promotions />}
+          {view === 'customers' && <CustomerAnalytics />}
+          {view === 'combos' && <Combos />}
+          {view === 'branches' && <BranchesPanel />}
+          {view === 'floor' && <FloorPanel />}
+          {view === 'cashControl' && <CashControlPanel />}
+          {view === 'integrations' && <IntegrationsPanel />}
+          {view === 'devices' && <DevicesPanel />}
           {view === 'payroll' && <Payroll />}
           {view === 'printer' && <PrinterSettings />}
         </main>
@@ -109,7 +136,7 @@ function StockOverview() {
       <thead><tr className="text-left text-stone-500"><th className="py-2">{t('Xomashyo')}</th><th>{t('Birlik')}</th><th>{t('Qoldiq')}</th><th>{t('Min qoldiq')}</th><th>{t('Tannarx')}</th><th>{t('Amallar')}</th></tr></thead>
       <tbody>{INGREDIENTS.map(i => <tr key={i.id} className="border-t">
         <td className="py-2 font-medium">{tCatalogName(i.name)}</td><td>{t(UNIT_LABEL[i.unit])}</td>
-        <td className={(stock[i.id] ?? 0) < i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
+        <td className={i.min > 0 && (stock[i.id] ?? 0) <= i.min ? 'font-bold text-red-600' : ''}>{fmt(stock[i.id] ?? 0)}</td>
         <td>{fmt(i.min)}</td><td>{som(Math.round((stock[i.id] ?? 0) * i.cost))}</td><td><button type="button" title={t('Mahsulotni o‘chirish')} aria-label={t('Mahsulotni o‘chirish')} disabled={removing !== null || Math.abs(stock[i.id] ?? 0) > 0.000001} onClick={() => void remove(i.id, i.name)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-30">{t('O‘chirish')}</button></td>
       </tr>)}</tbody>
     </table></div>
@@ -129,7 +156,12 @@ function Card({ title, children, className = '' }: { title?: string; children: R
   )
 }
 
-function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goStock: () => void }) {
+function Dashboard({ today, low, goStock, hookah = false }: { hookah?: boolean; today: Orders; low: { name: string; stock: number; min: number; unit: string }[]; goStock: () => void }) {
+  const [displayDate, setDisplayDate] = useState(() => new Date().toLocaleDateString())
+  useEffect(() => {
+    const timer = window.setInterval(() => setDisplayDate(new Date().toLocaleDateString()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
   const active = today.filter(o => o.status !== 'cancelled' && !o.pendingSync)
   const revenue = active.reduce((s, o) => s + o.total, 0)
   const cost = active.reduce((s, o) => s + o.cost, 0)
@@ -160,15 +192,19 @@ function Dashboard({ today, low, goStock }: { today: Orders; low: string[]; goSt
     }, {}),
   ).sort((a, b) => b.qty - a.qty).slice(0, 6)
 
-  const payments = (Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => ({ p, sum: active.filter((o) => o.payment === p).reduce((s, o) => s + o.total, 0) }))
+  const payments = (['naqd', 'karta', 'payme', 'click'] as const).map((p) => ({
+    p, sum: active.reduce((s, o) => s + (o.paymentParts
+      ? o.paymentParts.filter(part => part.method === p).reduce((v, part) => v + part.amount, 0)
+      : o.payment === p ? o.total : 0), 0),
+  }))
 
   return (
     <div className="premium-dashboard space-y-5">
-      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{new Date().toLocaleDateString()} · {t("Bugun")}</div></div>
+      <div className="premium-titlebar"><div><p className="premium-eyebrow">COFFEEPOS · {t('Analitika')}</p><h1 className="text-2xl font-extrabold">{hookah ? t("Kalyanxona hisoboti") : t("Admin panel")}</h1><p className="text-sm text-stone-500">{t("Bugungi ko‘rsatkichlar va savdo tahlili")}</p></div><div className="premium-date">{displayDate} · {t("Bugun")}</div></div>
       {low.length > 0 && (
         <button onClick={goStock} className="flex w-full items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-red-800">
           <TriangleAlert className="mt-0.5 size-5 shrink-0" />
-          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.map(tCatalogName).join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
+          <span><b>{t('{n} ta mahsulot tugayapti:', { n: low.length })}</b> {low.map(i => `${tCatalogName(i.name)} (${fmt(i.stock)}/${fmt(i.min)} ${t(i.unit)})`).join(', ')}. <span className="underline">{t("Omborga o'tish")}</span></span>
         </button>
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -306,20 +342,32 @@ function Orders({ today }: { today: Orders }) {
   const [printing, setPrinting] = useState<HistoricalOrder | null>(null)
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
+  const requestId = useRef({ value: 0 })
+  const fetchHistory = useCallback(async () => {
+    const start = new Date(from + 'T00:00:00').getTime()
+    const end = new Date(to + 'T00:00:00').getTime() + 86400000
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error(t('Sana oralig‘ini to‘g‘ri tanlang'))
+    const params = new URLSearchParams({ from_ms: String(start), to_ms: String(end) })
+    if (staff) params.set('staff', staff)
+    if (shiftId) params.set('shift_id', shiftId)
+    return api<HistoricalOrder[]>('/api/orders/history?' + params.toString())
+  }, [from, to, staff, shiftId])
   const reload = async () => {
+    const id = ++requestId.current.value
     setBusy(true); setActionError('')
-    try {
-      const start = new Date(from + 'T00:00:00').getTime()
-      const end = new Date(to + 'T00:00:00').getTime() + 86400000
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error(t('Sana oralig‘ini to‘g‘ri tanlang'))
-      const params = new URLSearchParams({ from_ms: String(start), to_ms: String(end) })
-      if (staff) params.set('staff', staff)
-      if (shiftId) params.set('shift_id', shiftId)
-      setHistory(await api<HistoricalOrder[]>('/api/orders/history?' + params.toString()))
-    } catch(e) { setActionError((e as Error).message) } finally { setBusy(false) }
+    try { const data = await fetchHistory(); if (id === requestId.current.value) setHistory(data) }
+    catch(e) { if (id === requestId.current.value) setActionError((e as Error).message) }
+    finally { if (id === requestId.current.value) setBusy(false) }
   }
-  useEffect(() => { void api<HistoricalShift[]>('/api/shifts').then(setShifts).catch(()=>{} ) }, [])
-  useEffect(() => { void reload() }, [from, to, staff, shiftId])
+  useEffect(() => { let active = true; void api<HistoricalShift[]>('/api/shifts').then(data => { if (active) setShifts(data) }).catch(()=>{} ); return () => { active = false } }, [])
+  useEffect(() => {
+    const id = ++requestId.current.value
+    void fetchHistory().then(data => { if (id === requestId.current.value) { setHistory(data); setActionError('') } })
+      .catch(e => { if (id === requestId.current.value) setActionError((e as Error).message) })
+      .finally(() => { if (id === requestId.current.value) setBusy(false) })
+    const requestState = requestId.current
+    return () => { ++requestState.value }
+  }, [fetchHistory])
   const list = [...history].sort((a,b)=>b.createdAt-a.createdAt)
   const cancelled = list.filter(o=>o.status === 'cancelled')
   const actual = list.filter(o=>o.status !== 'cancelled')
@@ -347,6 +395,6 @@ function Orders({ today }: { today: Orders }) {
     </div>
     {printing && <div className="print-area hidden print:block bg-white p-4 font-mono text-black"><h2>CoffeePOS · №{printing.number}</h2><p>{new Date(printing.createdAt).toLocaleString()}</p>{printing.items.map((i,k)=><p key={k}>{i.qty} × {tCatalogName(i.name)} {i.size} — {fmt(i.qty*i.unitPrice)}</p>)}<b>{t('Jami')}: {fmt(printing.total)} {t("so'm")}</b></div>}
     {actionError && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-2 text-red-700">{actionError}</p>}
-    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-stone-500"><th className="p-2">№</th><th className="p-2">{t("Sana, vaqt")}</th><th className="p-2">{t("Kassir / Smena")}</th><th className="p-2">{t("Mijoz")}</th><th className="p-2">{t("Summa")}</th><th className="p-2">{t("Holat")}</th><th className="p-2">{t("Amallar")}</th></tr></thead><tbody>{list.map(o=><Fragment key={o.id}><tr className={o.status==='cancelled'?'border-b border-red-200 bg-red-50 text-red-900':'border-b border-stone-100'}><td className="p-2 font-bold">№{o.number}</td><td className="p-2">{new Date(o.createdAt).toLocaleString()}</td><td className="p-2">{o.barista||'—'}<span className="block text-xs opacity-70">{t('Smena')} №{o.shiftId||'—'}</span></td><td className="p-2">{o.customer||'—'}</td><td className="p-2 font-semibold">{fmt(o.total)}</td><td className="p-2">{o.status==='cancelled'?<span className="rounded-full bg-red-600 px-2 py-1 text-white">{t('Otmena')}</span>:t(STATUS_LABEL[o.status])}</td><td className="p-2"><div className="flex gap-2"><button className="rounded-lg border px-2 py-1" onClick={()=>setSelected(selected===o.id?null:o.id)}>{t("Batafsil")}</button><button className="rounded-lg border px-2 py-1" onClick={()=>reprint(o)}>{t("Perechek")}</button>{o.status==='new'&&!o.pendingSync&&<button className="rounded-lg border border-red-300 px-2 py-1 text-red-700" onClick={()=>void cancel(o)}>{t("Otmena")}</button>}</div></td></tr>{selected===o.id&&<tr key={o.id+'-details'}><td colSpan={7} className="border-b bg-stone-50 p-4"><div className="mb-2 font-semibold">{t('Chek')} №{o.number} · {t("To'lov")}: {t(PAYMENT_LABEL[o.payment])} · {t('Jami')}: {fmt(o.total)} {t("so'm")}</div><div className="space-y-1">{o.items.map((item,i)=><div key={i} className="flex flex-wrap justify-between gap-2 border-b border-stone-200 py-1"><span>{item.qty} × {tCatalogName(item.name)} {item.size} {item.mods?.join(', ')}</span><span>{fmt(item.unitPrice)} × {item.qty} = {fmt(item.unitPrice*item.qty)} so‘m</span></div>)}</div><div className="mt-2 text-sm">{t('Chegirma')}: {fmt(o.discount)} {t("so'm")} · {t('Tannarx')}: {fmt(o.cost)} {t("so'm")}</div>{o.status==='cancelled'&&<div className="mt-2 rounded-lg bg-red-100 p-2 text-red-800">{t('Otmena qilgan')}: {o.cancelledBy||'—'} · {o.cancelReason||t('Sabab ko‘rsatilmagan')} · {o.cancelledAt?new Date(o.cancelledAt).toLocaleString():''}</div>}</td></tr>}</Fragment>)}</tbody></table>{!busy&&list.length===0&&<p className="p-5 text-center text-stone-500">{t("Tanlangan filtr bo‘yicha cheklar topilmadi.")}</p>}</div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-stone-500"><th className="p-2">№</th><th className="p-2">{t("Sana, vaqt")}</th><th className="p-2">{t("Kassir / Smena")}</th><th className="p-2">{t("Mijoz")}</th><th className="p-2">{t("Summa")}</th><th className="p-2">{t("Holat")}</th><th className="p-2">{t("Amallar")}</th></tr></thead><tbody>{list.map(o=><Fragment key={o.id}><tr className={o.status==='cancelled'?'border-b border-red-200 bg-red-50 text-red-900':'border-b border-stone-100'}><td className="p-2 font-bold">№{o.number}</td><td className="p-2">{new Date(o.createdAt).toLocaleString()}</td><td className="p-2">{o.barista||'—'}<span className="block text-xs opacity-70">{t('Smena')} №{o.shiftId||'—'}</span></td><td className="p-2">{o.customer||'—'}</td><td className="p-2 font-semibold">{fmt(o.total)}</td><td className="p-2">{o.status==='cancelled'?<span className="rounded-full bg-red-600 px-2 py-1 text-white">{t('Otmena')}</span>:t(STATUS_LABEL[o.status])}</td><td className="p-2"><div className="flex gap-2"><button className="rounded-lg border px-2 py-1" onClick={()=>setSelected(selected===o.id?null:o.id)}>{t("Batafsil")}</button><button className="rounded-lg border px-2 py-1" onClick={()=>reprint(o)}>{t("Perechek")}</button>{o.status==='new'&&!o.pendingSync&&<button className="rounded-lg border border-red-300 px-2 py-1 text-red-700" onClick={()=>void cancel(o)}>{t("Otmena")}</button>}</div></td></tr>{selected===o.id&&<tr key={o.id+'-details'}><td colSpan={7} className="border-b bg-stone-50 p-4"><div className="mb-2 font-semibold">{t('Chek')} №{o.number} · {t("To'lov")}: {t(PAYMENT_LABEL[o.payment])} · {t('Jami')}: {fmt(o.total)} {t("so'm")}</div><div className="space-y-1">{o.items.map((item,i)=><div key={i} className="flex flex-wrap justify-between gap-2 border-b border-stone-200 py-1"><span>{item.qty} × {tCatalogName(item.name)} {item.size} {item.mods?.join(', ')}{item.components&&<small className="block text-stone-500">{item.components.map(c=>c.qty+' × '+tCatalogName(c.name)+' '+c.size).join('; ')}</small>}</span><span>{fmt(item.unitPrice)} × {item.qty} = {fmt(item.unitPrice*item.qty)} so‘m</span></div>)}</div><div className="mt-2 text-sm">{t('Chegirma')}: {fmt(o.discount)} {t("so'm")} · {t('Tannarx')}: {fmt(o.cost)} {t("so'm")}</div>{!o.pendingSync&&<><ReceiptLink key={o.id+"-receipt"} orderId={o.id} /><RefundPanel key={o.id} order={o} /></>}{o.status==='cancelled'&&<div className="mt-2 rounded-lg bg-red-100 p-2 text-red-800">{t('Otmena qilgan')}: {o.cancelledBy||'—'} · {o.cancelReason||t('Sabab ko‘rsatilmagan')} · {o.cancelledAt?new Date(o.cancelledAt).toLocaleString():''}</div>}</td></tr>}</Fragment>)}</tbody></table>{!busy&&list.length===0&&<p className="p-5 text-center text-stone-500">{t("Tanlangan filtr bo‘yicha cheklar topilmadi.")}</p>}</div>
   </Card>
 }

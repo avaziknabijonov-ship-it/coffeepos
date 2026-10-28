@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { api } from './api'
 import { exportExcel } from './exportExcel'
 import { som } from './data'
@@ -22,16 +22,23 @@ export default function Payroll() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  const requestId = useRef({ value: 0 })
+  const fetchPayroll = useCallback(() => Promise.all([api<Report>('/api/payroll?month=' + encodeURIComponent(month)), api<Payment[]>('/api/staff-payments')]), [month])
   async function load() {
+    const id = ++requestId.current.value
     try {
-      const [payroll, history] = await Promise.all([
-        api<Report>('/api/payroll?month=' + encodeURIComponent(month)),
-        api<Payment[]>('/api/staff-payments'),
-      ])
-      setRows(payroll.items); setPayments(history)
-    } catch (e) { setError((e as Error).message) }
+      const [payroll, history] = await fetchPayroll()
+      if (id === requestId.current.value) { setRows(payroll.items); setPayments(history); setError('') }
+    } catch (e) { if (id === requestId.current.value) setError((e as Error).message) }
   }
-  useEffect(() => { void load() }, [month])
+  useEffect(() => {
+    const id = ++requestId.current.value
+    void fetchPayroll().then(([payroll, history]) => {
+      if (id === requestId.current.value) { setRows(payroll.items); setPayments(history); setError('') }
+    }).catch(e => { if (id === requestId.current.value) setError((e as Error).message) })
+    const requestState = requestId.current
+    return () => { ++requestState.value }
+  }, [fetchPayroll])
   const patch = (id: number, updates: Partial<Row>) => setRows(v => v.map(x => x.staffId === id ? { ...x, ...updates } : x))
 
   async function save(row: Row) {

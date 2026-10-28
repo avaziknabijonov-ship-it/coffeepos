@@ -1,0 +1,39 @@
+# Isolated staging stack: own compose project, own PostgreSQL volume/database, localhost-only port.
+# Never share POSTGRES_PASSWORD/SECRET_KEY or the database with production.
+#   cp deploy/staging/.env.staging.example deploy/staging/.env.staging  (fill disposable values)
+#   docker compose -p coffeepos-staging --env-file deploy/staging/.env.staging -f deploy/staging/docker-compose.staging.yml up -d --build
+#   python3 scripts/staging_smoke.py http://127.0.0.1:${STAGING_PORT:-8080}
+name: coffeepos-staging
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: coffeepos_staging
+      POSTGRES_USER: coffeepos_staging
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.staging}
+    volumes: [staging_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coffeepos_staging -d coffeepos_staging"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ../../backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://coffeepos_staging:${POSTGRES_PASSWORD}@db:5432/coffeepos_staging
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env.staging}
+      SEED_DEMO: "1"
+      CORS_ORIGINS: http://127.0.0.1:${STAGING_PORT:-8080}
+      ALLOW_PUBLIC_REGISTRATION: "1"
+      SUPERADMIN_KEY: ${SUPERADMIN_KEY:-}
+      COFFEEPOS_ENV: staging
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build: ../..
+    ports: ["127.0.0.1:${STAGING_PORT:-8080}:80"]
+    depends_on: [api]
+
+volumes:
+  staging_pgdata:

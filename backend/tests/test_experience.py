@@ -155,3 +155,31 @@ def test_combo_item_refund_restocks_components_once():
             "externalConfirmed": True, "restock": True, "items": [{"key": line["key"], "qty": 1}]})
         assert refund.status_code == 201, refund.text
         assert c.get("/api/sync", headers=h).json()["stock"] == before
+
+
+def test_promotion_selected_products_only():
+    with TestClient(app) as c:
+        h, _ = new_company(c, "sel")
+        now = datetime.now(TZ)
+        rule = {"name": "Latte only", "startTime": f"{(now.hour - 1) % 24:02d}:00",
+                "endTime": f"{(now.hour + 2) % 24:02d}:00", "weekdays": list(range(7)),
+                "percent": 10, "productIds": ["latte"]}
+        assert c.post('/api/promotions', headers=h, json={**rule, 'productIds': []}).status_code == 422
+        assert c.post('/api/promotions', headers=h, json={**rule, 'productIds': ['missing']}).status_code == 422
+        saved = c.post('/api/promotions', headers=h, json=rule)
+        assert saved.status_code == 201, saved.text
+        assert saved.json()['productIds'] == ['latte']
+        c.post('/api/shifts/open', headers=h, json={'openingCash': 0})
+        sale = {'items': [{'productId': 'latte', 'size': 'M', 'qty': 1},
+                          {'productId': 'espresso', 'size': '-', 'qty': 1}], 'payment': 'karta'}
+        probe = c.post('/api/orders', headers=h, json={**sale, 'expectedTotal': 0})
+        assert probe.status_code == 409
+        # Obtain authoritative prices from menu; only latte receives 10%.
+        menu = c.get('/api/menu', headers=h).json()['products']
+        prices = {p['id']: p['sizes'] for p in menu}
+        latte = next(s['price'] for s in prices['latte'] if s['code'] == 'M')
+        espresso = next(s['price'] for s in prices['espresso'] if s['code'] == '-')
+        from app.promotions import discount_amount
+        result = c.post('/api/orders', headers=h, json={**sale, 'expectedTotal': latte + espresso - discount_amount(latte, 10)})
+        assert result.status_code == 200, result.text
+        assert result.json()['discount'] == discount_amount(latte, 10)

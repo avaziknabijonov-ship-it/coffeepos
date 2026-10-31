@@ -55,10 +55,10 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
   const [bonusError, setBonusError] = useState('')
   const [bonusRedeem, setBonusRedeem] = useState(0)
   const [discountPct, setDiscountPct] = useState(0)
-  const [promotion, setPromotion] = useState<{ name: string; percent: number } | null>(null)
+  const [promotion, setPromotion] = useState<{ name: string; percent: number; productIds: string[] | null; maxDiscount: number } | null>(null)
   useEffect(() => {
     let active = true
-    const refresh = () => api<{ promotion: { name: string; percent: number } | null }>('/api/promotions/active')
+    const refresh = () => api<{ promotion: { name: string; percent: number; productIds: string[] | null; maxDiscount: number } | null }>('/api/promotions/active')
       .then(result => { if (active) setPromotion(result.promotion) }).catch(() => { /* Expected total protects stale pricing. */ })
     void refresh()
     const timer = window.setInterval(() => void refresh(), 15000)
@@ -203,8 +203,9 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
   }, [cat, query, menuVersion])
 
   const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.qty, 0)
-  const effectivePercent = Math.max(discountPct, promotion?.percent ?? 0)
-  const discount = discountAmount(subtotal, effectivePercent)
+  const eligibleSubtotal = cart.reduce((sum, item) => sum + (promotion && (promotion.productIds == null || promotion.productIds.includes(item.productId)) ? item.unitPrice * item.qty : 0), 0)
+  const promoDiscount = promotion ? Math.min(discountAmount(eligibleSubtotal, promotion.percent), promotion.maxDiscount || Infinity) : 0
+  const discount = Math.max(discountAmount(subtotal, discountPct), promoDiscount)
   const maxRedeem = bonusInfo?.enabled ? Math.min(bonusInfo.balance, Math.floor((subtotal - discount) * bonusInfo.redemptionLimitPercent / 100)) : 0
   const effectiveBonus = Math.min(bonusRedeem, maxRedeem)
   const total = subtotal - discount - effectiveBonus
@@ -258,7 +259,7 @@ export default function Kassa({ onShift, hookah = false }: { onShift: () => void
       hookah={hookah} onActions={openActions} guest={guest} guests={guests} setGuest={setGuest} addGuest={() => { if (guests < 50) { setGuests(guests + 1); setGuest(guests + 1) } }} number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
-      appliedDiscountPct={effectivePercent} subtotal={subtotal} discount={discount} total={total}
+      appliedDiscountPct={promoDiscount > discountAmount(subtotal, discountPct) ? promotion?.percent ?? 0 : discountPct} subtotal={subtotal} discount={discount} total={total}
       changeQty={changeQty} draftError={draftError} onPay={() => setPaying(true)} onClose={cartOpen ? () => setCartOpen(false) : undefined}
     />
   )

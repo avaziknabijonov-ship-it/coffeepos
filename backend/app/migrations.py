@@ -181,6 +181,10 @@ def subscription_modules(engine) -> None:
         conn.execute(text("UPDATE subscriptions SET modules = '[]' WHERE modules IS NULL"))
 
 
+def promotion_products(engine) -> None:
+    add_columns(engine, {"promotions": ["product_ids JSON"]})
+
+
 MIGRATIONS = [
     (1, "legacy additive columns", legacy_columns),
     (2, "branches and staff attribution", branches_and_attribution),
@@ -192,6 +196,7 @@ MIGRATIONS = [
     (8, "persistent floor layout", floor_layout),
     (9, "order notes guests and responsibility", order_actions),
     (10, "licensed optional business modules", subscription_modules),
+    (11, "promotion product selection", promotion_products),
 ]
 
 

@@ -399,6 +399,7 @@ class AuditEvent(Base):
 
 class Promotion(Base):
     __tablename__ = 'promotions'
+    product_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey('companies.id'), index=True)
     name: Mapped[str] = mapped_column(String(64))

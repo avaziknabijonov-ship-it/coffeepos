@@ -1563,7 +1563,9 @@ def checkout(body: OrderIn, ctx: Ctx) -> dict:
     if promotion and body.expectedTotal is None:
         raise HTTPException(409, "Aksiya faol. Kassani yangilang va summani tekshiring")
     manual_discount = discount_amount(subtotal, body.discountPct)
-    promo_discount = capped_discount(subtotal, promotion.percent, promotion.max_discount or 0) if promotion else 0
+    eligible_subtotal = sum(i["unitPrice"] * i["qty"] for i in items
+                            if promotion and (promotion.product_ids is None or i["productId"] in promotion.product_ids))
+    promo_discount = capped_discount(eligible_subtotal, promotion.percent, promotion.max_discount or 0) if promotion else 0
     if promotion and promo_discount < manual_discount:
         promotion = None
     discount = max(manual_discount, promo_discount)
@@ -2091,12 +2093,13 @@ class PromotionIn(BaseModel):
     active: bool = True
     maxDiscount: int = Field(default=0, ge=0, le=100_000_000)
     branchId: int | None = None
+    productIds: list[str] | None = Field(default=None, min_length=1, max_length=1000)
 
 
 def promotion_out(p):
     return {"id": p.id, "name": p.name, "startTime": p.start_time, "endTime": p.end_time,
             "weekdays": p.weekdays, "percent": p.percent, "priority": p.priority, "active": p.active,
-            "maxDiscount": p.max_discount or 0, "branchId": p.branch_id}
+            "maxDiscount": p.max_discount or 0, "branchId": p.branch_id, "productIds": p.product_ids}
 
 
 @app.get("/api/promotions/active")
@@ -2119,9 +2122,14 @@ def save_promotion(body, ctx, promotion=None):
         branch = ctx.db.get(Branch, body.branchId)
         if branch is None or branch.company_id != ctx.cid:
             raise HTTPException(404, "Filial topilmadi")
+    if body.productIds is not None:
+        available = {p.key for p in rows(ctx.db, Product, ctx.cid)}
+        if any(pid not in available for pid in body.productIds):
+            raise HTTPException(422, "Mahsulot topilmadi")
     if promotion is None:
         promotion = Promotion(company_id=ctx.cid)
         ctx.db.add(promotion)
+    promotion.product_ids = list(dict.fromkeys(body.productIds)) if body.productIds is not None else None
     promotion.max_discount, promotion.branch_id = body.maxDiscount, body.branchId
     promotion.name, promotion.start_time, promotion.end_time = body.name.strip(), body.startTime, body.endTime
     promotion.weekdays, promotion.percent = body.weekdays, body.percent

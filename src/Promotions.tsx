@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { api, getBranch } from './api'
-import { t } from './i18n'
+import { PRODUCTS } from './data'
+import { t, tCatalogName } from './i18n'
 
-type Rule = { id: number; name: string; startTime: string; endTime: string; weekdays: number[]; percent: number; priority: number; active: boolean; maxDiscount: number; branchId: number | null }
+type Rule = { id: number; name: string; startTime: string; endTime: string; weekdays: number[]; percent: number; priority: number; active: boolean; maxDiscount: number; branchId: number | null; productIds: string[] | null }
 const days = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya']
 export default function Promotions() {
   const [rules, setRules] = useState<Rule[]>([])
+  const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [draft, setDraft] = useState<Omit<Rule, 'id'>>({ name: '', startTime: '14:00', endTime: '17:00', weekdays: [0, 1, 2, 3, 4], percent: 10, priority: 0, active: true, maxDiscount: 0, branchId: null })
+  const [draft, setDraft] = useState<Omit<Rule, 'id'>>({ name: '', startTime: '14:00', endTime: '17:00', weekdays: [0, 1, 2, 3, 4], percent: 10, priority: 0, active: true, maxDiscount: 0, branchId: null, productIds: null })
   useEffect(() => { let active = true; api<Rule[]>('/api/promotions').then(r => { if (active) setRules(r) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [])
   const save = async (rule?: Rule) => {
+    if (!rule && draft.productIds?.length === 0) { setError(t('Kamida bitta mahsulot tanlang')); return }
     setBusy(true); setError('')
     try {
       await api('/api/promotions' + (rule ? '/' + rule.id : ''), { method: rule ? 'PUT' : 'POST', body: rule ? { ...rule, active: !rule.active } : draft })
@@ -31,11 +34,16 @@ export default function Promotions() {
       <label>{t('Chegirma chegarasi (so‘m, 0 = cheksiz)')}<input type="number" min="0" step="1" className="block w-32 rounded border p-2" value={draft.maxDiscount} onChange={e => setDraft({ ...draft, maxDiscount: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.branchId !== null} onChange={e => setDraft({ ...draft, branchId: e.target.checked ? Number(getBranch() ?? 0) || null : null })} /> {t('Faqat joriy filial uchun')}</label>
       <label>{t('Ustuvorlik')}<input required type="number" min="0" max="100" className="block w-24 rounded border p-2" value={draft.priority} onChange={e => setDraft({ ...draft, priority: Number(e.target.value) })} /></label>
+      <fieldset className="w-full space-y-2 rounded border p-3"><legend>{t('Aksiya mahsulotlari')}</legend>
+        <label><input type="checkbox" checked={draft.productIds === null} onChange={e => setDraft({ ...draft, productIds: e.target.checked ? null : [] })} /> {t('Barcha mahsulotlar')}</label>
+        {draft.productIds !== null && <><input aria-label={t('Mahsulot qidirish')} placeholder={t('Mahsulot qidirish')} className="block w-full rounded border p-2" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="grid max-h-60 gap-2 overflow-y-auto sm:grid-cols-2">{PRODUCTS.filter(p => tCatalogName(p.name).toLowerCase().includes(search.toLowerCase())).map(p => <label key={p.id}><input type="checkbox" checked={draft.productIds!.includes(p.id)} onChange={e => setDraft({ ...draft, productIds: e.target.checked ? [...draft.productIds!, p.id] : draft.productIds!.filter(id => id !== p.id) })} /> {tCatalogName(p.name)}</label>)}</div></>}
+      </fieldset>
       <fieldset className="flex flex-wrap gap-2"><legend>{t('Hafta kunlari')}</legend>{days.map((day, index) => <label key={day}><input type="checkbox" checked={draft.weekdays.includes(index)} onChange={e => setDraft({ ...draft, weekdays: e.target.checked ? [...draft.weekdays, index] : draft.weekdays.filter(d => d !== index) })} /> {t(day)}</label>)}</fieldset>
       <button disabled={busy} className="rounded bg-stone-800 px-3 py-2 text-white">{t('Saqlash')}</button>
     </form>
     {rules.map(rule => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3">
-      <span>{rule.name} · {rule.startTime}–{rule.endTime} · {rule.percent}% · {rule.weekdays.map(d => t(days[d])).join(', ')} · {t('Ustuvorlik')}: {rule.priority}{rule.maxDiscount ? ' · ≤ ' + rule.maxDiscount : ''}{rule.branchId ? ' · ' + t('Filial') + ' #' + rule.branchId : ''}</span>
+      <span>{rule.name} · {rule.productIds == null ? t('Barcha mahsulotlar') : rule.productIds.map(id => tCatalogName(PRODUCTS.find(p => p.id === id)?.name ?? id)).join(', ')} · {rule.startTime}–{rule.endTime} · {rule.percent}% · {rule.weekdays.map(d => t(days[d])).join(', ')} · {t('Ustuvorlik')}: {rule.priority}{rule.maxDiscount ? ' · ≤ ' + rule.maxDiscount : ''}{rule.branchId ? ' · ' + t('Filial') + ' #' + rule.branchId : ''}</span>
       <button disabled={busy} className="rounded border px-3 py-2" onClick={() => void save(rule)}>{rule.active ? t('Faol') : t('Nofaol')}</button>
     </div>)}
   </section>

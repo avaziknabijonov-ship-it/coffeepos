@@ -45,6 +45,12 @@ npm run dev                                  # frontend, /api -> :8000 proxy
 - Frontend production build: `VITE_API_URL=https://api-manzil npm run build`.
 - Demo: login `demo`, PIN 1111 rahbar, 2222 kassir, 3333 barista.
 
+## Windows 7 kassasida ochish
+
+Windows 7 kassasida [Firefox 115 ESR](https://support.mozilla.org/en-US/kb/firefox-users-windows-7-8-and-81-moving-extended-support) orqali CoffeePOS serverining HTTPS manzilini oching. CoffeePOS kassada brauzerda, backend esa serverda ishlaydi.
+
+USB termoprinter uchun Windows 7’ga mos drayverni o‘rnating. CoffeePOS’da printer sozlamalaridan 58 yoki 80 mm formatni tanlang va test chekini brauzer orqali chiqaring.
+
 ## Serverga joylash (VPS, Docker)
 
 Talab: Docker va Docker Compose o'rnatilgan Linux server.

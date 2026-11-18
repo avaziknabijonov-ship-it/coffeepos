@@ -57,6 +57,7 @@ function Summary({ s }: { s: ShiftInfo }) {
       ))}
       <div className="flex justify-between border-t border-stone-200 pt-1.5"><dt className="text-stone-500">{t("Boshlang'ich naqd")}</dt><dd>{som(s.shift.openingCash)}</dd></div>
       <div className="flex justify-between"><dt className="text-stone-500">{t('Naqd chiqim')}</dt><dd className="text-red-700">−{som(s.cashExpenses ?? 0)}</dd></div>
+      {(s.refunds ?? 0) > 0 && <div className="flex justify-between"><dt className="text-stone-500">{t('Naqd qaytarish (refund)')}</dt><dd className="text-red-700">−{som(s.refundsByPayment?.naqd ?? 0)}</dd></div>}
       <div className="flex justify-between"><dt className="font-medium">{t("Kassada bo'lishi kerak")}</dt><dd className="font-bold">{som(s.expectedCash)}</dd></div>
     </dl>
   )

@@ -31,7 +31,7 @@ export default function CashierReport() {
   const names = [...new Set(sales.map(o => o.barista).filter(Boolean))].sort()
   const rows = names.map(name => {
     const orders = sales.filter(o => o.barista === name)
-    const done = orders.filter(o => o.status !== 'cancelled')
+    const done = orders.filter(o => o.status !== 'cancelled' && o.status !== 'refunded')
     const voids = orders.filter(o => o.status === 'cancelled')
     const methods = [...new Set(done.map(o => o.payment))].map(p => p + ': ' + fmt(done.filter(o=>o.payment===p).reduce((a,o)=>a+o.total,0))).join('; ')
     return { name, count: done.length, revenue: done.reduce((a,o)=>a+o.total,0), shifts: new Set(orders.map(o=>o.shiftId).filter(Boolean)).size, voidCount: voids.length, voidSum: voids.reduce((a,o)=>a+o.total,0), methods }

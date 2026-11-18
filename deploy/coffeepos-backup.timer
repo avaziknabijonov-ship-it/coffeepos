@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily CoffeePOS backup (03:30 Asia/Tashkent)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Tashkent
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

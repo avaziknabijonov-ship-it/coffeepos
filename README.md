@@ -58,4 +58,6 @@ curl localhost/healthz  # {"ok":true}
 
 - Konteynerlar: `db` (PostgreSQL 16, ma'lumot `pgdata` volume'da), `api` (FastAPI), `web` (nginx: frontend + `/api` proxy).
 - HTTPS uchun domenni server IP'ga yo'naltiring va oldiga Caddy yoki certbot+nginx qo'ying.
-- Zaxira nusxa: `docker compose exec db pg_dump -U coffeepos coffeepos > backup.sql`.
+- Zaxira nusxa (har kuni avtomatik, shifrlangan, offsite): `cp deploy/backup.env.example deploy/backup.env`, to‘ldiring, so‘ng `sudo deploy/install-backup-timer.sh`.
+- Tiklash sinovi (ishlab turgan bazaga tegmaydi): `deploy/restore.sh FAYL`. Haqiqiy tiklash: `deploy/restore.sh FAYL --production`.
+- Testlar PostgreSQL’da: `DATABASE_URL=postgresql+psycopg://... backend/.venv/bin/python -m pytest backend/tests`.

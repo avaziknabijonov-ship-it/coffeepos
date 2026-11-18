@@ -15,6 +15,28 @@ jobs:
       - run: python -m pytest backend/tests -q
         env:
           PYTHONPATH: backend
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: coffeepos
+          POSTGRES_USER: coffeepos
+          POSTGRES_PASSWORD: coffeepos
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U coffeepos" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e './backend[dev]'
+      - run: python -m pytest backend/tests -q
+        env:
+          PYTHONPATH: backend
+          DATABASE_URL: postgresql+psycopg://coffeepos:coffeepos@localhost:5432/coffeepos
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -25,4 +47,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/check-i18n.mjs
+      - run: npm run lint
       - run: npm run build
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n deploy/backup.sh deploy/restore.sh deploy/install-backup-timer.sh

@@ -1,0 +1,12 @@
+[Unit]
+Description=CoffeePOS PostgreSQL backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Installed by deploy/install-backup-timer.sh, which replaces these placeholders.
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/deploy/backup.sh
+Nice=10

@@ -14,6 +14,8 @@ export interface ShiftInfo {
   byPayment: Partial<Record<Payment, number>>
   expectedCash: number
   cashExpenses?: number
+  refunds?: number
+  refundsByPayment?: Partial<Record<Payment, number>>
   difference?: number
 }
 export interface State {

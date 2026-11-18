@@ -144,6 +144,10 @@ class Order(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
     ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     staff_name: Mapped[str] = mapped_column(String(64))
+    refunded_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    refunded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    refund_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    refund_shift_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 class StockMove(Base):
@@ -268,3 +272,16 @@ class PayrollPlan(Base):
     deductions: Mapped[int] = mapped_column(BigInteger, default=0)
     note: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class AuditLog(Base):
+    """Append-only trail of sensitive actions (cancel, refund, discounts, staff, stock, money)."""
+    __tablename__ = "audit_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    staff_name: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    entity: Mapped[str] = mapped_column(String(32))
+    entity_id: Mapped[str] = mapped_column(String(64), default="")
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    AuditLog, Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
 )
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
@@ -76,6 +76,15 @@ def migrate() -> None:
         if "client_key" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
+        if "refunded_at" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN refunded_at BIGINT"))
+        if "refunded_by" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN refunded_by VARCHAR(64)"))
+        if "refund_reason" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN refund_reason VARCHAR(256)"))
+        if "refund_shift_id" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN refund_shift_id INTEGER"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_refund_shift_id ON orders (refund_shift_id)"))
 
 
 def init_db() -> None:
@@ -161,6 +170,7 @@ def order_out(o: Order) -> dict:
         "payment": o.payment, "cashGiven": o.cash_given, "status": o.status,
         "bonusUsed": o.bonus_used, "bonusEarned": o.bonus_earned,
         "cancelledAt": o.cancelled_at, "cancelledBy": o.cancelled_by, "cancelReason": o.cancel_reason,
+        "refundedAt": o.refunded_at, "refundedBy": o.refunded_by, "refundReason": o.refund_reason,
         "createdAt": o.created_at, "readyAt": o.ready_at, "barista": o.staff_name, "shiftId": o.shift_id,
     }
 
@@ -183,6 +193,12 @@ def shift_out(s: Shift | None) -> dict | None:
 
 
 # ---------- helpers ----------
+
+def audit(ctx: "Ctx", action: str, entity: str, entity_id: object = "", **details: object) -> None:
+    """Record a sensitive action; committed together with the caller's transaction."""
+    ctx.db.add(AuditLog(company_id=ctx.cid, staff_name=ctx.staff.name, action=action,
+                        entity=entity, entity_id=str(entity_id)[:64], details=details))
+
 
 def slugify(text: str) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40]
@@ -266,6 +282,9 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
         limiter.fail(key)
         raise HTTPException(401, "Kofe bar yoki PIN noto'g'ri")
     limiter.reset(key)
+    db.add(AuditLog(company_id=company.id, staff_name=staff.name, action="auth.login",
+                    entity="staff", entity_id=str(staff.id), details={"role": staff.role}))
+    db.commit()
     return {
         "token": make_token(db, staff.id, company.id),
         "staff": staff_out(staff),
@@ -397,7 +416,11 @@ def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGE
     validate_product(ctx, body)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
     p.image_url = body.imageUrl
+    old_prices = {s["size"]: s["price"] for s in p.sizes if isinstance(s, dict) and "size" in s and "price" in s}
     p.sizes, p.active = [s.model_dump() for s in body.sizes], body.active
+    new_prices = {s["size"]: s["price"] for s in p.sizes if "size" in s and "price" in s}
+    if old_prices != new_prices:
+        audit(ctx, "product.price", "product", p.key, name=p.name, before=old_prices, after=new_prices)
     ctx.db.commit()
     return product_out(p)
 
@@ -416,7 +439,9 @@ def set_product_active(key: str, body: ActiveIn, ctx: Ctx = Depends(require(*CAS
 
 @app.delete("/api/products/{key}")
 def delete_product(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    ctx.db.delete(get_row(ctx.db, Product, ctx.cid, key))
+    p = get_row(ctx.db, Product, ctx.cid, key)
+    audit(ctx, "product.delete", "product", key, name=p.name)
+    ctx.db.delete(p)
     ctx.db.commit()
     return {"ok": True}
 
@@ -505,6 +530,7 @@ def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     note = (body.note or "other") if body.reason == "writeoff" else None
     i.stock += delta
     ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, note=note, staff_name=ctx.staff.name))
+    audit(ctx, f"stock.{body.reason}", "ingredient", i.key, name=i.name, qty=delta, note=note)
     ctx.db.commit()
     return ingredient_out(i)
 
@@ -600,6 +626,7 @@ def cancel_purchase(purchase_id: int, ctx: Ctx = Depends(require(*MANAGERS))) ->
     inv.status = "cancelled"
     inv.cancelled_at = now_ms()
     inv.cancelled_by = ctx.staff.name
+    audit(ctx, "purchase.cancel", "purchase", inv.id, number=inv.number, total=inv.total)
     db.commit()
     return purchase_out(inv)
 
@@ -678,6 +705,7 @@ def create_inventory(body: InventoryIn, ctx: Ctx = Depends(require(*MANAGERS))) 
             ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=diff, reason="count", inventory_id=inv.id, staff_name=ctx.staff.name))
         i.stock = line.counted
     inv.lines, inv.shortage, inv.surplus = lines, shortage, surplus
+    audit(ctx, "inventory.create", "inventory", inv.id, shortage=shortage, surplus=surplus)
     ctx.db.commit()
     return inventory_out(inv)
 
@@ -789,6 +817,7 @@ def add_expense(body: ExpenseIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict
     e = Expense(company_id=ctx.cid, amount=body.amount, category=body.category.strip(),
                 description=body.description.strip(), payment=body.payment, staff_name=ctx.staff.name)
     ctx.db.add(e)
+    audit(ctx, "expense.create", "expense", "", amount=body.amount, category=e.category, payment=body.payment)
     ctx.db.commit()
     ctx.db.refresh(e)
     return {"id": e.id}
@@ -815,6 +844,7 @@ def add_staff_payment(body: StaffPaymentIn, ctx: Ctx = Depends(require(*MANAGERS
     p = StaffPayment(company_id=ctx.cid, staff_id=member.id, amount=body.amount,
                      note=body.note.strip(), recorded_by=ctx.staff.name)
     ctx.db.add(p)
+    audit(ctx, "staff_payment.create", "staff", member.id, name=member.name, amount=body.amount)
     ctx.db.commit()
     ctx.db.refresh(p)
     return {"id": p.id}
@@ -896,6 +926,8 @@ def payroll_set(staff_id: int, month: str, body: PayrollPlanIn,
     plan.deductions = body.deductions
     plan.note = body.note.strip()
     plan.updated_at = now_ms()
+    audit(ctx, "payroll.update", "staff", staff_id, month=month, salary=body.monthly_salary,
+          workedDays=body.worked_days, deductions=body.deductions)
     ctx.db.commit()
     return {"ok": True, "staffId": staff_id, "month": month}
 
@@ -930,6 +962,8 @@ def bonus_config_put(body: BonusSettingsIn, ctx: Ctx = Depends(require(*MANAGERS
     config.enabled = body.enabled
     config.earn_percent = body.earn_percent
     config.redemption_limit_percent = body.redemption_limit_percent
+    audit(ctx, "bonus.config", "company", ctx.cid, enabled=body.enabled, earnPercent=body.earn_percent,
+          redemptionLimitPercent=body.redemption_limit_percent)
     ctx.db.commit()
     return {"enabled": config.enabled, "earnPercent": config.earn_percent,
             "redemptionLimitPercent": config.redemption_limit_percent}
@@ -979,6 +1013,8 @@ def add_staff(body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
         raise HTTPException(409, "Bu PIN band")
     s = Staff(company_id=ctx.cid, name=body.name.strip(), role=body.role, pin_hash=hash_pin(body.pin), active=body.active, can_barista=body.canBarista if body.role == "kassir" else False, can_cancel_orders=body.canCancelOrders if body.role == "kassir" else False, can_reprint_receipts=body.canReprintReceipts if body.role == "kassir" else False)
     ctx.db.add(s)
+    ctx.db.flush()
+    audit(ctx, "staff.create", "staff", s.id, name=s.name, role=s.role)
     ctx.db.commit()
     return staff_out(s)
 
@@ -1000,6 +1036,8 @@ def update_staff(sid: int, body: StaffIn, ctx: Ctx = Depends(require(*MANAGERS))
     s.can_barista = body.canBarista if body.role == "kassir" else False
     s.can_cancel_orders = body.canCancelOrders if body.role == "kassir" else False
     s.can_reprint_receipts = body.canReprintReceipts if body.role == "kassir" else False
+    audit(ctx, "staff.update", "staff", s.id, name=s.name, role=s.role, active=s.active,
+          pinChanged=bool(body.pin), canBarista=s.can_barista, canCancelOrders=s.can_cancel_orders)
     ctx.db.commit()
     return staff_out(s)
 
@@ -1027,13 +1065,22 @@ def shift_summary(db: Session, shift: Shift) -> dict:
         Expense.created_at >= shift.opened_at,
         Expense.created_at <= cutoff,
     )))
+    # Refunds paid out during this shift (possibly for orders sold in an earlier shift).
+    refunds = db.scalars(select(Order).where(Order.company_id == shift.company_id,
+                                             Order.refund_shift_id == shift.id)).all()
+    refunds_by_payment: dict[str, int] = {}
+    for o in refunds:
+        refunds_by_payment[o.payment] = refunds_by_payment.get(o.payment, 0) + o.total
+    cash_refunds = refunds_by_payment.get("naqd", 0)
     return {
         "shift": shift_out(shift),
         "orders": len(orders),
         "revenue": sum(o.total for o in orders),
         "byPayment": by_payment,
         "cashExpenses": cash_spent,
-        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent,
+        "refunds": sum(refunds_by_payment.values()),
+        "refundsByPayment": refunds_by_payment,
+        "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent - cash_refunds,
     }
 
 
@@ -1043,6 +1090,8 @@ def shift_open(body: OpenShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dic
         raise HTTPException(409, "Smena allaqachon ochiq")
     s = Shift(company_id=ctx.cid, staff_name=ctx.staff.name, opening_cash=body.openingCash)
     ctx.db.add(s)
+    ctx.db.flush()
+    audit(ctx, "shift.open", "shift", s.id, openingCash=body.openingCash)
     ctx.db.commit()
     return shift_out(s)
 
@@ -1061,6 +1110,8 @@ def shift_close(body: CloseShiftIn, ctx: Ctx = Depends(require(*CASHIERS))) -> d
     summary = shift_summary(ctx.db, s)
     s.closed_at, s.closed_by = now_ms(), ctx.staff.name
     s.closing_cash, s.expected_cash = body.closingCash, summary["expectedCash"]
+    audit(ctx, "shift.close", "shift", s.id, closingCash=body.closingCash,
+          expectedCash=summary["expectedCash"], difference=body.closingCash - summary["expectedCash"])
     ctx.db.commit()
     return {**summary, "shift": shift_out(s), "difference": body.closingCash - summary["expectedCash"]}
 
@@ -1184,7 +1235,13 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
     )
     db.add(order)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        return duplicate_order(db, cid, body.clientKey)
+    if discount:
+        audit(ctx, "order.discount", "order", order.id, number=order.number,
+              percent=body.discountPct, amount=discount, subtotal=subtotal)
     if customer is not None:
         if redeemed:
             db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
@@ -1203,15 +1260,18 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     try:
         db.commit()
     except IntegrityError:
-        db.rollback()
-        if body.clientKey:
-            duplicate = db.scalar(select(Order).where(
-                Order.company_id == cid, Order.client_key == body.clientKey
-            ))
-            if duplicate:
-                return order_out(duplicate)
-        raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
+        return duplicate_order(db, cid, body.clientKey)
     return order_out(order)
+
+
+def duplicate_order(db: Session, cid: int, client_key: str | None) -> dict:
+    """A parallel request with the same clientKey won the race: answer with its order."""
+    db.rollback()
+    if client_key:
+        duplicate = db.scalar(select(Order).where(Order.company_id == cid, Order.client_key == client_key))
+        if duplicate:
+            return order_out(duplicate)
+    raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
 
 
 class CancelOrderIn(BaseModel):
@@ -1258,7 +1318,68 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
     order.cancelled_at = now_ms()
     order.cancelled_by = ctx.staff.name
     order.cancel_reason = body.reason.strip()
+    audit(ctx, "order.cancel", "order", order.id, number=order.number, total=order.total,
+          reason=order.cancel_reason)
     ctx.db.commit()
+    return order_out(order)
+
+
+class RefundOrderIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=256)
+    restock: bool = True
+
+
+@app.post("/api/orders/{oid}/refund")
+def refund_order(oid: int, body: RefundOrderIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Full refund of an already paid order (any stage, any earlier shift).
+
+    The money leaves the register of the currently open shift; the original shift
+    keeps its historical sale. Stock is returned only when the drink was not made
+    (restock=True). Repeated calls never double the stock or bonus reversal.
+    """
+    db = ctx.db
+    order = db.scalar(select(Order).where(Order.id == oid, Order.company_id == ctx.cid).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    if order.status == "refunded":
+        raise HTTPException(409, "Buyurtma allaqachon qaytarilgan")
+    if order.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan buyurtmani qaytarib bo'lmaydi")
+    shift = open_shift(db, ctx.cid)
+    if shift is None:
+        raise HTTPException(409, "Avval smenani oching")
+    if order.customer_id is not None:
+        customer = db.scalar(select(Customer).where(
+            Customer.id == order.customer_id, Customer.company_id == ctx.cid).with_for_update())
+        if customer is not None:
+            if customer.bonus_balance < order.bonus_earned:
+                raise HTTPException(409, "Mijoz bonusdan foydalangan. Avval bonus hisobini tekshiring")
+            customer.bonus_balance += order.bonus_used - order.bonus_earned
+            if order.bonus_earned:
+                db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id, order_id=order.id,
+                                   amount=-order.bonus_earned, reason="refund_earn"))
+            if order.bonus_used:
+                db.add(BonusLedger(company_id=ctx.cid, customer_id=customer.id, order_id=order.id,
+                                   amount=order.bonus_used, reason="refund_redeem"))
+    if body.restock:
+        ingredients = {i.key: i for i in rows(db, Ingredient, ctx.cid)}
+        for move in db.scalars(select(StockMove).where(
+            StockMove.company_id == ctx.cid, StockMove.order_id == order.id, StockMove.reason == "sale"
+        )).all():
+            item = ingredients.get(move.ingredient)
+            if item is not None:
+                item.stock -= move.qty
+                db.add(StockMove(company_id=ctx.cid, ingredient=move.ingredient, qty=-move.qty,
+                                 reason="refund", order_id=order.id, staff_name=ctx.staff.name))
+    previous = order.status
+    order.status = "refunded"
+    order.refunded_at = now_ms()
+    order.refunded_by = ctx.staff.name
+    order.refund_reason = body.reason.strip()
+    order.refund_shift_id = shift.id
+    audit(ctx, "order.refund", "order", order.id, number=order.number, total=order.total,
+          payment=order.payment, previousStatus=previous, restock=body.restock, reason=order.refund_reason)
+    db.commit()
     return order_out(order)
 
 
@@ -1310,7 +1431,7 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     out = []
     for d in range(days - 1, -1, -1):
         lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
-        day = [o for o in orders if lo <= o.created_at < hi and o.status != "cancelled"]
+        day = [o for o in orders if lo <= o.created_at < hi and o.status not in ("cancelled", "refunded")]
         out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
     return out
 
@@ -1323,7 +1444,7 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     db, cid = ctx.db, ctx.cid
     orders = db.scalars(select(Order).where(
         Order.company_id == cid, Order.created_at >= start,
-        Order.status != "cancelled",
+        Order.status.not_in(("cancelled", "refunded")),
     )).all()
     expenses = db.scalars(select(Expense).where(
         Expense.company_id == cid, Expense.created_at >= start,
@@ -1360,6 +1481,20 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
         "byPayment": by_payment, "daily": daily,
         "note": "Tax, supplier debts, pending salaries and other liabilities are not included.",
     }
+
+
+# ---------- audit trail ----------
+@app.get("/api/audit")
+def audit_list(limit: int = 200, offset: int = 0, action: str = "",
+               ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    limit, offset = max(1, min(limit, 500)), max(0, offset)
+    q = select(AuditLog).where(AuditLog.company_id == ctx.cid)
+    if action:
+        q = q.where(AuditLog.action.startswith(action))
+    q = q.order_by(AuditLog.id.desc()).offset(offset).limit(limit)
+    return {"items": [{"id": a.id, "staff": a.staff_name, "action": a.action, "entity": a.entity,
+                       "entityId": a.entity_id, "details": a.details, "createdAt": a.created_at}
+                      for a in ctx.db.scalars(q)], "offset": offset, "limit": limit}
 
 
 # ---------- platform owner (disabled until SUPERADMIN_KEY is configured) ----------

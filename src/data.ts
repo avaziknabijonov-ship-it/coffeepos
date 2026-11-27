@@ -1,7 +1,7 @@
 import { t } from './i18n'
 
 export type Unit = 'g' | 'ml' | 'dona'
-export interface Ingredient { id: string; name: string; unit: Unit; cost: number; stock: number; min: number }
+export interface Ingredient { id: string; name: string; unit: Unit; cost: number; stock: number; min: number; recipe?: RecipeLine[]; yieldQty?: number; semi?: boolean }
 export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
@@ -9,7 +9,8 @@ export interface Product { id: string; cat: string; name: string; sizes: Size[];
 export interface Category { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
-export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[] }
+export interface MenuSettings { autoStoplist: boolean }
+export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[]; settings?: MenuSettings }
 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
@@ -41,6 +42,7 @@ export let CATEGORIES: Category[] = []
 export let PRODUCTS: Product[] = []
 export let MODIFIERS: Modifier[] = []
 export let MOD: Record<string, Modifier> = {}
+export let SETTINGS: MenuSettings = { autoStoplist: false }
 
 export function setMenu(m: Menu) {
   INGREDIENTS = m.ingredients
@@ -49,6 +51,7 @@ export function setMenu(m: Menu) {
   PRODUCTS = m.products
   MODIFIERS = m.modifiers
   MOD = Object.fromEntries(m.modifiers.map((x) => [x.id, x]))
+  SETTINGS = m.settings ?? { autoStoplist: false }
 }
 
 export const DEFAULT_MILK = 'milk-regular'
@@ -76,4 +79,16 @@ export function buildItem(p: Product, size: Size, modIds: string[], qty: number)
     unitCost: Math.round(recipeCost(consumption)),
     consumption,
   }
+}
+
+/** Automatic stop-list: true when at least one size can be made from current stock. */
+export function canMake(p: Product, stock: Record<string, number>): boolean {
+  return p.sizes.some((size) => size.recipe.every((l) => !(l.ing in stock) || stock[l.ing] + 0.000001 >= l.qty))
+}
+
+/** Ingredients that are short for this exact item (after modifiers), multiplied by qty. */
+export function missingFor(consumption: RecipeLine[], qty: number, stock: Record<string, number>): string[] {
+  const need: Record<string, number> = {}
+  for (const l of consumption) need[l.ing] = (need[l.ing] ?? 0) + l.qty * qty
+  return Object.entries(need).filter(([ing, q]) => ing in stock && stock[ing] + 0.000001 < q).map(([ing]) => ING[ing]?.name ?? ing)
 }

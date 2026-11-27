@@ -4,10 +4,11 @@ import CashExpense from './CashExpense'
 import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { CATEGORIES, DEFAULT_MILK, MODIFIERS, PAYMENT_LABEL, PRODUCTS, buildItem, fmt, som, time } from './data'
+import { CATEGORIES, DEFAULT_MILK, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, SETTINGS, buildItem, canMake, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState, sync } from './store'
 import { OpenShift } from './Shift'
+import { ProduceDialog } from './SemiProducts'
 
 const CAT_ICON: Record<string, LucideIcon> = { espresso: Coffee, milk: Milk, cold: Snowflake, tea: Leaf, dessert: CakeSlice }
 const CAT_TINT: Record<string, string> = {
@@ -21,7 +22,7 @@ type BonusSnapshot = { phone: string; name: string; balance: number; enabled: bo
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
 
 export default function Kassa({ onShift }: { onShift: () => void }) {
-  const { shift, menuVersion, orders, session } = useAppState()
+  const { shift, menuVersion, orders, session, stock } = useAppState()
   const [cat, setCat] = useState(() => CATEGORIES.find((c) => c.id === 'milk')?.id ?? CATEGORIES[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<OrderItem[]>([])
@@ -37,6 +38,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [cartOpen, setCartOpen] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [produceOpen, setProduceOpen] = useState(false)
+  const hasSemi = INGREDIENTS.some((i) => i.semi)
   const [historyError, setHistoryError] = useState('')
   const canCancel = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canCancelOrders)
   const canReprint = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canReprintReceipts)
@@ -128,6 +131,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
           {(canCancel || canReprint) && <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-amber-700 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950 hover:bg-amber-100">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</button>}
+          {hasSemi && <button onClick={() => setProduceOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Polufabrikat')}</button>}
           <button onClick={() => setExpenseOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Xarajat')}</button>
           <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
           </div>
@@ -144,12 +148,14 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
           {products.map((p) => {
             const Icon = CAT_ICON[p.cat] ?? Coffee
             const minPrice = Math.min(...p.sizes.map((s) => s.price))
+            const outOfStock = p.active && SETTINGS.autoStoplist && !canMake(p, stock)
             return (
-              <button key={p.id} onClick={() => onTile(p)} disabled={!p.active}
+              <button key={p.id} onClick={() => onTile(p)} disabled={!p.active || outOfStock}
                 className="cashier-product-card group relative flex min-h-60 flex-col justify-between overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg active:scale-[0.98] disabled:opacity-40">
                  {p.imageUrl ? <img loading="lazy" src={p.imageUrl} alt={tCatalogName(p.name)} className="cashier-product-photo mb-2 h-36 w-full rounded-xl object-cover transition-transform duration-200 group-hover:scale-[1.02]" /> :
                    <span className="cashier-product-fallback mb-2 grid h-36 w-full place-items-center rounded-xl"><span className={`cashier-fallback-icon grid size-16 place-items-center rounded-full ${CAT_TINT[p.cat] ?? 'bg-stone-100 text-stone-700'}`}><Icon className="size-9" /></span></span>}
                 {!p.active && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Stop')}</span>}
+                {outOfStock && <span className="absolute right-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">{t('Tugadi')}</span>}
                 <span>
                   <span className="block text-[15px] font-bold leading-tight text-stone-900">{tCatalogName(p.name)}</span>
                   <span className="mt-1 block text-sm font-medium text-amber-700">
@@ -182,6 +188,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {receipt && <ReceiptModal order={receipt} onClose={() => setReceipt(null)} />}
       {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</h2><button onClick={() => setHistoryOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">{t('Otmena')}: {orders.filter(o => o.status === 'cancelled').length}</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `${t('Otmena')} · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>tCatalogName(i.name)).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">{t('Perechek')}</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">{t('Otmena')}</button>}</div>)}</div></div></div>}
       {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
+      {produceOpen && <ProduceDialog onClose={() => setProduceOpen(false)} />}
     </div>
   )
 }

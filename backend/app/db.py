@@ -75,6 +75,19 @@ class Ingredient(Base):
     cost: Mapped[float] = mapped_column(default=0)
     stock: Mapped[float] = mapped_column(default=0)
     min: Mapped[float] = mapped_column(default=0)
+    # Semi-finished item (polufabrikat): made in batches from raw ingredients.
+    # recipe lines are per batch of `yield_qty` units; empty recipe = raw ingredient.
+    recipe: Mapped[list] = mapped_column(JSON, default=list)
+    yield_qty: Mapped[float] = mapped_column(default=0)
+
+
+class StockConfig(Base):
+    """Per-company stock automation: automatic stop-list and low-stock alerts."""
+    __tablename__ = "stock_configs"
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), primary_key=True)
+    auto_stoplist: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_token: Mapped[str] = mapped_column(String(128), default="")
+    telegram_chat: Mapped[str] = mapped_column(String(64), default="")
 
 
 class Product(Base):

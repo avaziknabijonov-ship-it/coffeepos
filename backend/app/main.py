@@ -327,6 +327,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
         "settings": {"autoStoplist": stock_settings(db, cid).auto_stoplist},
         "promotions": [promotion_out(p) for p in rows(db, Promotion, cid) if p.active],
+        "restaurant": db.scalar(select(DiningTable.id).where(DiningTable.company_id == cid).limit(1)) is not None,
     }
 
 

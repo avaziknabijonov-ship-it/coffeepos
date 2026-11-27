@@ -300,7 +300,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
-function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (it: OrderItem) => void }) {
+export function ProductModal({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (it: OrderItem) => void }) {
   const defaultSize = Math.max(0, product.sizes.findIndex((s) => s.code === 'M'))
   const [sizeIdx, setSizeIdx] = useState(defaultSize)
   const [milk, setMilk] = useState(DEFAULT_MILK)
@@ -391,7 +391,7 @@ const PAY_OPTIONS: { id: Payment; icon: LucideIcon }[] = [
   { id: 'naqd', icon: Banknote }, { id: 'karta', icon: CreditCard }, { id: 'payme', icon: Smartphone }, { id: 'click', icon: Smartphone },
 ]
 
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => Promise<void> }) {
+export function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (p: Payment, cash?: number) => Promise<void> }) {
   const [method, setMethod] = useState<Payment>('karta')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -458,7 +458,7 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
   )
 }
 
-function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
+export function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
   const company = useAppState().session?.company.name ?? 'CoffeePOS'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>

@@ -6,7 +6,8 @@ export interface RecipeLine { ing: string; qty: number }
 export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
 export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
-export interface Category { id: string; name: string }
+export interface Category { id: string; name: string; workshop?: string }
+export interface Workshop { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
 export interface Modifier { id: string; group: ModGroupId; name: string; price: number; effect: Effect }
 export interface MenuSettings { autoStoplist: boolean }
@@ -14,7 +15,20 @@ export interface Promotion {
   id: number; name: string; pct: number; target: 'all' | 'category' | 'product'; keys: string[]
   days: number[]; startTime: string; endTime: string; dateFrom: string; dateTo: string; active: boolean
 }
-export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[]; settings?: MenuSettings; promotions?: Promotion[] }
+export interface Menu { categories: Category[]; products: Product[]; modifiers: Modifier[]; ingredients: Ingredient[]; settings?: MenuSettings; promotions?: Promotion[]; workshops?: Workshop[]; restaurant?: boolean }
+
+export interface CheckLine extends OrderItem { sent?: number }
+export interface OpenCheck {
+  id: number; tableId: number | null; tableName: string; guests: number; waiter: string; comment: string
+  items: CheckLine[]; total: number; status: 'open' | 'paid' | 'void'; orderId: string | null
+  createdAt: number; updatedAt: number; closedAt: number | null; unsent: number
+}
+export interface KitchenTicket {
+  id: number; checkId: number; workshop: string; tableName: string; waiter: string; comment: string
+  items: { name: string; size: string; mods: string[]; qty: number }[]
+  status: 'new' | 'preparing' | 'ready' | 'done'; createdAt: number; readyAt: number | null
+}
+export interface HallInfo { id: number; name: string; tables: { id: number; name: string; seats: number; active: boolean }[] }
 
 export type Payment = 'naqd' | 'karta' | 'payme' | 'click'
 export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
@@ -37,8 +51,8 @@ export const PAYMENT_LABEL: Record<Payment, string> = { naqd: 'Naqd', karta: 'Ka
 export const STATUS_LABEL: Record<Status, string> = { new: 'Yangi', preparing: 'Tayyorlanmoqda', ready: 'Tayyor', done: 'Berildi', cancelled: 'Bekor qilingan' }
 export const UNIT_LABEL: Record<Unit, string> = { g: 'g', ml: 'ml', dona: 'dona' }
 
-export type Role = 'owner' | 'admin' | 'kassir' | 'barista'
-export const ROLE_LABEL: Record<Role, string> = { owner: 'Rahbar', admin: 'Administrator', kassir: 'Kassir', barista: 'Barista' }
+export type Role = 'owner' | 'admin' | 'kassir' | 'barista' | 'ofitsiant'
+export const ROLE_LABEL: Record<Role, string> = { owner: 'Rahbar', admin: 'Administrator', kassir: 'Kassir', barista: 'Barista / oshpaz', ofitsiant: 'Ofitsiant' }
 
 // Menu is loaded from the API; these live bindings are replaced by setMenu().
 export let INGREDIENTS: Ingredient[] = []
@@ -49,6 +63,8 @@ export let MODIFIERS: Modifier[] = []
 export let MOD: Record<string, Modifier> = {}
 export let SETTINGS: MenuSettings = { autoStoplist: false }
 export let PROMOTIONS: Promotion[] = []
+export let WORKSHOPS: Workshop[] = []
+export let RESTAURANT = false
 
 export function setMenu(m: Menu) {
   INGREDIENTS = m.ingredients
@@ -59,6 +75,8 @@ export function setMenu(m: Menu) {
   MOD = Object.fromEntries(m.modifiers.map((x) => [x.id, x]))
   SETTINGS = m.settings ?? { autoStoplist: false }
   PROMOTIONS = m.promotions ?? []
+  WORKSHOPS = m.workshops ?? []
+  RESTAURANT = Boolean(m.restaurant)
 }
 
 export const DEFAULT_MILK = 'milk-regular'

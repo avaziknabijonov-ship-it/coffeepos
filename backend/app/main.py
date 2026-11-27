@@ -16,17 +16,18 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, Promotion, RecurringPayment, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, DiningTable, Hall, KitchenTicket, OpenCheck, Promotion, RecurringPayment, Workshop, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
 )
 from .notify import low_stock_crossings, send_low_stock_alert
 from .logic import apply_promotions, build_item, round100
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
-Role = Literal["owner", "admin", "kassir", "barista"]
+Role = Literal["owner", "admin", "kassir", "barista", "ofitsiant"]
 MANAGERS = ("owner", "admin")
 CASHIERS = ("owner", "admin", "kassir")
 BARISTAS = ("owner", "admin", "barista")
+WAITERS = ("owner", "admin", "kassir", "ofitsiant")
 
 
 
@@ -77,6 +78,10 @@ def migrate() -> None:
         if "client_key" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
+    category_columns = {c["name"] for c in inspect(engine).get_columns("categories")}
+    if "workshop" not in category_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE categories ADD COLUMN workshop VARCHAR(64) NOT NULL DEFAULT ''"))
     ingredient_columns = {c["name"] for c in inspect(engine).get_columns("ingredients")}
     with engine.begin() as conn:
         if "recipe" not in ingredient_columns:
@@ -315,7 +320,8 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
     prods = sorted(rows(db, Product, cid), key=lambda p: (p.sort, p.id))
     mods = sorted(rows(db, Modifier, cid), key=lambda m: (m.sort, m.id))
     return {
-        "categories": [{"id": c.key, "name": c.name} for c in cats],
+        "categories": [{"id": c.key, "name": c.name, "workshop": c.workshop or ""} for c in cats],
+        "workshops": [{"id": w.key, "name": w.name} for w in sorted(rows(db, Workshop, cid), key=lambda w: (w.sort, w.id))],
         "products": [product_out(p) for p in prods],
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
@@ -1272,6 +1278,11 @@ def orders_history(from_ms: int, to_ms: int, staff: str = "", shift_id: int | No
 
 @app.post("/api/orders")
 def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    return place_order(body, ctx)
+
+
+def place_order(body: OrderIn, ctx: Ctx, status: str = "new", stock_guard: bool = True, on_created=None) -> dict:
+    """Validate, price and record a paid sale. `on_created(order)` runs inside the same transaction."""
     db, cid = ctx.db, ctx.cid
     if body.clientKey:
         existing = db.scalar(select(Order).where(
@@ -1302,7 +1313,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     for it in items:
         for line in it["consumption"]:
             used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
-    if not body.offline and stock_settings(db, cid).auto_stoplist:
+    if stock_guard and not body.offline and stock_settings(db, cid).auto_stoplist:
         short = [ings[k].name for k, q in used.items() if k in ings and ings[k].stock + 0.000001 < q]
         if short:
             raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
@@ -1355,9 +1366,12 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
+        status=status, ready_at=now_ms() if status == "done" else None,
     )
     db.add(order)
     db.flush()
+    if on_created is not None:
+        on_created(order)
     if customer is not None:
         if redeemed:
             db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
@@ -1470,6 +1484,11 @@ def sync(since: int | None = None, ctx: Ctx = Depends(auth)) -> dict:
         "orders": [order_out(o) for o in db.scalars(q)],
         "stock": {i.key: i.stock for i in rows(db, Ingredient, cid)},
         "shift": shift_summary(db, shift) if shift else None,
+        "tickets": [ticket_out(t) for t in db.scalars(select(KitchenTicket).where(
+            KitchenTicket.company_id == cid, KitchenTicket.created_at >= start_of_day_ms(), KitchenTicket.status != "done"
+        ).order_by(KitchenTicket.id))],
+        "checks": [check_out(c) for c in db.scalars(select(OpenCheck).where(
+            OpenCheck.company_id == cid, OpenCheck.status == "open").order_by(OpenCheck.id))],
     }
 
 
@@ -2001,3 +2020,367 @@ def recurring_pay(rid: int, body: RecurringPayIn, ctx: Ctx = Depends(require(*MA
     r.last_paid_month = month
     ctx.db.commit()
     return recurring_out(r)
+
+
+# ---------- restaurant mode: workshops, halls, tables, open checks, kitchen tickets ----------
+
+class NameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/workshops")
+def workshop_add(body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = Workshop(company_id=ctx.cid, key=slugify(body.name), name=body.name.strip(), sort=len(rows(ctx.db, Workshop, ctx.cid)))
+    ctx.db.add(w)
+    ctx.db.commit()
+    return {"id": w.key, "name": w.name}
+
+
+@app.put("/api/workshops/{key}")
+def workshop_rename(key: str, body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = get_row(ctx.db, Workshop, ctx.cid, key)
+    w.name = body.name.strip()
+    ctx.db.commit()
+    return {"id": w.key, "name": w.name}
+
+
+@app.delete("/api/workshops/{key}")
+def workshop_delete(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = get_row(ctx.db, Workshop, ctx.cid, key)
+    for c in rows(ctx.db, Category, ctx.cid):
+        if c.workshop == key:
+            c.workshop = ""
+    ctx.db.delete(w)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class CategoryWorkshopIn(BaseModel):
+    workshop: str = Field(default="", max_length=64)
+
+
+@app.patch("/api/categories/{key}/workshop")
+def category_workshop(key: str, body: CategoryWorkshopIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cat = get_row(ctx.db, Category, ctx.cid, key)
+    if body.workshop:
+        get_row(ctx.db, Workshop, ctx.cid, body.workshop)
+    cat.workshop = body.workshop
+    ctx.db.commit()
+    return {"id": cat.key, "name": cat.name, "workshop": cat.workshop}
+
+
+def hall_out(h: Hall, tables: list[DiningTable]) -> dict:
+    return {"id": h.id, "name": h.name, "tables": [
+        {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active}
+        for t in sorted((t for t in tables if t.hall_id == h.id), key=lambda t: (t.sort, t.id))]}
+
+
+@app.get("/api/halls")
+def halls_list(ctx: Ctx = Depends(auth)) -> list[dict]:
+    tables = rows(ctx.db, DiningTable, ctx.cid)
+    return [hall_out(h, tables) for h in sorted(rows(ctx.db, Hall, ctx.cid), key=lambda h: (h.sort, h.id))]
+
+
+@app.post("/api/halls")
+def hall_add(body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = Hall(company_id=ctx.cid, name=body.name.strip(), sort=len(rows(ctx.db, Hall, ctx.cid)))
+    ctx.db.add(h)
+    ctx.db.commit()
+    return hall_out(h, [])
+
+
+@app.put("/api/halls/{hid}")
+def hall_rename(hid: int, body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = get_owned(ctx, Hall, hid)
+    h.name = body.name.strip()
+    ctx.db.commit()
+    return hall_out(h, rows(ctx.db, DiningTable, ctx.cid))
+
+
+@app.delete("/api/halls/{hid}")
+def hall_delete(hid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = get_owned(ctx, Hall, hid)
+    if any(t.hall_id == h.id for t in rows(ctx.db, DiningTable, ctx.cid)):
+        raise HTTPException(409, "Avval zaldagi stollarni o'chiring")
+    ctx.db.delete(h)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class TableIn(BaseModel):
+    hallId: int
+    name: str = Field(min_length=1, max_length=32)
+    seats: int = Field(default=4, ge=1, le=100)
+    active: bool = True
+
+
+@app.post("/api/tables")
+def table_add(body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    get_owned(ctx, Hall, body.hallId)
+    t = DiningTable(company_id=ctx.cid, hall_id=body.hallId, name=body.name.strip(), seats=body.seats,
+                    active=body.active, sort=len(rows(ctx.db, DiningTable, ctx.cid)))
+    ctx.db.add(t)
+    ctx.db.commit()
+    return {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active, "hallId": t.hall_id}
+
+
+@app.put("/api/tables/{tid}")
+def table_update(tid: int, body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    t = get_owned(ctx, DiningTable, tid)
+    get_owned(ctx, Hall, body.hallId)
+    t.hall_id, t.name, t.seats, t.active = body.hallId, body.name.strip(), body.seats, body.active
+    ctx.db.commit()
+    return {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active, "hallId": t.hall_id}
+
+
+@app.delete("/api/tables/{tid}")
+def table_delete(tid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    t = get_owned(ctx, DiningTable, tid)
+    if ctx.db.scalar(select(OpenCheck).where(OpenCheck.company_id == ctx.cid, OpenCheck.table_id == t.id,
+                                             OpenCheck.status == "open")):
+        raise HTTPException(409, "Stolda ochiq hisob bor")
+    ctx.db.delete(t)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+def check_total(c: OpenCheck) -> int:
+    return sum(i["unitPrice"] * i["qty"] for i in (c.items or []))
+
+
+def check_out(c: OpenCheck) -> dict:
+    return {
+        "id": c.id, "tableId": c.table_id, "tableName": c.table_name, "guests": c.guests,
+        "waiter": c.waiter_name, "comment": c.comment, "items": c.items or [], "total": check_total(c),
+        "status": c.status, "orderId": str(c.order_id) if c.order_id else None,
+        "createdAt": c.created_at, "updatedAt": c.updated_at, "closedAt": c.closed_at,
+        "unsent": sum(max(0, i["qty"] - i.get("sent", 0)) for i in (c.items or [])),
+    }
+
+
+def ticket_out(t: KitchenTicket) -> dict:
+    return {"id": t.id, "checkId": t.check_id, "workshop": t.workshop, "tableName": t.table_name,
+            "waiter": t.waiter_name, "items": t.items, "comment": t.comment, "status": t.status,
+            "createdAt": t.created_at, "readyAt": t.ready_at}
+
+
+def get_check(ctx: Ctx, check_id: int, lock: bool = True) -> OpenCheck:
+    q = select(OpenCheck).where(OpenCheck.id == check_id, OpenCheck.company_id == ctx.cid)
+    c = ctx.db.scalar(q.with_for_update() if lock else q)
+    if c is None:
+        raise HTTPException(404, "Hisob topilmadi")
+    return c
+
+
+def require_open(c: OpenCheck) -> None:
+    if c.status != "open":
+        raise HTTPException(409, "Hisob yopilgan")
+
+
+def can_void(ctx: Ctx) -> bool:
+    return ctx.staff.role in MANAGERS or bool(ctx.staff.can_cancel_orders)
+
+
+class CheckOpenIn(BaseModel):
+    tableId: int | None = None
+    guests: int = Field(default=1, ge=1, le=100)
+    comment: str = Field(default="", max_length=200)
+
+
+def table_label(ctx: Ctx, table_id: int | None) -> str:
+    if table_id is None:
+        return ""
+    t = get_owned(ctx, DiningTable, table_id)
+    if not t.active:
+        raise HTTPException(409, "Stol faol emas")
+    hall = ctx.db.get(Hall, t.hall_id)
+    return (f"{hall.name} · {t.name}" if hall else t.name)[:64]
+
+
+@app.get("/api/checks")
+def checks_list(ctx: Ctx = Depends(require(*WAITERS))) -> list[dict]:
+    q = select(OpenCheck).where(OpenCheck.company_id == ctx.cid, OpenCheck.status == "open").order_by(OpenCheck.id)
+    return [check_out(c) for c in ctx.db.scalars(q)]
+
+
+@app.post("/api/checks")
+def check_open(body: CheckOpenIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    shift = open_shift(ctx.db, ctx.cid)
+    if shift is None:
+        raise HTTPException(409, "Avval smenani oching")
+    c = OpenCheck(company_id=ctx.cid, shift_id=shift.id, table_id=body.tableId, table_name=table_label(ctx, body.tableId),
+                  guests=body.guests, waiter_name=ctx.staff.name, comment=body.comment.strip(), items=[])
+    ctx.db.add(c)
+    ctx.db.commit()
+    return check_out(c)
+
+
+@app.patch("/api/checks/{check_id}")
+def check_update(check_id: int, body: CheckOpenIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    """Move the bill to another table, change guests or the comment."""
+    c = get_check(ctx, check_id)
+    require_open(c)
+    c.table_id, c.table_name = body.tableId, table_label(ctx, body.tableId)
+    c.guests, c.comment, c.updated_at = body.guests, body.comment.strip(), now_ms()
+    ctx.db.commit()
+    return check_out(c)
+
+
+class CheckItemsIn(BaseModel):
+    items: list[OrderItemIn] = Field(max_length=100)
+
+
+@app.put("/api/checks/{check_id}/items")
+def check_set_items(check_id: int, body: CheckItemsIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    """Replace the bill's lines. Lines already sent to the kitchen can only be reduced with cancel rights."""
+    db, cid = ctx.db, ctx.cid
+    c = get_check(ctx, check_id)
+    require_open(c)
+    prods = {p.key: p for p in rows(db, Product, cid)}
+    mods = {m.key: m for m in rows(db, Modifier, cid)}
+    ings = {i.key: i for i in rows(db, Ingredient, cid)}
+    sent_before = {i["key"]: i.get("sent", 0) for i in (c.items or [])}
+    items: list[dict] = []
+    for it in body.items:
+        product = prods.get(it.productId)
+        if not product:
+            raise HTTPException(400, "Mahsulot topilmadi")
+        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        same = next((x for x in items if x["key"] == built["key"]), None)
+        if same:
+            same["qty"] += built["qty"]
+            if same["qty"] > 99:
+                raise HTTPException(400, "Miqdor noto'g'ri")
+        else:
+            items.append(built)
+    for key, sent in sent_before.items():
+        line = next((x for x in items if x["key"] == key), None)
+        qty = line["qty"] if line else 0
+        if qty < sent and not can_void(ctx):
+            raise HTTPException(403, "Oshxonaga yuborilgan taomni kamaytirish uchun ruxsat yo'q")
+        if line:
+            line["sent"] = min(sent, qty)
+    for line in items:
+        line.setdefault("sent", 0)
+    if stock_settings(db, cid).auto_stoplist:
+        need: dict[str, float] = {}
+        for it in items:
+            for l in it["consumption"]:
+                need[l["ing"]] = need.get(l["ing"], 0) + l["qty"] * it["qty"]
+        short = [ings[k].name for k, q in need.items() if k in ings and ings[k].stock + 0.000001 < q]
+        if short:
+            raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
+    c.items, c.updated_at = items, now_ms()
+    db.commit()
+    return check_out(c)
+
+
+def send_to_kitchen(ctx: Ctx, c: OpenCheck) -> list[KitchenTicket]:
+    """Create one ticket per workshop for quantities not yet sent; mark them sent."""
+    prods = {p.key: p for p in rows(ctx.db, Product, ctx.cid)}
+    cats = {cat.key: cat for cat in rows(ctx.db, Category, ctx.cid)}
+    groups: dict[str, list[dict]] = {}
+    items = [dict(i) for i in (c.items or [])]
+    for line in items:
+        delta = line["qty"] - line.get("sent", 0)
+        if delta <= 0:
+            continue
+        product = prods.get(line["productId"])
+        cat = cats.get(product.cat) if product else None
+        workshop = cat.workshop if cat else ""
+        groups.setdefault(workshop or "", []).append(
+            {"name": line["name"], "size": line["size"], "mods": line["mods"], "qty": delta})
+        line["sent"] = line["qty"]
+    tickets = []
+    for workshop, lines in groups.items():
+        t = KitchenTicket(company_id=ctx.cid, check_id=c.id, workshop=workshop, table_name=c.table_name,
+                          waiter_name=c.waiter_name, items=lines, comment=c.comment)
+        ctx.db.add(t)
+        tickets.append(t)
+    c.items = items
+    c.updated_at = now_ms()
+    return tickets
+
+
+@app.post("/api/checks/{check_id}/send")
+def check_send(check_id: int, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    c = get_check(ctx, check_id)
+    require_open(c)
+    tickets = send_to_kitchen(ctx, c)
+    if not tickets:
+        raise HTTPException(409, "Yuboriladigan yangi taom yo'q")
+    ctx.db.commit()
+    return {"check": check_out(c), "tickets": [ticket_out(t) for t in tickets]}
+
+
+class CheckPayIn(BaseModel):
+    payment: Literal["naqd", "karta", "payme", "click"]
+    cashGiven: int | None = Field(default=None, ge=0)
+    discountPct: int = Field(default=0, ge=0, le=50)
+    customerPhone: str = Field(default="", max_length=20)
+    bonusRedeem: int = Field(default=0, ge=0)
+    clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+
+
+@app.post("/api/checks/{check_id}/pay")
+def check_pay(check_id: int, body: CheckPayIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    """Close the bill as a paid order. Unsent items are sent to the kitchen first."""
+    c = get_check(ctx, check_id)
+    if c.status == "paid" and c.order_id:
+        existing = ctx.db.get(Order, c.order_id)
+        if existing is not None:
+            return order_out(existing)
+    require_open(c)
+    if not c.items:
+        raise HTTPException(409, "Hisob bo'sh")
+    send_to_kitchen(ctx, c)
+    order_in = OrderIn(
+        items=[OrderItemIn(productId=i["productId"], size=i["key"].split("|")[1], modIds=i["modIds"], qty=i["qty"]) for i in c.items],
+        customer=c.table_name[:64], discountPct=body.discountPct, payment=body.payment, cashGiven=body.cashGiven,
+        customerPhone=body.customerPhone, bonusRedeem=body.bonusRedeem, clientKey=body.clientKey,
+    )
+
+    def mark_paid(order: Order) -> None:
+        c.status, c.order_id, c.closed_at = "paid", order.id, now_ms()
+
+    return place_order(order_in, ctx, status="done", stock_guard=False, on_created=mark_paid)
+
+
+class VoidIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+
+
+@app.post("/api/checks/{check_id}/void")
+def check_void(check_id: int, body: VoidIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    c = get_check(ctx, check_id)
+    require_open(c)
+    if any(i.get("sent", 0) > 0 for i in (c.items or [])) and not can_void(ctx):
+        raise HTTPException(403, "Oshxonaga yuborilgan hisobni bekor qilish uchun ruxsat yo'q")
+    c.status, c.void_reason, c.closed_at = "void", f"{ctx.staff.name}: {body.reason.strip()}"[:200], now_ms()
+    ctx.db.commit()
+    return check_out(c)
+
+
+class TicketStatusIn(BaseModel):
+    status: Literal["preparing", "ready", "done"]
+
+
+@app.patch("/api/tickets/{ticket_id}")
+def ticket_status(ticket_id: int, body: TicketStatusIn, ctx: Ctx = Depends(auth)) -> dict:
+    if ctx.staff.role not in BARISTAS and not (ctx.staff.role == "kassir" and ctx.staff.can_barista) \
+            and ctx.staff.role != "ofitsiant":
+        raise HTTPException(403, "Barista vazifasi uchun ruxsat yo'q")
+    t = ctx.db.scalar(select(KitchenTicket).where(KitchenTicket.id == ticket_id,
+                                                  KitchenTicket.company_id == ctx.cid).with_for_update())
+    if t is None:
+        raise HTTPException(404, "Topilmadi")
+    allowed = {"new": "preparing", "preparing": "ready", "ready": "done"}
+    if allowed.get(t.status) != body.status:
+        raise HTTPException(409, "Buyurtma holatini faqat keyingi bosqichga o'tkazish mumkin")
+    if ctx.staff.role == "ofitsiant" and body.status != "done":
+        raise HTTPException(403, "Ofitsiant faqat tayyor taomni olib ketganini belgilaydi")
+    t.status = body.status
+    if body.status == "ready":
+        t.ready_at = now_ms()
+    ctx.db.commit()
+    return ticket_out(t)

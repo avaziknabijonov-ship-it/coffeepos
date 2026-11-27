@@ -62,6 +62,8 @@ class Category(Base):
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(64))
     sort: Mapped[int] = mapped_column(Integer, default=0)
+    # Workshop (sex) key: which preparation screen gets this category's items; "" = default.
+    workshop: Mapped[str] = mapped_column(String(64), default="")
 
 
 class Ingredient(Base):
@@ -337,3 +339,69 @@ class RecurringPayment(Base):
     day: Mapped[int] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_paid_month: Mapped[str] = mapped_column(String(7), default="")
+
+
+class Workshop(Base):
+    """Preparation station (bar, kitchen, pastry) with its own kitchen screen."""
+    __tablename__ = "workshops"
+    __table_args__ = (UniqueConstraint("company_id", "key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(64))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Hall(Base):
+    __tablename__ = "halls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DiningTable(Base):
+    __tablename__ = "dining_tables"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id"), index=True)
+    name: Mapped[str] = mapped_column(String(32))
+    seats: Mapped[int] = mapped_column(Integer, default=4)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class OpenCheck(Base):
+    """A table bill that collects items over time and is paid at the end (waiter flow)."""
+    __tablename__ = "open_checks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    shift_id: Mapped[int] = mapped_column(Integer, index=True)
+    table_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    table_name: Mapped[str] = mapped_column(String(64), default="")
+    guests: Mapped[int] = mapped_column(Integer, default=1)
+    waiter_name: Mapped[str] = mapped_column(String(64))
+    comment: Mapped[str] = mapped_column(String(200), default="")
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class KitchenTicket(Base):
+    """Items sent from a table bill to one workshop screen."""
+    __tablename__ = "kitchen_tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    check_id: Mapped[int] = mapped_column(Integer, index=True)
+    workshop: Mapped[str] = mapped_column(String(64), default="")
+    table_name: Mapped[str] = mapped_column(String(64), default="")
+    waiter_name: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    comment: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(16), default="new")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

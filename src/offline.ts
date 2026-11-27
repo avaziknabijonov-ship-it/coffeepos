@@ -5,7 +5,7 @@ export interface QueuedSale {
   createdAt: number
   body: {
     customer: string
-    items: { productId: string; size: string; modIds: string[]; qty: number }[]
+    items: { productId: string; size: string; modIds: string[]; qty: number; weight?: number }[]
     discountPct: number
     payment: 'naqd'
     cashGiven?: number

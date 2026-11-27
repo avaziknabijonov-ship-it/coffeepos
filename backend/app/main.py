@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, DiningTable, Hall, KitchenTicket, OpenCheck, Promotion, RecurringPayment, Workshop, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, DiningTable, Hall, KitchenTicket, OpenCheck, Promotion, RecurringPayment, Refund, Workshop, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
 )
 from .notify import low_stock_crossings, send_low_stock_alert
 from .logic import apply_promotions, build_item, round100
@@ -61,6 +61,9 @@ def migrate() -> None:
     if "image_url" not in product_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE products ADD COLUMN image_url VARCHAR(512) NOT NULL DEFAULT ''"))
+    if "weighted" not in product_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE products ADD COLUMN weighted BOOLEAN NOT NULL DEFAULT FALSE"))
     order_columns = {c["name"] for c in inspect(engine).get_columns("orders")}
     with engine.begin() as conn:
         if "cancelled_at" not in order_columns:
@@ -185,7 +188,8 @@ def ingredient_out(i: Ingredient) -> dict:
 
 
 def product_out(p: Product) -> dict:
-    return {"id": p.key, "cat": p.cat, "name": p.name, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes, "active": p.active}
+    return {"id": p.key, "cat": p.cat, "name": p.name, "imageUrl": p.image_url, "mods": p.mods, "sizes": p.sizes,
+            "active": p.active, "weighted": bool(p.weighted)}
 
 
 def shift_out(s: Shift | None) -> dict | None:
@@ -373,6 +377,8 @@ class SizeIn(BaseModel):
     volume: str | None = Field(default=None, max_length=16)
     price: int = Field(ge=0)
     recipe: list[RecipeLineIn] = []
+    # EAN/UPC/any scanner code; for weighted goods the 5-digit scale PLU.
+    barcode: str = Field(default="", max_length=32, pattern=r"^[0-9A-Za-z-]*$")
 
 
 class ProductIn(BaseModel):
@@ -382,9 +388,10 @@ class ProductIn(BaseModel):
     mods: list[Literal["milk", "syrup", "shot"]] = []
     sizes: list[SizeIn] = Field(min_length=1)
     active: bool = True
+    weighted: bool = False
 
 
-def validate_product(ctx: Ctx, body: ProductIn) -> None:
+def validate_product(ctx: Ctx, body: ProductIn, self_key: str | None = None) -> None:
     if body.imageUrl and not (body.imageUrl.startswith("https://") or body.imageUrl.startswith("/assets/")):
         raise HTTPException(422, "Rasm uchun HTTPS yoki ichki /assets/ manzilini kiriting")
     get_row(ctx.db, Category, ctx.cid, body.cat)
@@ -396,6 +403,13 @@ def validate_product(ctx: Ctx, body: ProductIn) -> None:
         for line in s.recipe:
             if line.ing not in ing_keys:
                 raise HTTPException(400, "Texkartada noma'lum xomashyo")
+    codes_here = [s.barcode for s in body.sizes if s.barcode]
+    if len(codes_here) != len(set(codes_here)):
+        raise HTTPException(409, "Shtrix-kod takrorlangan")
+    if codes_here:
+        taken = {size.get("barcode") for p in rows(ctx.db, Product, ctx.cid) if p.key != self_key for size in p.sizes}
+        if any(code in taken for code in codes_here):
+            raise HTTPException(409, "Bu shtrix-kod boshqa mahsulotda bor")
 
 
 @app.post("/api/products")
@@ -404,6 +418,7 @@ def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
     p = Product(
         company_id=ctx.cid, key=slugify(body.name), cat=body.cat, name=body.name.strip(), image_url=body.imageUrl, mods=body.mods,
         sizes=[s.model_dump() for s in body.sizes], active=body.active, sort=len(rows(ctx.db, Product, ctx.cid)),
+        weighted=body.weighted,
     )
     ctx.db.add(p)
     ctx.db.commit()
@@ -413,10 +428,10 @@ def add_product(body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict
 @app.put("/api/products/{key}")
 def update_product(key: str, body: ProductIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     p = get_row(ctx.db, Product, ctx.cid, key)
-    validate_product(ctx, body)
+    validate_product(ctx, body, key)
     p.cat, p.name, p.mods = body.cat, body.name.strip(), body.mods
     p.image_url = body.imageUrl
-    p.sizes, p.active = [s.model_dump() for s in body.sizes], body.active
+    p.sizes, p.active, p.weighted = [s.model_dump() for s in body.sizes], body.active, body.weighted
     ctx.db.commit()
     return product_out(p)
 
@@ -1180,6 +1195,9 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     by_payment: dict[str, int] = {}
     for o in orders:
         by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    refunds = db.scalars(select(Refund).where(Refund.company_id == shift.company_id, Refund.shift_id == shift.id)).all()
+    for r in refunds:
+        by_payment[r.payment] = by_payment.get(r.payment, 0) - r.amount
     # Cash expenses reduce the physically expected register balance.
     cutoff = shift.closed_at if shift.closed_at is not None else now_ms()
     cash_spent = sum(row.amount for row in db.scalars(select(Expense).where(
@@ -1191,7 +1209,8 @@ def shift_summary(db: Session, shift: Shift) -> dict:
     return {
         "shift": shift_out(shift),
         "orders": len(orders),
-        "revenue": sum(o.total for o in orders),
+        "revenue": sum(o.total for o in orders) - sum(r.amount for r in refunds),
+        "refunds": sum(r.amount for r in refunds),
         "byPayment": by_payment,
         "cashExpenses": cash_spent,
         "expectedCash": shift.opening_cash + by_payment.get("naqd", 0) - cash_spent,
@@ -1239,6 +1258,7 @@ class OrderItemIn(BaseModel):
     size: str
     modIds: list[str] = []
     qty: int = 1
+    weight: float | None = Field(default=None, gt=0, le=1000)
 
 
 class OrderIn(BaseModel):
@@ -1303,7 +1323,7 @@ def place_order(body: OrderIn, ctx: Ctx, status: str = "new", stock_guard: bool 
         product = prods.get(it.productId)
         if not product:
             raise HTTPException(400, "Mahsulot topilmadi")
-        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        built = build_item(product, it.size, it.modIds, it.qty, mods, ings, it.weight)
         same = next((x for x in items if x["key"] == built["key"]), None)
         if same:
             same["qty"] += built["qty"]
@@ -1413,6 +1433,8 @@ def cancel_order(oid: int, body: CancelOrderIn, ctx: Ctx = Depends(auth)) -> dic
         raise HTTPException(404, "Buyurtma topilmadi")
     if order.status != "new":
         raise HTTPException(409, "Faqat hali tayyorlanmagan buyurtmani bekor qilish mumkin")
+    if ctx.db.scalar(select(Refund.id).where(Refund.company_id == ctx.cid, Refund.order_id == order.id).limit(1)):
+        raise HTTPException(409, "Chekdan tovar qaytarilgan; bekor qilib bo'lmaydi")
     shift = open_shift(ctx.db, ctx.cid)
     if shift is None or order.shift_id != shift.id:
         raise HTTPException(409, "Yopilgan smenadagi buyurtmani bekor qilib bo'lmaydi")
@@ -1498,11 +1520,14 @@ def daily_report(days: int = 7, ctx: Ctx = Depends(require(*MANAGERS))) -> list[
     days = max(1, min(days, 92))
     start = start_of_day_ms(days - 1)
     orders = ctx.db.scalars(select(Order).where(Order.company_id == ctx.cid, Order.created_at >= start)).all()
+    refunds = refunds_since(ctx.db, ctx.cid, start)
     out = []
     for d in range(days - 1, -1, -1):
         lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
         day = [o for o in orders if lo <= o.created_at < hi and o.status != "cancelled"]
-        out.append({"day": lo, "revenue": sum(o.total for o in day), "cost": sum(o.cost for o in day), "orders": len(day)})
+        back = [r for r in refunds if lo <= r.created_at < hi]
+        out.append({"day": lo, "revenue": sum(o.total for o in day) - sum(r.amount for r in back),
+                    "cost": sum(o.cost for o in day) - sum(r.cost for r in back), "orders": len(day)})
     return out
 
 # ---------- management financial snapshot ----------
@@ -1525,15 +1550,19 @@ def finance_report(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> di
     by_payment: dict[str, int] = {}
     for o in orders:
         by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+    refunds = refunds_since(db, cid, start)
+    for r in refunds:
+        by_payment[r.payment] = by_payment.get(r.payment, 0) - r.amount
 
     daily = []
     for d in range(days - 1, -1, -1):
         lo, hi = start_of_day_ms(d), start_of_day_ms(d - 1)
         day_sales = [o for o in orders if lo <= o.created_at < hi]
+        day_back = [r for r in refunds if lo <= r.created_at < hi]
         day_expenses = sum(e.amount for e in expenses if lo <= e.created_at < hi)
         day_wages = sum(w.amount for w in wages if lo <= w.created_at < hi)
-        revenue = sum(o.total for o in day_sales)
-        cogs = sum(o.cost for o in day_sales)
+        revenue = sum(o.total for o in day_sales) - sum(r.amount for r in day_back)
+        cogs = sum(o.cost for o in day_sales) - sum(r.cost for r in day_back)
         daily.append({
             "day": lo, "orders": len(day_sales), "revenue": revenue,
             "cogs": cogs, "grossProfit": revenue - cogs,
@@ -1800,6 +1829,24 @@ def sales_report(days: int = 30, date_from: str | None = None, date_to: str | No
             crow["qty"] += it["qty"]
             crow["revenue"] += net
             crow["cost"] += item_cost
+    refund_total = refund_cost = 0
+    for rf in ctx.db.scalars(select(Refund).where(Refund.company_id == ctx.cid, Refund.created_at >= since,
+                                                  Refund.created_at < until)):
+        refund_total += rf.amount
+        refund_cost += rf.cost
+        for line in rf.lines:
+            row = by_product.get(line.get("productId", ""))
+            if row is not None:
+                row["qty"] -= line["qty"]
+                row["revenue"] -= line["amount"]
+                row["cost"] -= line["cost"]
+                crow = by_cat.get(row["cat"])
+                if crow is not None:
+                    crow["qty"] -= line["qty"]
+                    crow["revenue"] -= line["amount"]
+                    crow["cost"] -= line["cost"]
+    revenue -= refund_total
+    cost -= refund_cost
     products = list(by_product.values())
     for r in products + list(by_cat.values()):
         r["profit"] = r["revenue"] - r["cost"]
@@ -1809,7 +1856,8 @@ def sales_report(days: int = 30, date_from: str | None = None, date_to: str | No
     return {
         "from": since, "to": until,
         "totals": {"orders": count, "revenue": revenue, "cost": cost, "profit": revenue - cost,
-                   "avg": round(revenue / count) if count else 0, "cancelled": cancelled, "discount": discount},
+                   "avg": round(revenue / count) if count else 0, "cancelled": cancelled, "discount": discount,
+                   "refunds": refund_total},
         "products": sorted(products, key=lambda r: r["revenue"], reverse=True),
         "categories": sorted(by_cat.values(), key=lambda r: r["revenue"], reverse=True),
         "staff": sorted(by_staff.values(), key=lambda r: r["revenue"], reverse=True),
@@ -2246,7 +2294,7 @@ def check_set_items(check_id: int, body: CheckItemsIn, ctx: Ctx = Depends(requir
         product = prods.get(it.productId)
         if not product:
             raise HTTPException(400, "Mahsulot topilmadi")
-        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        built = build_item(product, it.size, it.modIds, it.qty, mods, ings, it.weight)
         same = next((x for x in items if x["key"] == built["key"]), None)
         if same:
             same["qty"] += built["qty"]
@@ -2336,7 +2384,8 @@ def check_pay(check_id: int, body: CheckPayIn, ctx: Ctx = Depends(require(*CASHI
         raise HTTPException(409, "Hisob bo'sh")
     send_to_kitchen(ctx, c)
     order_in = OrderIn(
-        items=[OrderItemIn(productId=i["productId"], size=i["key"].split("|")[1], modIds=i["modIds"], qty=i["qty"]) for i in c.items],
+        items=[OrderItemIn(productId=i["productId"], size=i["key"].split("|")[1], modIds=i["modIds"], qty=i["qty"],
+                           weight=i.get("weight")) for i in c.items],
         customer=c.table_name[:64], discountPct=body.discountPct, payment=body.payment, cashGiven=body.cashGiven,
         customerPhone=body.customerPhone, bonusRedeem=body.bonusRedeem, clientKey=body.clientKey,
     )
@@ -2385,3 +2434,106 @@ def ticket_status(ticket_id: int, body: TicketStatusIn, ctx: Ctx = Depends(auth)
         t.ready_at = now_ms()
     ctx.db.commit()
     return ticket_out(t)
+
+
+# ---------- returns (tovar qaytarish) ----------
+
+def refunds_since(db: Session, cid: int, start: int) -> list[Refund]:
+    return db.scalars(select(Refund).where(Refund.company_id == cid, Refund.created_at >= start)).all()
+
+
+def refund_out(r: Refund) -> dict:
+    return {"id": r.id, "orderId": str(r.order_id), "lines": r.lines, "amount": r.amount, "cost": r.cost,
+            "payment": r.payment, "reason": r.reason, "staff": r.staff_name, "createdAt": r.created_at}
+
+
+def refunded_by_key(db: Session, cid: int, order_id: int) -> tuple[dict[str, int], int, list[Refund]]:
+    done = db.scalars(select(Refund).where(Refund.company_id == cid, Refund.order_id == order_id).order_by(Refund.id)).all()
+    qty: dict[str, int] = {}
+    for r in done:
+        for line in r.lines:
+            qty[line["key"]] = qty.get(line["key"], 0) + line["qty"]
+    return qty, sum(r.amount for r in done), list(done)
+
+
+@app.get("/api/orders/{oid}/refunds")
+def order_refunds(oid: int, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    order = ctx.db.get(Order, oid)
+    if order is None or order.company_id != ctx.cid:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    qty, amount, done = refunded_by_key(ctx.db, ctx.cid, oid)
+    return {"refunds": [refund_out(r) for r in done], "refundedAmount": amount,
+            "remaining": {i["key"]: i["qty"] - qty.get(i["key"], 0) for i in order.items}}
+
+
+class RefundLineIn(BaseModel):
+    key: str = Field(min_length=1, max_length=256)
+    qty: int = Field(ge=1, le=99)
+
+
+class RefundIn(BaseModel):
+    lines: list[RefundLineIn] = Field(min_length=1, max_length=50)
+    reason: str = Field(min_length=3, max_length=200)
+
+
+@app.post("/api/orders/{oid}/refund")
+def refund_order(oid: int, body: RefundIn, ctx: Ctx = Depends(auth)) -> dict:
+    """Return some or all goods of a paid receipt: money back from this shift, stock back to the warehouse."""
+    if ctx.staff.role not in MANAGERS and not (ctx.staff.role == "kassir" and ctx.staff.can_cancel_orders):
+        raise HTTPException(403, "Qaytarish uchun ruxsat yo'q")
+    db, cid = ctx.db, ctx.cid
+    order = db.scalar(select(Order).where(Order.id == oid, Order.company_id == cid).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Buyurtma topilmadi")
+    if order.status == "cancelled":
+        raise HTTPException(409, "Bekor qilingan chekni qaytarib bo'lmaydi")
+    shift = open_shift(db, cid)
+    if shift is None:
+        raise HTTPException(409, "Avval smenani oching")
+    keys = [l.key for l in body.lines]
+    if len(keys) != len(set(keys)):
+        raise HTTPException(400, "Pozitsiya takrorlangan")
+    items = {i["key"]: i for i in order.items}
+    already, already_amount, _ = refunded_by_key(db, cid, oid)
+    ratio = order.total / order.subtotal if order.subtotal else 0
+    lines, amount, cost = [], 0, 0
+    for l in body.lines:
+        it = items.get(l.key)
+        if it is None:
+            raise HTTPException(400, "Chekda bunday pozitsiya yo'q")
+        left = it["qty"] - already.get(l.key, 0)
+        if l.qty > left:
+            raise HTTPException(409, f"{it['name']}: qaytarish mumkin bo'lgan miqdor {left}")
+        line_amount = round(it["unitPrice"] * l.qty * ratio)
+        line_cost = it.get("unitCost", 0) * l.qty
+        lines.append({"key": l.key, "productId": it.get("productId", ""), "name": it["name"], "size": it.get("size", ""),
+                      "qty": l.qty, "amount": line_amount, "cost": line_cost})
+        amount += line_amount
+        cost += line_cost
+    fully = all(i["qty"] - already.get(k, 0) - next((l.qty for l in body.lines if l.key == k), 0) == 0 for k, i in items.items())
+    if fully or already_amount + amount > order.total:
+        # last refund takes exactly what is left, so the receipt nets to zero
+        amount = order.total - already_amount
+    ings = {i.key: i for i in db.scalars(select(Ingredient).where(Ingredient.company_id == cid).with_for_update())}
+    for l in body.lines:
+        it = items[l.key]
+        for c in it.get("consumption", []):
+            ing = ings.get(c["ing"])
+            if ing is None:
+                continue
+            qty = c["qty"] * l.qty
+            ing.stock += qty
+            db.add(StockMove(company_id=cid, ingredient=ing.key, qty=qty, reason="refund", order_id=order.id,
+                             staff_name=ctx.staff.name))
+    if order.customer_id is not None and order.bonus_earned and order.total:
+        customer = db.scalar(select(Customer).where(Customer.id == order.customer_id, Customer.company_id == cid).with_for_update())
+        if customer is not None:
+            back = min(customer.bonus_balance, round(order.bonus_earned * amount / order.total))
+            if back > 0:
+                customer.bonus_balance -= back
+                db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id, amount=-back, reason="refund"))
+    r = Refund(company_id=cid, order_id=order.id, shift_id=shift.id, lines=lines, amount=amount, cost=cost,
+               payment=order.payment, reason=body.reason.strip(), staff_name=ctx.staff.name)
+    db.add(r)
+    db.commit()
+    return refund_out(r)

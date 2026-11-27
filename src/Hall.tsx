@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Minus, Plus, Search, Send, Users, X } from 'lucide-react'
 import { api } from './api'
 import { CATEGORIES, PRODUCTS, SETTINGS, buildItem, canMake, cartTotals, fmt, som, time } from './data'
-import type { CheckLine, HallInfo, OpenCheck, Order, OrderItem, Payment, Product } from './data'
+import type { CheckLine, HallInfo, OpenCheck, Order, OrderItem, Payment, Product, Size } from './data'
 import { t, tCatalogName } from './i18n'
 import { PaymentModal, ProductModal, ReceiptModal } from './Kassa'
 import { sync, useAppState } from './store'
 import { OpenShift } from './Shift'
+import { WeightModal } from './Shop'
 
 const needsModal = (p: Product) => p.sizes.length > 1 || p.mods.length > 0
-const toBody = (items: CheckLine[]) => items.map((i) => ({ productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty }))
+const toBody = (items: CheckLine[]) => items.map((i) => ({ productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, weight: i.weight }))
 const since = (ms: number, now: number) => `${Math.max(0, Math.floor((now - ms) / 60000))} ${t('daq')}`
 
 export default function Hall() {
@@ -88,6 +89,7 @@ function CheckEditor({ check, onBack, onPaid }: { check: OpenCheck; onBack: () =
   const [paying, setPaying] = useState(false)
   const [discountPct, setDiscountPct] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
+  const [weighing, setWeighing] = useState<{ product: Product; size: Size } | null>(null)
   useEffect(() => { if (!busy) setLines(check.items) }, [check.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const products = useMemo(() => {
@@ -111,7 +113,7 @@ function CheckEditor({ check, onBack, onPaid }: { check: OpenCheck; onBack: () =
     void save(same ? lines.map((l) => (l.key === item.key ? { ...l, qty: l.qty + item.qty } : l)) : [...lines, { ...item, sent: 0 }])
   }
   const change = (key: string, d: number) => void save(lines.map((l) => (l.key === key ? { ...l, qty: l.qty + d } : l)).filter((l) => l.qty > 0))
-  const onTile = (p: Product) => (needsModal(p) ? setModal(p) : add(buildItem(p, p.sizes[0], [], 1)))
+  const onTile = (p: Product) => (p.weighted ? setWeighing({ product: p, size: p.sizes[0] }) : needsModal(p) ? setModal(p) : add(buildItem(p, p.sizes[0], [], 1)))
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError('')
@@ -225,6 +227,7 @@ function CheckEditor({ check, onBack, onPaid }: { check: OpenCheck; onBack: () =
       </aside>
       {modal && <ProductModal product={modal} onClose={() => setModal(null)} onAdd={(it) => { add(it); setModal(null) }} />}
       {paying && <PaymentModal total={totals.total} onClose={() => setPaying(false)} onConfirm={pay} />}
+      {weighing && <WeightModal product={weighing.product} size={weighing.size} onClose={() => setWeighing(null)} onAdd={(kg) => { add(buildItem(weighing.product, weighing.size, [], 1, kg)); setWeighing(null) }} />}
     </div>
   )
 }

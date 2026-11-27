@@ -22,6 +22,7 @@ def build_item(
     qty: int,
     mods_by_key: dict[str, Modifier],
     ings_by_key: dict[str, Ingredient],
+    weight: float | None = None,
 ) -> dict:
     if not product.active:
         raise HTTPException(400, f"{product.name} stop-listda")
@@ -46,20 +47,32 @@ def build_item(
     consumption = [dict(l) for l in size["recipe"]]
     for mod in mods:
         consumption = apply_effect(consumption, mod.effect)
+    weighted = bool(getattr(product, "weighted", False))
+    if weighted:
+        if weight is None or not (0.001 <= weight <= 1000):
+            raise HTTPException(400, f"{product.name}: vaznni kiriting")
+        weight = round(weight, 3)
+        consumption = [{**l, "qty": l["qty"] * weight} for l in consumption]
+    elif weight is not None:
+        raise HTTPException(400, f"{product.name}: vazn bilan sotilmaydi")
     unit_cost = sum(ings_by_key[l["ing"]].cost * l["qty"] for l in consumption if l["ing"] in ings_by_key)
+    base_price = size["price"] + sum(m.price for m in mods)
 
-    return {
-        "key": "|".join([product.key, size["code"], *sorted(m.key for m in mods)]),
+    item = {
+        "key": "|".join([product.key, size["code"], *sorted(m.key for m in mods)]) + (f"|w{weight:.3f}" if weighted else ""),
         "productId": product.key,
         "name": product.name,
-        "size": size["label"],
+        "size": f"{weight:.3f} kg" if weighted else size["label"],
         "modIds": [m.key for m in mods],
         "mods": [f"{m.name} sirop" if m.group == "syrup" else m.name for m in mods],
         "qty": qty,
-        "unitPrice": size["price"] + sum(m.price for m in mods),
+        "unitPrice": int(math.floor(base_price * weight + 0.5)) if weighted else base_price,
         "unitCost": round(unit_cost),
         "consumption": consumption,
     }
+    if weighted:
+        item["weight"] = weight
+    return item
 
 
 # ---------- promotions ----------

@@ -105,6 +105,8 @@ class Product(Base):
     sizes: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
+    # Sold by weight: size price is per 1 kg, recipe is per 1 kg, the sale carries the weight.
+    weighted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Modifier(Base):
@@ -405,3 +407,19 @@ class KitchenTicket(Base):
     status: Mapped[str] = mapped_column(String(16), default="new")
     created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
     ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class Refund(Base):
+    """Goods returned from a paid order; money leaves the current shift, stock comes back."""
+    __tablename__ = "refunds"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    shift_id: Mapped[int] = mapped_column(Integer, index=True)
+    lines: Mapped[list] = mapped_column(JSON, default=list)
+    amount: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost: Mapped[int] = mapped_column(BigInteger, default=0)
+    payment: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(200), default="")
+    staff_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)

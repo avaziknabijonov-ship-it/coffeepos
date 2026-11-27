@@ -16,7 +16,7 @@ Belgilar: ✅ CoffeePOS’da bor · 🟡 qisman · ❌ yo‘q
 | Статистика → Чеки | Chek tarixi, filtr | ✅ `/orders/history` | — |
 | Статистика → Оплаты | Naqd/karta/QR bo‘yicha taqsimot | ✅ Savdo tahlili | — |
 | Статистика → Клиенты | Mijozlar bo‘yicha savdo | 🟡 bonus mijozlari bor | P1 |
-| Статистика → Цехи / Столы / Налоги / Отзывы | Sex, stol, soliq, sharhlar | ❌ | P2 |
+| Статистика → Цехи / Столы / Налоги / Отзывы | Sex, stol, soliq, sharhlar | 🟡 sex va stollar bor, hisobot yo‘q | P1 |
 | Финансы → Транзакции, Счета | Pul hisoblari (kassa, bank, karta) va ular orasidagi o‘tkazmalar | 🟡 faqat xarajat | P1 |
 | Финансы → Cash flow | Kirim/chiqim oqimi | 🟡 `/reports/finance` | P1 |
 | Финансы → Кассовые смены | Smena tarixi | ✅ | — |
@@ -26,7 +26,7 @@ Belgilar: ✅ CoffeePOS’da bor · 🟡 qisman · ❌ yo‘q
 | Меню → Товары, Тех. карты, Ингредиенты | Mahsulot, texkarta, xomashyo | ✅ | — |
 | Меню → Полуфабрикаты | Yarim tayyor mahsulot (sirop, krem) o‘z texkartasi bilan | ✅ Admin → Polufabrikatlar | — |
 | Меню → Контроль фудкоста | Tannarx % ni kuzatish, oshib ketsa ogohlantirish | ❌ | P1 |
-| Меню → Цехи | Buyurtmani bar/oshxonaga bo‘lish | ❌ (Barista bitta navbat) | P2 |
+| Меню → Цехи | Buyurtmani bar/oshxonaga bo‘lish | ✅ Admin → Zal va sexlar | — |
 | Склад → Остатки | Joriy qoldiq | ✅ | — |
 | Склад → Поставки, Поставщики | Nakladnoy, yetkazib beruvchi | ✅ / 🟡 | P1 (qarz, narx tarixi) |
 | Склад → Списания | Sababli hisobdan chiqarish | 🟡 `writeoff` | P1 (sabablar ro‘yxati) |
@@ -80,3 +80,19 @@ Belgilar: ✅ CoffeePOS’da bor · 🟡 qisman · ❌ yo‘q
 5. ~~ABC-analiz, xodim/to‘lov turi kesimidagi hisobotlar, riskli cheklar~~ — bajarildi.
 6. ~~Xodim checklistlari, doimiy to‘lov eslatmalari~~ — bajarildi; chekdagi QR qoldi.
 7. Ko‘p ombor + transfer (multi-filial bilan birga).
+
+## 4. To‘liq Poster darajasiga bosqichlar (qaror: 2026-11-27 — Poster’dagi hamma narsa qo‘shiladi, nom keyin o‘zgaradi)
+
+| Bosqich | Tarkibi | Holat |
+|---|---|---|
+| 1 | Polufabrikat, kassada tayyorlash, avtomatik stop-list, Telegram ogohlantirish | ✅ PR #12 |
+| 2 | Aksiyalar, savdo tahlili (ABC), shubhali cheklar, checklist, doimiy to‘lovlar | ✅ PR #13 |
+| 3 | Restoran rejimi: zal, stollar, ofitsiant, ochiq hisob, sexlar, oshxona chiptalari | ✅ PR #14 |
+| 4 | Do‘kon rejimi: shtrix-kod, tarozi (vaznli tovar), narx yorliqlari, tovar qaytarish | ⏳ |
+| 5 | Ko‘p ombor va filial: omborlar, transfer, transfer so‘rovi, filial hisobotlari, yetkazib beruvchi qarzi | ⏳ |
+| 6 | Moliya: hisoblar (kassa/bank/karta), tranzaksiyalar, cash flow, P&L, xarajat kategoriyalari | ⏳ |
+| 7 | Marketing: mijoz guruhlari, kombo (2+1), sharhlar, SMS/Telegram rassilka | ⏳ |
+| 8 | Onlayn: QR-menyu, sayt/Telegram orqali buyurtma, yetkazib berish, kuryer, buyurtma tablosi | ⏳ |
+| 9 | Xavfsizlik va boshqaruv: foydalanuvchi sessiyalari, qurilmalar (kassalar), chek shabloni, rahbar mobil ko‘rinishi | ⏳ |
+| 10 | Fiskalizatsiya (Multikassa va boshqa sertifikatlangan provayder), to‘lov provayderlari (Click/Payme/Uzum QR) | ⏳ shartnoma kerak |
+| 11 | Nomni o‘zgartirish (brend, domen, ilova nomi) | ⏳ nom tanlanadi |

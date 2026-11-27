@@ -366,6 +366,25 @@ const RU: Record<string, string> = {
   "O'zingizning rolingizni o'zgartira olmaysiz": 'Нельзя изменить свою роль', "Ochiq smena yo'q": 'Нет открытой смены', 'PIN kerak': 'Нужен PIN',
   'Qaytadan kiring': 'Войдите заново', "Qoldiq manfiy bo'lmaydi": 'Остаток не может быть отрицательным', 'Smena allaqachon ochiq': 'Смена уже открыта',
   "Texkartada noma'lum xomashyo": 'В техкарте неизвестное сырьё', Topilmadi: 'Не найдено', 'Xomashyo takrorlangan': 'Сырьё повторяется',
+  Polufabrikat: 'Полуфабрикат', Polufabrikatlar: 'Полуфабрикаты', Tugadi: 'Закончилось',
+  'Polufabrikat tayyorlash': 'Приготовить полуфабрикат', 'Hali polufabrikat qo‘shilmagan.': 'Полуфабрикатов пока нет.',
+  '1 partiya': '1 партия', Sarflanadi: 'Расход', Tayyorlandi: 'Приготовлено', Tayyorlash: 'Приготовить',
+  'Yangi polufabrikat': 'Новый полуфабрикат', '1 partiyadan chiqadi': 'Выход с 1 партии',
+  'Tarkib (1 partiya uchun)': 'Состав (на 1 партию)', 'Partiya tannarxi': 'Себестоимость партии',
+  'Sirop, krem, sovuq damlama kabi oldindan tayyorlanadigan mahsulotlar. Tayyorlanganda tarkibidagi xomashyo ombordan chiqadi, polufabrikat omborga kiradi va texkartada oddiy xomashyo kabi ishlatiladi.': 'Сиропы, кремы, колд брю и другие заготовки. При приготовлении сырьё списывается со склада, полуфабрикат приходуется и используется в техкартах как обычное сырьё.',
+  'Ombor avtomatikasi': 'Автоматизация склада', 'Avtomatik stop-list': 'Автоматический стоп-лист',
+  'Texkarta bo‘yicha xomashyo yetmasa, mahsulot kassada «Tugadi» bo‘ladi va sotilmaydi. Internet yo‘qligida qilingan sotuvlar baribir qabul qilinadi.': 'Если по техкарте не хватает сырья, товар на кассе помечается «Закончилось» и не продаётся. Продажи, сделанные без интернета, всё равно принимаются.',
+  'Telegram ogohlantirish': 'Уведомления в Telegram',
+  'Xomashyo minimal qoldiqdan kamayganda Telegram guruhga xabar yuboriladi. @BotFather orqali bot yarating, uni guruhga qo‘shing va guruh ID raqamini kiriting.': 'Когда остаток сырья падает ниже минимума, в группу Telegram приходит сообщение. Создайте бота через @BotFather, добавьте его в группу и укажите ID группы.',
+  'Chat ID (masalan -1001234567890)': 'Chat ID (например -1001234567890)',
+  'Bot token saqlangan (o‘zgartirish uchun yangisini kiriting)': 'Токен бота сохранён (введите новый, чтобы заменить)',
+  'Bot token': 'Токен бота', 'Bot tokenni o‘chirish': 'Удалить токен бота',
+  "Bu xomashyo polufabrikat emas": 'Это сырьё не является полуфабрикатом',
+  "Polufabrikat chiqishi (miqdori) 0 dan katta bo'lsin": 'Выход полуфабриката должен быть больше нуля',
+  "Polufabrikat tarkibiga boshqa polufabrikat qo'shib bo'lmaydi": 'Нельзя добавить полуфабрикат в состав другого полуфабриката',
+  "Polufabrikat o'zini tarkibiga kiritolmaydi": 'Полуфабрикат не может входить в свой состав',
+  "Polufabrikat tarkibida noma'lum xomashyo": 'В составе полуфабриката неизвестное сырьё',
+  'Tarkibda xomashyo takrorlangan': 'Сырьё в составе повторяется',
 }
 
 const RU_PATTERNS: [RegExp, string][] = [
@@ -374,6 +393,8 @@ const RU_PATTERNS: [RegExp, string][] = [
   [/^(.*): bitta guruhdan bitta tanlanadi$/, '$1: из группы выбирается только один вариант'],
   [/^(.*): o'lcham topilmadi$/, '$1: размер не найден'],
   [/^(.*): qo'shimcha mos emas$/, '$1: добавка не подходит'],
+  [/^Qoldiq yetarli emas \(stop-list\): (.*)$/, 'Недостаточно остатка (стоп-лист): $1'],
+  [/^Omborda yetarli emas: (.*)$/, 'На складе недостаточно: $1'],
 ]
 
 export function t(key: string, vars?: Record<string, string | number>): string {

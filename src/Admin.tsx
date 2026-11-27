@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { t, tCatalogName } from './i18n'
 import { exportExcel } from './exportExcel'
-import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer } from 'lucide-react'
+import { TriangleAlert, TrendingUp, ShoppingCart, Receipt, CircleDollarSign, LayoutDashboard, Warehouse, ClipboardCheck, Coffee, BookOpen, ReceiptText, PackagePlus, Users, CalendarClock, Wallet, Gift, ChartNoAxesCombined, BadgeDollarSign, Printer, Milk } from 'lucide-react'
 import { INGREDIENTS, ING, MOD, PAYMENT_LABEL, PRODUCTS, STATUS_LABEL, UNIT_LABEL, fmt, recipeCost, som } from './data'
 import type { Payment } from './data'
 import { api } from './api'
@@ -15,8 +15,9 @@ import CashierReport from './CashierReport'
 import PrinterSettings from './PrinterSettings'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
+import { SemiProductsView, StockAutomationSettings } from './SemiProducts'
 
-type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'semi' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
@@ -24,6 +25,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'inventory', label: 'Inventarizatsiya' },
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
+  { id: 'semi', label: 'Polufabrikatlar' },
   { id: 'orders', label: 'Cheklar tarixi' },
   { id: 'cashierReport', label: 'Kassirlar hisoboti' },
   { id: 'staff', label: 'Xodimlar' },
@@ -34,7 +36,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, semi: Milk, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -67,7 +69,8 @@ export default function Admin() {
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
           {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
-          {view === 'stock' && <StockOverview />}
+          {view === 'stock' && <><StockOverview /><StockAutomationSettings /></>}
+          {view === 'semi' && <SemiProductsView />}
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
           {view === 'menu' && <MenuEditor />}

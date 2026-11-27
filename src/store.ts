@@ -72,7 +72,7 @@ async function pushPendingSales() {
   try {
     for (const sale of getQueuedSales(company)) {
       try {
-        await api<Order>('/api/orders', { body: sale.body })
+        await api<Order>('/api/orders', { body: { ...sale.body, offline: true } })
         removeQueuedSale(company, sale.clientKey)
         set({ pendingError: '' })
       } catch (e) {
@@ -222,6 +222,11 @@ export async function setStatus(id: string, status: Status) {
 
 export async function stockMove(ing: string, qty: number, reason: 'intake' | 'writeoff' | 'count', note?: string) {
   await api('/api/stock', { body: { ing, qty, reason, note } })
+  await Promise.all([sync(), refreshMenu()])
+}
+
+export async function produceSemi(ing: string, qty: number) {
+  await api('/api/production', { body: { ing, qty } })
   await Promise.all([sync(), refreshMenu()])
 }
 

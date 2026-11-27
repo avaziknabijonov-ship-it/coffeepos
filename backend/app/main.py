@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
 )
+from .notify import low_stock_crossings, send_low_stock_alert
 from .logic import build_item
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
@@ -76,6 +77,12 @@ def migrate() -> None:
         if "client_key" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
+    ingredient_columns = {c["name"] for c in inspect(engine).get_columns("ingredients")}
+    with engine.begin() as conn:
+        if "recipe" not in ingredient_columns:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN recipe JSON NOT NULL DEFAULT '[]'"))
+        if "yield_qty" not in ingredient_columns:
+            conn.execute(text("ALTER TABLE ingredients ADD COLUMN yield_qty FLOAT NOT NULL DEFAULT 0"))
 
 
 def init_db() -> None:
@@ -166,7 +173,10 @@ def order_out(o: Order) -> dict:
 
 
 def ingredient_out(i: Ingredient) -> dict:
-    return {"id": i.key, "name": i.name, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min}
+    return {
+        "id": i.key, "name": i.name, "unit": i.unit, "cost": i.cost, "stock": i.stock, "min": i.min,
+        "recipe": list(i.recipe or []), "yieldQty": i.yield_qty or 0, "semi": bool(i.recipe),
+    }
 
 
 def product_out(p: Product) -> dict:
@@ -309,6 +319,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "products": [product_out(p) for p in prods],
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
+        "settings": {"autoStoplist": stock_settings(db, cid).auto_stoplist},
     }
 
 
@@ -439,11 +450,50 @@ class IngredientIn(BaseModel):
     unit: Literal["g", "ml", "dona"]
     cost: float = Field(ge=0)
     min: float = Field(ge=0)
+    # Polufabrikat: components per batch, and how many units one batch yields.
+    recipe: list[RecipeLineIn] = Field(default=[], max_length=30)
+    yieldQty: float = Field(default=0, ge=0)
+
+
+def semi_unit_cost(recipe: list[dict], yield_qty: float, ings: dict[str, Ingredient]) -> float:
+    if not recipe or yield_qty <= 0:
+        return 0.0
+    return sum(ings[l["ing"]].cost * l["qty"] for l in recipe if l["ing"] in ings) / yield_qty
+
+
+def validate_semi(ctx: Ctx, body: IngredientIn, self_key: str | None) -> list[dict]:
+    """Return a clean recipe list; raw ingredients get an empty one."""
+    if not body.recipe:
+        return []
+    if body.yieldQty <= 0:
+        raise HTTPException(400, "Polufabrikat chiqishi (miqdori) 0 dan katta bo'lsin")
+    ings = {i.key: i for i in rows(ctx.db, Ingredient, ctx.cid)}
+    seen: set[str] = set()
+    for line in body.recipe:
+        comp = ings.get(line.ing)
+        if comp is None:
+            raise HTTPException(400, "Polufabrikat tarkibida noma'lum xomashyo")
+        if line.ing == self_key:
+            raise HTTPException(400, "Polufabrikat o'zini tarkibiga kiritolmaydi")
+        if comp.recipe:
+            raise HTTPException(400, "Polufabrikat tarkibiga boshqa polufabrikat qo'shib bo'lmaydi")
+        if line.ing in seen:
+            raise HTTPException(400, "Tarkibda xomashyo takrorlangan")
+        seen.add(line.ing)
+    if self_key is not None:
+        used_in = [i.name for i in ings.values() if any(l.get("ing") == self_key for l in (i.recipe or []))]
+        if used_in:
+            raise HTTPException(409, f"Bu xomashyo {used_in[0]} tarkibida ishlatiladi, polufabrikat qilib bo'lmaydi")
+    return [{"ing": l.ing, "qty": l.qty} for l in body.recipe]
 
 
 @app.post("/api/ingredients")
 def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
-    i = Ingredient(company_id=ctx.cid, key=slugify(body.name), stock=0, **body.model_dump())
+    recipe = validate_semi(ctx, body, None)
+    i = Ingredient(company_id=ctx.cid, key=slugify(body.name), stock=0, name=body.name.strip(), unit=body.unit,
+                   cost=body.cost, min=body.min, recipe=recipe, yield_qty=body.yieldQty if recipe else 0)
+    if recipe:
+        i.cost = semi_unit_cost(recipe, i.yield_qty, {x.key: x for x in rows(ctx.db, Ingredient, ctx.cid)})
     ctx.db.add(i)
     ctx.db.commit()
     return ingredient_out(i)
@@ -452,10 +502,109 @@ def add_ingredient(body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -
 @app.put("/api/ingredients/{key}")
 def update_ingredient(key: str, body: IngredientIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     i = get_row(ctx.db, Ingredient, ctx.cid, key)
-    for k, v in body.model_dump().items():
-        setattr(i, k, v)
+    recipe = validate_semi(ctx, body, key)
+    i.name, i.unit, i.min = body.name.strip(), body.unit, body.min
+    i.recipe, i.yield_qty = recipe, body.yieldQty if recipe else 0
+    if recipe:
+        # Semi cost comes from production; before the first batch show the recipe cost.
+        if i.stock <= 0.000001:
+            i.cost = semi_unit_cost(recipe, i.yield_qty, {x.key: x for x in rows(ctx.db, Ingredient, ctx.cid)})
+    else:
+        i.cost = body.cost
     ctx.db.commit()
     return ingredient_out(i)
+
+
+class ProductionIn(BaseModel):
+    ing: str
+    qty: float = Field(gt=0, le=1_000_000)
+
+
+@app.post("/api/production")
+def produce_semi(body: ProductionIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    """Make a batch of a semi-finished item: components leave stock, the semi item enters it."""
+    db, cid = ctx.db, ctx.cid
+    ings = {i.key: i for i in db.scalars(select(Ingredient).where(Ingredient.company_id == cid).with_for_update())}
+    semi = ings.get(body.ing)
+    if semi is None:
+        raise HTTPException(404, "Topilmadi")
+    if not semi.recipe or semi.yield_qty <= 0:
+        raise HTTPException(400, "Bu xomashyo polufabrikat emas")
+    factor = body.qty / semi.yield_qty
+    needs = [(ings.get(l["ing"]), l["qty"] * factor) for l in semi.recipe]
+    if any(comp is None for comp, _ in needs):
+        raise HTTPException(409, "Polufabrikat tarkibidagi xomashyo topilmadi")
+    if stock_settings(db, cid).auto_stoplist:
+        short = [comp.name for comp, need in needs if comp.stock + 0.000001 < need]
+        if short:
+            raise HTTPException(409, f"Omborda yetarli emas: {', '.join(short)}")
+    before = {k: v.stock for k, v in ings.items()}
+    batch_cost = 0.0
+    for comp, need in needs:
+        comp.stock -= need
+        batch_cost += comp.cost * need
+        db.add(StockMove(company_id=cid, ingredient=comp.key, qty=-need, reason="prod_use",
+                         note=semi.key[:32], staff_name=ctx.staff.name))
+    old_stock = max(semi.stock, 0.0)
+    unit_cost = batch_cost / body.qty
+    semi.cost = (old_stock * semi.cost + batch_cost) / (old_stock + body.qty) if old_stock > 0 else unit_cost
+    semi.stock += body.qty
+    db.add(StockMove(company_id=cid, ingredient=semi.key, qty=body.qty, reason="production",
+                     staff_name=ctx.staff.name))
+    db.commit()
+    alert_low_stock(db, cid, before, ings.values())
+    return ingredient_out(semi)
+
+
+# ---------- stock automation settings ----------
+
+def stock_settings(db: Session, cid: int, create: bool = False) -> StockConfig:
+    config = db.get(StockConfig, cid)
+    if config is None:
+        config = StockConfig(company_id=cid, auto_stoplist=False, telegram_token="", telegram_chat="")
+        if create:
+            db.add(config)
+    return config
+
+
+def stock_config_out(c: StockConfig) -> dict:
+    return {"autoStoplist": bool(c.auto_stoplist), "telegramChat": c.telegram_chat or "",
+            "telegramConfigured": bool(c.telegram_token and c.telegram_chat)}
+
+
+class StockConfigIn(BaseModel):
+    autoStoplist: bool
+    telegramChat: str = Field(default="", max_length=64, pattern=r"^(-?\d{1,20}|@[A-Za-z0-9_]{4,60})?$")
+    # None keeps the saved token; "" removes it. The token is never sent back to the browser.
+    telegramToken: str | None = Field(default=None, max_length=128, pattern=r"^(\d{5,15}:[A-Za-z0-9_-]{20,100})?$")
+
+
+@app.get("/api/stock/config")
+def stock_config_get(ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    return stock_config_out(stock_settings(ctx.db, ctx.cid))
+
+
+@app.put("/api/stock/config")
+def stock_config_put(body: StockConfigIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    config = stock_settings(ctx.db, ctx.cid, create=True)
+    config.auto_stoplist = body.autoStoplist
+    config.telegram_chat = body.telegramChat.strip()
+    if body.telegramToken is not None:
+        config.telegram_token = body.telegramToken.strip()
+    ctx.db.commit()
+    return stock_config_out(config)
+
+
+def alert_low_stock(db: Session, cid: int, before: dict[str, float], after) -> None:
+    """Send a Telegram message for ingredients that just dropped below their minimum."""
+    crossed = low_stock_crossings(before, after)
+    if not crossed:
+        return
+    config = db.get(StockConfig, cid)
+    if config is None or not config.telegram_token or not config.telegram_chat:
+        return
+    company = db.get(Company, cid)
+    send_low_stock_alert(config.telegram_token, config.telegram_chat, company.name if company else "", crossed)
 
 
 @app.delete("/api/ingredients/{key}")
@@ -474,6 +623,8 @@ def delete_ingredient(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     products = db.scalars(select(Product).where(Product.company_id == ctx.cid)).all()
     if any(ingredient.get("ing") == key for product in products for size in product.sizes for ingredient in size.get("recipe", [])):
         raise HTTPException(409, "Mahsulot texkartada ishlatiladi; avval texkartadan olib tashlang")
+    if any(line.get("ing") == key for other in rows(db, Ingredient, ctx.cid) for line in (other.recipe or [])):
+        raise HTTPException(409, "Mahsulot polufabrikat tarkibida ishlatiladi; avval tarkibdan olib tashlang")
     db.delete(ing)
     db.commit()
     return {"ok": True}
@@ -503,9 +654,11 @@ def stock_move(body: StockIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
     else:
         delta = body.qty if body.reason == "intake" else -body.qty
     note = (body.note or "other") if body.reason == "writeoff" else None
+    before = {i.key: i.stock}
     i.stock += delta
     ctx.db.add(StockMove(company_id=ctx.cid, ingredient=i.key, qty=delta, reason=body.reason, note=note, staff_name=ctx.staff.name))
     ctx.db.commit()
+    alert_low_stock(ctx.db, ctx.cid, before, [i])
     return ingredient_out(i)
 
 
@@ -1089,6 +1242,8 @@ class OrderIn(BaseModel):
     customerPhone: str = Field(default="", max_length=20)
     bonusRedeem: int = Field(default=0, ge=0)
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+    # Sale already happened while the device was offline: never refuse it for stock.
+    offline: bool = False
 
 
 @app.get("/api/orders/history")
@@ -1139,6 +1294,15 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             same["qty"] += built["qty"]
         else:
             items.append(built)
+
+    used: dict[str, float] = {}
+    for it in items:
+        for line in it["consumption"]:
+            used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
+    if not body.offline and stock_settings(db, cid).auto_stoplist:
+        short = [ings[k].name for k, q in used.items() if k in ings and ings[k].stock + 0.000001 < q]
+        if short:
+            raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
     discount = round(subtotal * body.discountPct / 100 / 100) * 100
@@ -1192,10 +1356,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         if earned:
             db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
                                amount=earned, reason="earn"))
-    used: dict[str, float] = {}
-    for it in items:
-        for line in it["consumption"]:
-            used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
+    before = {k: i.stock for k, i in ings.items()}
     for key, qty in used.items():
         if key in ings:
             ings[key].stock -= qty
@@ -1211,6 +1372,7 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             if duplicate:
                 return order_out(duplicate)
         raise HTTPException(409, "Bir vaqtning o'zida takroriy buyurtma; qayta tekshiring")
+    alert_low_stock(db, cid, before, ings.values())
     return order_out(order)
 
 

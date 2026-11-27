@@ -126,13 +126,14 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? '')
   const [cat, setCat] = useState(product?.cat ?? CATEGORIES[0]?.id ?? '')
   const [mods, setMods] = useState<ModGroupId[]>(product?.mods ?? [])
+  const [weighted, setWeighted] = useState(product?.weighted ?? false)
   const [sizes, setSizes] = useState<Size[]>(product?.sizes.map((s) => ({ ...s, recipe: s.recipe.map((l) => ({ ...l })) })) ?? [emptySize()])
   const [busy, setBusy] = useState(false)
 
   const updSize = (i: number, patch: Partial<Size>) => setSizes((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)))
   const save = async () => {
     setBusy(true)
-    const body = { name, cat, imageUrl: imageUrl.trim(), mods, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
+    const body = { name, cat, imageUrl: imageUrl.trim(), mods, weighted, active: product?.active ?? true, sizes: sizes.map((s) => ({ ...s, code: s.label || '-', barcode: (s.barcode ?? '').trim(), recipe: s.recipe.filter((l) => l.ing && l.qty > 0) })) }
     const ok = await run(() => (product ? api(`/api/products/${product.id}`, { method: 'PUT', body }) : api('/api/products', { body })))
     setBusy(false)
     if (ok) onClose()
@@ -158,6 +159,10 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
             </select>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-1.5 font-medium">
+              <input type="checkbox" className="size-4 accent-amber-600" checked={weighted} onChange={(e) => setWeighted(e.target.checked)} />
+              {t('Vazn bilan sotiladi (narx va texkarta 1 kg uchun)')}
+            </label>
             {(Object.keys(GROUP_LABEL) as ModGroupId[]).map((g) => (
               <label key={g} className="flex items-center gap-1.5">
                 <input type="checkbox" className="size-4 accent-amber-600" checked={mods.includes(g)} onChange={(e) => setMods((m) => (e.target.checked ? [...m, g] : m.filter((x) => x !== g)))} />
@@ -173,6 +178,7 @@ function ProductForm({ product, canDelete, onClose }: { product: Product | null;
                   <input value={s.label} onChange={(e) => updSize(i, { label: e.target.value.toUpperCase().slice(0, 4) })} placeholder={t("O'lcham (S/M/L)")} className={`${input} w-32`} />
                   <input value={s.volume ?? ''} onChange={(e) => updSize(i, { volume: e.target.value })} placeholder={t('Hajm (350 ml)')} className={`${input} w-32`} />
                   <input value={s.price || ''} onChange={(e) => updSize(i, { price: Number(e.target.value.replace(/\D/g, '')) })} placeholder={t('Narx')} inputMode="numeric" className={`${input} w-28`} />
+                  <input value={s.barcode ?? ''} onChange={(e) => updSize(i, { barcode: e.target.value.replace(/[^0-9A-Za-z-]/g, '').slice(0, 32) })} placeholder={weighted ? t('Tarozi PLU (5 raqam)') : t('Shtrix-kod')} className={`${input} w-40`} />
                   <span className="text-xs text-stone-500">{t('Tannarx')} {fmt(cost)} · {t('marja')} {s.price ? Math.round(((s.price - cost) / s.price) * 100) : 0}%</span>
                   {sizes.length > 1 && <button onClick={() => setSizes((all) => all.filter((_, j) => j !== i))} aria-label={t("O'lchamni o'chirish")} className="ml-auto p-1 text-stone-400 hover:text-red-600"><Trash2 className="size-4" /></button>}
                 </div>

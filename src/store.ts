@@ -183,7 +183,7 @@ export const nextNumber = () =>
 export async function placeOrder(items: OrderItem[], o: { customer: string; discountPct: number; payment: Payment; cashGiven?: number; customerPhone?: string; bonusRedeem?: number }) {
   const clientKey = crypto.randomUUID()
   const payload = { ...o, clientKey, items: items.map((i) => ({
-    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty,
+    productId: i.productId, size: i.key.split('|')[1], modIds: i.modIds, qty: i.qty, weight: i.weight,
   })) }
   let order: Order
   try {

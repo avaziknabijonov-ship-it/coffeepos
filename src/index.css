@@ -9,6 +9,8 @@ button:disabled { cursor: not-allowed; }
   body * { visibility: hidden; }
   .print-area, .print-area * { visibility: visible; }
   .print-area { position: absolute; left: 0; top: 0; width: var(--receipt-width, 80mm); max-height: none !important; overflow: visible !important; margin: 0 !important; }
+  .price-tags, .price-tags * { visibility: visible; }
+  .price-tags { position: absolute; left: 0; top: 0; width: 100%; }
 }
 
 /* CoffeePOS: premium admin theme, separate from the high-contrast cashier workflow. */

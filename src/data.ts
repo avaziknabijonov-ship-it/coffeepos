@@ -3,9 +3,9 @@ import { t } from './i18n'
 export type Unit = 'g' | 'ml' | 'dona'
 export interface Ingredient { id: string; name: string; unit: Unit; cost: number; stock: number; min: number; recipe?: RecipeLine[]; yieldQty?: number; semi?: boolean }
 export interface RecipeLine { ing: string; qty: number }
-export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[] }
+export interface Size { code: string; label: string; volume?: string; price: number; recipe: RecipeLine[]; barcode?: string }
 export type ModGroupId = 'milk' | 'syrup' | 'shot'
-export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string }
+export interface Product { id: string; cat: string; name: string; sizes: Size[]; mods: ModGroupId[]; active: boolean; imageUrl?: string; weighted?: boolean }
 export interface Category { id: string; name: string; workshop?: string }
 export interface Workshop { id: string; name: string }
 export type Effect = { type: 'none' } | { type: 'swap'; from: string; to: string } | { type: 'add'; ing: string; qty: number }
@@ -35,7 +35,7 @@ export type Status = 'new' | 'preparing' | 'ready' | 'done' | 'cancelled'
 export interface OrderItem {
   key: string; productId: string; name: string; size: string; modIds: string[]; mods: string[]
   qty: number; unitPrice: number; unitCost: number; consumption: RecipeLine[]
-  promo?: string; promoPct?: number; promoDiscount?: number
+  promo?: string; promoPct?: number; promoDiscount?: number; weight?: number
 }
 export interface Order {
   id: string; number: number; customer: string; items: OrderItem[]
@@ -89,25 +89,49 @@ const applyEffect = (lines: RecipeLine[], e: Effect): RecipeLine[] => {
 
 export const recipeCost = (lines: RecipeLine[]) => lines.reduce((s, l) => s + (ING[l.ing]?.cost ?? 0) * l.qty, 0)
 
-export function buildItem(p: Product, size: Size, modIds: string[], qty: number): OrderItem {
+export function buildItem(p: Product, size: Size, modIds: string[], qty: number, weight?: number): OrderItem {
   const mods = modIds.filter((id) => id !== DEFAULT_MILK && MOD[id]).map((id) => MOD[id])
-  const consumption = mods.reduce((lines, m) => applyEffect(lines, m.effect), size.recipe)
-  return {
-    key: [p.id, size.code, ...mods.map((m) => m.id).sort()].join('|'),
+  let consumption = mods.reduce((lines, m) => applyEffect(lines, m.effect), size.recipe)
+  const base = size.price + mods.reduce((s, m) => s + m.price, 0)
+  const w = p.weighted && weight ? Math.round(weight * 1000) / 1000 : undefined
+  if (w !== undefined) consumption = consumption.map((l) => ({ ...l, qty: l.qty * w }))
+  const item: OrderItem = {
+    key: [p.id, size.code, ...mods.map((m) => m.id).sort()].join('|') + (w !== undefined ? `|w${w.toFixed(3)}` : ''),
     productId: p.id,
     name: p.name,
-    size: size.label,
+    size: w !== undefined ? `${w.toFixed(3)} kg` : size.label,
     modIds: mods.map((m) => m.id),
     mods: mods.map((m) => (m.group === 'syrup' ? `${m.name} sirop` : m.name)),
     qty,
-    unitPrice: size.price + mods.reduce((s, m) => s + m.price, 0),
+    unitPrice: w !== undefined ? Math.floor(base * w + 0.5) : base,
     unitCost: Math.round(recipeCost(consumption)),
     consumption,
   }
+  if (w !== undefined) item.weight = w
+  return item
+}
+
+/** Resolve a scanned code: a size barcode, or an EAN-13 scale label (2X + 5-digit PLU + 5-digit grams + check). */
+export function findByBarcode(code: string): { product: Product; size: Size; weight?: number } | null {
+  const c = code.trim()
+  if (!c) return null
+  for (const p of PRODUCTS) for (const s of p.sizes) if (s.barcode && s.barcode === c) return { product: p, size: s }
+  if (/^2[0-9]{12}$/.test(c)) {
+    const plu = c.slice(2, 7)
+    const grams = Number(c.slice(7, 12))
+    for (const p of PRODUCTS) {
+      if (!p.weighted) continue
+      for (const s of p.sizes) {
+        if (s.barcode && s.barcode.padStart(5, '0') === plu && grams > 0) return { product: p, size: s, weight: grams / 1000 }
+      }
+    }
+  }
+  return null
 }
 
 /** Automatic stop-list: true when at least one size can be made from current stock. */
 export function canMake(p: Product, stock: Record<string, number>): boolean {
+  if (p.weighted) return p.sizes.some((size) => size.recipe.every((l) => !(l.ing in stock) || stock[l.ing] > 0.000001))
   return p.sizes.some((size) => size.recipe.every((l) => !(l.ing in stock) || stock[l.ing] + 0.000001 >= l.qty))
 }
 

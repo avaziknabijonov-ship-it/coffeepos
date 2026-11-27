@@ -16,8 +16,12 @@ import PrinterSettings from './PrinterSettings'
 import { MenuEditor, ShiftsView, StaffView } from './AdminExtra'
 import { InventoryView } from './Inventory'
 import { SemiProductsView, StockAutomationSettings } from './SemiProducts'
+import Promotions from './Promotions'
+import Analytics from './Analytics'
+import ChecklistsAdmin from './Checklists'
+import RecurringPayments, { DueRecurringBanner } from './Recurring'
 
-type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'semi' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
+type View = 'dashboard' | 'receiving' | 'stock' | 'inventory' | 'menu' | 'recipes' | 'semi' | 'promotions' | 'analytics' | 'checklists' | 'recurring' | 'orders' | 'cashierReport' | 'staff' | 'shifts' | 'expenses' | 'bonus' | 'finance' | 'payroll' | 'printer'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'stock', label: 'Ombor' },
@@ -26,6 +30,8 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'menu', label: 'Menyu' },
   { id: 'recipes', label: 'Texkarta' },
   { id: 'semi', label: 'Polufabrikatlar' },
+  { id: 'promotions', label: 'Aksiyalar' },
+  { id: 'analytics', label: 'Savdo tahlili' },
   { id: 'orders', label: 'Cheklar tarixi' },
   { id: 'cashierReport', label: 'Kassirlar hisoboti' },
   { id: 'staff', label: 'Xodimlar' },
@@ -33,10 +39,12 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'expenses', label: 'Xarajatlar' },
   { id: 'finance', label: 'Moliya hisoboti' },
   { id: 'payroll', label: 'Oylik hisobi' },
+  { id: 'recurring', label: "Doimiy to'lovlar" },
+  { id: 'checklists', label: 'Checklistlar' },
   { id: 'printer', label: 'Chek printer sozlamasi' },
   { id: 'bonus', label: 'Bonuslar' },
 ]
-const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, semi: Milk, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
+const VIEW_ICONS = { dashboard: LayoutDashboard, stock: Warehouse, receiving: PackagePlus, inventory: ClipboardCheck, menu: Coffee, recipes: BookOpen, semi: Milk, promotions: TrendingUp, analytics: ChartNoAxesCombined, checklists: ClipboardCheck, recurring: CalendarClock, orders: ReceiptText, cashierReport: ChartNoAxesCombined, staff: Users, shifts: CalendarClock, expenses: Wallet, bonus: Gift, finance: ChartNoAxesCombined, payroll: BadgeDollarSign, printer: Printer }
 const WEEKDAY = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 
@@ -68,9 +76,14 @@ export default function Admin() {
           </nav>
         </aside>
         <main className="min-w-0 flex-1 space-y-5">
+          {view === 'dashboard' && <DueRecurringBanner onOpen={() => setView('recurring')} />}
           {view === 'dashboard' && <Dashboard today={today} low={low.map((i) => i.name)} goStock={() => setView('stock')} />}
           {view === 'stock' && <><StockOverview /><StockAutomationSettings /></>}
           {view === 'semi' && <SemiProductsView />}
+          {view === 'promotions' && <Promotions />}
+          {view === 'analytics' && <Analytics />}
+          {view === 'checklists' && <ChecklistsAdmin />}
+          {view === 'recurring' && <RecurringPayments />}
           {view === 'receiving' && <PurchaseInvoices />}
           {view === 'inventory' && <InventoryView />}
           {view === 'menu' && <MenuEditor />}

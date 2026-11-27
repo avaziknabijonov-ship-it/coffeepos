@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
-import { setMenu } from './data'
+import { cartTotals, setMenu } from './data'
 import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
 import { getLang, setLangValue } from './i18n'
@@ -72,7 +72,7 @@ async function pushPendingSales() {
   try {
     for (const sale of getQueuedSales(company)) {
       try {
-        await api<Order>('/api/orders', { body: { ...sale.body, offline: true } })
+        await api<Order>('/api/orders', { body: { ...sale.body, offline: true, soldAt: sale.createdAt } })
         removeQueuedSale(company, sale.clientKey)
         set({ pendingError: '' })
       } catch (e) {
@@ -193,11 +193,10 @@ export async function placeOrder(items: OrderItem[], o: { customer: string; disc
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,
       payment: 'naqd', cashGiven: o.cashGiven,
     })
-    const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
-    const discount = Math.round(subtotal * o.discountPct / 100 / 100) * 100
+    const totals = cartTotals(items, o.discountPct, new Date(sale.createdAt))
     order = {
       id: 'offline:' + clientKey, number: nextNumber(), customer: o.customer,
-      items, subtotal, discount, total: subtotal - discount,
+      items: totals.items, subtotal: totals.subtotal, discount: totals.discount, total: totals.total,
       cost: items.reduce((sum, item) => sum + item.qty * item.unitCost, 0),
       payment: 'naqd', cashGiven: o.cashGiven, status: 'new',
       createdAt: sale.createdAt, readyAt: null, barista: state.session.staff.name,

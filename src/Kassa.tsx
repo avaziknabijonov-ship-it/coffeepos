@@ -4,11 +4,12 @@ import CashExpense from './CashExpense'
 import { t, tCatalogName } from './i18n'
 import { Banknote, CakeSlice, Check, Coffee, CreditCard, Leaf, Milk, Minus, Plus, Printer, Search, ShoppingBag, Smartphone, Snowflake, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { CATEGORIES, DEFAULT_MILK, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, SETTINGS, buildItem, canMake, fmt, som, time } from './data'
+import { CATEGORIES, DEFAULT_MILK, INGREDIENTS, MODIFIERS, PAYMENT_LABEL, PRODUCTS, SETTINGS, buildItem, canMake, cartTotals, fmt, som, time } from './data'
 import type { ModGroupId, Order, OrderItem, Payment, Product } from './data'
 import { nextNumber, placeOrder, useAppState, sync } from './store'
 import { OpenShift } from './Shift'
 import { ProduceDialog } from './SemiProducts'
+import { ChecklistDialog } from './Checklists'
 
 const CAT_ICON: Record<string, LucideIcon> = { espresso: Coffee, milk: Milk, cold: Snowflake, tea: Leaf, dessert: CakeSlice }
 const CAT_TINT: Record<string, string> = {
@@ -39,6 +40,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [produceOpen, setProduceOpen] = useState(false)
+  const [checklistOpen, setChecklistOpen] = useState(false)
   const hasSemi = INGREDIENTS.some((i) => i.semi)
   const [historyError, setHistoryError] = useState('')
   const canCancel = session?.staff.role === 'owner' || session?.staff.role === 'admin' || Boolean(session?.staff.canCancelOrders)
@@ -56,8 +58,8 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat, query, menuVersion])
 
-  const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.qty, 0)
-  const discount = Math.round((subtotal * discountPct) / 100 / 100) * 100
+  const totals = cartTotals(cart, discountPct)
+  const { subtotal, discount } = totals
   const maxRedeem = bonusInfo?.enabled ? Math.min(bonusInfo.balance, Math.floor((subtotal - discount) * bonusInfo.redemptionLimitPercent / 100)) : 0
   const effectiveBonus = Math.min(bonusRedeem, maxRedeem)
   const total = subtotal - discount - effectiveBonus
@@ -97,7 +99,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
   }
   const cartPanel = (
     <Cart
-      number={nextNumber()} cart={cart} customer={customer} setCustomer={setCustomer}
+      number={nextNumber()} cart={totals.items} promo={totals.promo} manualDiscount={totals.manual} customer={customer} setCustomer={setCustomer}
       customerPhone={customerPhone} setCustomerPhone={v => { setCustomerPhone(v); setBonusInfo(null); setBonusRedeem(0) }}
       bonusInfo={bonusInfo} bonusError={bonusError} bonusRedeem={effectiveBonus} setBonusRedeem={setBonusRedeem} loadBonus={loadBonus} maxRedeem={maxRedeem}
       discountPct={discountPct} setDiscountPct={setDiscountPct} subtotal={subtotal} discount={discount} total={total}
@@ -131,6 +133,7 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
             {query && <button onClick={() => setQuery('')} aria-label={t('Tozalash')}><X className="size-4 text-stone-400" /></button>}
           </label>
           {(canCancel || canReprint) && <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-amber-700 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-950 hover:bg-amber-100">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</button>}
+          <button onClick={() => setChecklistOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Checklist')}</button>
           {hasSemi && <button onClick={() => setProduceOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Polufabrikat')}</button>}
           <button onClick={() => setExpenseOpen(true)} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700">{t('Xarajat')}</button>
           <button onClick={onShift} className="rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 md:hidden">{t('Smena')}</button>
@@ -189,12 +192,13 @@ export default function Kassa({ onShift }: { onShift: () => void }) {
       {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-stone-900 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{t('Cheklar tarixi')} · {t('Otmena')} / {t('Perechek')}</h2><button onClick={() => setHistoryOpen(false)} aria-label={t('Yopish')}><X className="size-6" /></button></div><p className="mb-3 text-sm text-red-700">{t('Otmena')}: {orders.filter(o => o.status === 'cancelled').length}</p>{historyError && <p role="alert" className="mb-2 rounded-lg bg-red-100 p-2 text-red-800">{historyError}</p>}<div className="space-y-2">{[...orders].sort((a,b) => b.createdAt-a.createdAt).slice(0,80).map(o => <div key={o.id} className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm ${o.status === 'cancelled' ? 'border-red-300 bg-red-50' : 'border-stone-200'}`}><div className="min-w-0 flex-1"><b>№ {o.number}</b> · {new Date(o.createdAt).toLocaleString()} · {som(o.total)}<div className="text-xs text-stone-500">{o.status === 'cancelled' ? `${t('Otmena')} · ${o.cancelledBy || ''} · ${o.cancelReason || ''}` : o.items.map(i=>tCatalogName(i.name)).join(', ')}</div></div>{canReprint && <button onClick={() => { setHistoryOpen(false); setReceipt(o) }} className="rounded-lg border px-3 py-2">{t('Perechek')}</button>}{canCancel && o.status === 'new' && !o.pendingSync && <button onClick={() => cancelReceipt(o)} className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white">{t('Otmena')}</button>}</div>)}</div></div></div>}
       {expenseOpen && <CashExpense onClose={() => setExpenseOpen(false)} />}
       {produceOpen && <ProduceDialog onClose={() => setProduceOpen(false)} />}
+      {checklistOpen && <ChecklistDialog onClose={() => setChecklistOpen(false)} />}
     </div>
   )
 }
 
 function Cart(props: {
-  number: number; cart: OrderItem[]; customer: string; setCustomer: (v: string) => void
+  number: number; cart: OrderItem[]; promo: number; manualDiscount: number; customer: string; setCustomer: (v: string) => void
   customerPhone: string; setCustomerPhone: (v: string) => void
   bonusInfo: BonusSnapshot | null; bonusError: string; bonusRedeem: number; maxRedeem: number
   setBonusRedeem: (v: number) => void; loadBonus: () => void
@@ -249,6 +253,7 @@ function Cart(props: {
               <div className="min-w-0">
                 <div className="font-semibold">{tCatalogName(it.name)}{it.size && <span className="ml-1.5 rounded bg-stone-100 px-1.5 text-sm font-medium text-stone-600">{it.size}</span>}</div>
                 {it.mods.length > 0 && <div className="mt-0.5 text-sm text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
+                {it.promo && <div className="mt-0.5 text-xs font-semibold text-emerald-700">{t('Aksiya')}: {it.promo} −{it.promoPct}%</div>}
               </div>
               <div className="shrink-0 font-semibold">{fmt(it.unitPrice * it.qty)}</div>
             </div>
@@ -274,7 +279,8 @@ function Cart(props: {
         {props.discount > 0 && (
           <div className="space-y-1 text-sm text-stone-500">
             <div className="flex justify-between"><span>{t('Oraliq summa')}</span><span>{som(props.subtotal)}</span></div>
-            <div className="flex justify-between"><span>{t('Chegirma')} {props.discountPct}%</span><span>−{som(props.discount)}</span></div>
+            {props.promo > 0 && <div className="flex justify-between text-emerald-700"><span>{t('Aksiya')}</span><span>−{som(props.promo)}</span></div>}
+            {props.manualDiscount > 0 && <div className="flex justify-between"><span>{t('Chegirma')} {props.discountPct}%</span><span>−{som(props.manualDiscount)}</span></div>}
           </div>
         )}
         <button disabled={cart.length === 0} onClick={props.onPay}
@@ -472,6 +478,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
             <div key={it.key} className="mb-1">
               <div className="flex justify-between gap-2"><span>{it.qty}× {tCatalogName(it.name)} {it.size}</span><span>{fmt(it.unitPrice * it.qty)}</span></div>
               {it.mods.length > 0 && <div className="pl-3 text-stone-500">{it.mods.map(tCatalogName).join(', ')}</div>}
+              {it.promo && <div className="flex justify-between pl-3 text-stone-500"><span>{t('Aksiya')}: {it.promo}</span><span>−{fmt(it.promoDiscount ?? 0)}</span></div>}
             </div>
           ))}
           <div className="my-2 border-t border-dashed border-stone-300" />

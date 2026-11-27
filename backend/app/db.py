@@ -281,3 +281,59 @@ class PayrollPlan(Base):
     deductions: Mapped[int] = mapped_column(BigInteger, default=0)
     note: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Promotion(Base):
+    """Automatic percent discount (happy hour, weekday deal) on all, a category or products."""
+    __tablename__ = "promotions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    pct: Mapped[int] = mapped_column(Integer)
+    target: Mapped[str] = mapped_column(String(16), default="all")
+    keys: Mapped[list] = mapped_column(JSON, default=list)
+    days: Mapped[list] = mapped_column(JSON, default=list)
+    start_time: Mapped[str] = mapped_column(String(5), default="00:00")
+    end_time: Mapped[str] = mapped_column(String(5), default="00:00")
+    date_from: Mapped[str] = mapped_column(String(10), default="")
+    date_to: Mapped[str] = mapped_column(String(10), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class ChecklistTemplate(Base):
+    __tablename__ = "checklist_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(8), default="any")
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ChecklistRun(Base):
+    __tablename__ = "checklist_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    template_id: Mapped[int] = mapped_column(Integer)
+    template_name: Mapped[str] = mapped_column(String(64))
+    shift_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    staff_name: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class RecurringPayment(Base):
+    """Monthly obligation (rent, utilities, internet); paying it records an Expense."""
+    __tablename__ = "recurring_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    category: Mapped[str] = mapped_column(String(64))
+    payment: Mapped[str] = mapped_column(String(16), default="bank")
+    day: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_paid_month: Mapped[str] = mapped_column(String(7), default="")

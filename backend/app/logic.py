@@ -1,3 +1,5 @@
+import math
+
 from fastapi import HTTPException
 
 from .db import Ingredient, Modifier, Product
@@ -58,3 +60,57 @@ def build_item(
         "unitCost": round(unit_cost),
         "consumption": consumption,
     }
+
+
+# ---------- promotions ----------
+
+def _minutes(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def promo_applies(promo, product_key: str, cat: str, at) -> bool:
+    """`at` is a timezone-aware datetime in the café's local time."""
+    if not promo.active:
+        return False
+    day = at.strftime("%Y-%m-%d")
+    if promo.date_from and day < promo.date_from:
+        return False
+    if promo.date_to and day > promo.date_to:
+        return False
+    if promo.days and at.weekday() not in promo.days:
+        return False
+    start, end, now = _minutes(promo.start_time), _minutes(promo.end_time), at.hour * 60 + at.minute
+    if start < end and not (start <= now < end):
+        return False
+    if start > end and not (now >= start or now < end):
+        return False
+    if promo.target == "category":
+        return cat in promo.keys
+    if promo.target == "product":
+        return product_key in promo.keys
+    return True
+
+
+def round100(x: float) -> int:
+    return int(math.floor(x / 100 + 0.5)) * 100
+
+
+def apply_promotions(items: list[dict], cats: dict[str, str], promos: list, at) -> int:
+    """Attach the best promotion to each item in place; return the total promo discount."""
+    total = 0
+    for it in items:
+        best = None
+        for p in promos:
+            if promo_applies(p, it["productId"], cats.get(it["productId"], ""), at) and (best is None or p.pct > best.pct):
+                best = p
+        if best is None:
+            it.pop("promo", None)
+            it.pop("promoPct", None)
+            it["promoDiscount"] = 0
+            continue
+        it["promo"] = best.name
+        it["promoPct"] = best.pct
+        it["promoDiscount"] = round100(it["unitPrice"] * it["qty"] * best.pct / 100)
+        total += it["promoDiscount"]
+    return total

@@ -3,21 +3,23 @@ import { t } from './i18n'
 import LangSwitch from './LangSwitch'
 import ThemeSwitch from './ThemeSwitch'
 import UpdateNotice from './UpdateNotice'
-import { ChefHat, Coffee, LayoutDashboard, LogOut, Store, WifiOff } from 'lucide-react'
+import { ChefHat, Coffee, LayoutDashboard, LogOut, Store, Users, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Kassa from './Kassa'
 import Barista from './Barista'
+import Hall from './Hall'
 import Admin from './Admin'
 import Login from './Login'
 import Superadmin from './Superadmin'
 import { CloseShiftModal } from './Shift'
-import { ROLE_LABEL } from './data'
+import { RESTAURANT, ROLE_LABEL } from './data'
 import type { Role } from './data'
 import { bootstrap, logout, useAppState } from './store'
 
-type Tab = 'kassa' | 'barista' | 'admin'
+type Tab = 'kassa' | 'zal' | 'barista' | 'admin'
 const TABS: { id: Tab; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { id: 'kassa', label: 'Kassa', icon: Store, roles: ['owner', 'admin', 'kassir'] },
+  { id: 'zal', label: 'Zal', icon: Users, roles: ['owner', 'admin', 'kassir', 'ofitsiant'] },
   { id: 'barista', label: 'Barista', icon: ChefHat, roles: ['owner', 'admin', 'barista'] },
   { id: 'admin', label: 'Admin', icon: LayoutDashboard, roles: ['owner', 'admin'] },
 ]
@@ -41,7 +43,7 @@ export default function App() {
 function Main({ role }: { role: Role }) {
   const { orders, shift, session, online, pendingCount, pendingError } = useAppState()
   const canBarista = Boolean(session?.staff.canBarista)
-  const tabs = TABS.filter((t) => t.roles.includes(role) || (t.id === 'barista' && role === 'kassir' && canBarista))
+  const tabs = TABS.filter((t) => (t.roles.includes(role) || (t.id === 'barista' && role === 'kassir' && canBarista)) && (t.id !== 'zal' || RESTAURANT || role === 'ofitsiant'))
   const pick = (t: Tab | null) => (t && tabs.some((x) => x.id === t) ? t : (role === 'owner' || role === 'admin' ? 'admin' : tabs[0].id))
   const [tab, setTab] = useState<Tab>(() => pick(fromHash()))
   const [shiftOpen, setShiftOpen] = useState(false)
@@ -102,6 +104,7 @@ function Main({ role }: { role: Role }) {
       </div>}
       <div className="min-h-0 flex-1">
         {tab === 'kassa' && <Kassa onShift={() => setShiftOpen(true)} />}
+        {tab === 'zal' && <Hall />}
         {tab === 'barista' && <Barista />}
 
         {tab === 'admin' && <Admin />}

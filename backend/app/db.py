@@ -62,6 +62,8 @@ class Category(Base):
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(64))
     sort: Mapped[int] = mapped_column(Integer, default=0)
+    # Workshop (sex) key: which preparation screen gets this category's items; "" = default.
+    workshop: Mapped[str] = mapped_column(String(64), default="")
 
 
 class Ingredient(Base):
@@ -281,3 +283,125 @@ class PayrollPlan(Base):
     deductions: Mapped[int] = mapped_column(BigInteger, default=0)
     note: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class Promotion(Base):
+    """Automatic percent discount (happy hour, weekday deal) on all, a category or products."""
+    __tablename__ = "promotions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    pct: Mapped[int] = mapped_column(Integer)
+    target: Mapped[str] = mapped_column(String(16), default="all")
+    keys: Mapped[list] = mapped_column(JSON, default=list)
+    days: Mapped[list] = mapped_column(JSON, default=list)
+    start_time: Mapped[str] = mapped_column(String(5), default="00:00")
+    end_time: Mapped[str] = mapped_column(String(5), default="00:00")
+    date_from: Mapped[str] = mapped_column(String(10), default="")
+    date_to: Mapped[str] = mapped_column(String(10), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+
+
+class ChecklistTemplate(Base):
+    __tablename__ = "checklist_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(8), default="any")
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ChecklistRun(Base):
+    __tablename__ = "checklist_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    template_id: Mapped[int] = mapped_column(Integer)
+    template_name: Mapped[str] = mapped_column(String(64))
+    shift_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    staff_name: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+
+
+class RecurringPayment(Base):
+    """Monthly obligation (rent, utilities, internet); paying it records an Expense."""
+    __tablename__ = "recurring_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    category: Mapped[str] = mapped_column(String(64))
+    payment: Mapped[str] = mapped_column(String(16), default="bank")
+    day: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_paid_month: Mapped[str] = mapped_column(String(7), default="")
+
+
+class Workshop(Base):
+    """Preparation station (bar, kitchen, pastry) with its own kitchen screen."""
+    __tablename__ = "workshops"
+    __table_args__ = (UniqueConstraint("company_id", "key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(64))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Hall(Base):
+    __tablename__ = "halls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DiningTable(Base):
+    __tablename__ = "dining_tables"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    hall_id: Mapped[int] = mapped_column(ForeignKey("halls.id"), index=True)
+    name: Mapped[str] = mapped_column(String(32))
+    seats: Mapped[int] = mapped_column(Integer, default=4)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class OpenCheck(Base):
+    """A table bill that collects items over time and is paid at the end (waiter flow)."""
+    __tablename__ = "open_checks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    shift_id: Mapped[int] = mapped_column(Integer, index=True)
+    table_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    table_name: Mapped[str] = mapped_column(String(64), default="")
+    guests: Mapped[int] = mapped_column(Integer, default=1)
+    waiter_name: Mapped[str] = mapped_column(String(64))
+    comment: Mapped[str] = mapped_column(String(200), default="")
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, default=now_ms)
+    closed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class KitchenTicket(Base):
+    """Items sent from a table bill to one workshop screen."""
+    __tablename__ = "kitchen_tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    check_id: Mapped[int] = mapped_column(Integer, index=True)
+    workshop: Mapped[str] = mapped_column(String(64), default="")
+    table_name: Mapped[str] = mapped_column(String(64), default="")
+    waiter_name: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    comment: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(16), default="new")
+    created_at: Mapped[int] = mapped_column(BigInteger, default=now_ms, index=True)
+    ready_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

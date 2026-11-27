@@ -16,17 +16,18 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, DiningTable, Hall, KitchenTicket, OpenCheck, Promotion, RecurringPayment, Workshop, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
 )
 from .notify import low_stock_crossings, send_low_stock_alert
-from .logic import build_item
+from .logic import apply_promotions, build_item, round100
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
-Role = Literal["owner", "admin", "kassir", "barista"]
+Role = Literal["owner", "admin", "kassir", "barista", "ofitsiant"]
 MANAGERS = ("owner", "admin")
 CASHIERS = ("owner", "admin", "kassir")
 BARISTAS = ("owner", "admin", "barista")
+WAITERS = ("owner", "admin", "kassir", "ofitsiant")
 
 
 
@@ -77,6 +78,10 @@ def migrate() -> None:
         if "client_key" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN client_key VARCHAR(64)"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_company_client_key ON orders (company_id, client_key)"))
+    category_columns = {c["name"] for c in inspect(engine).get_columns("categories")}
+    if "workshop" not in category_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE categories ADD COLUMN workshop VARCHAR(64) NOT NULL DEFAULT ''"))
     ingredient_columns = {c["name"] for c in inspect(engine).get_columns("ingredients")}
     with engine.begin() as conn:
         if "recipe" not in ingredient_columns:
@@ -315,11 +320,14 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
     prods = sorted(rows(db, Product, cid), key=lambda p: (p.sort, p.id))
     mods = sorted(rows(db, Modifier, cid), key=lambda m: (m.sort, m.id))
     return {
-        "categories": [{"id": c.key, "name": c.name} for c in cats],
+        "categories": [{"id": c.key, "name": c.name, "workshop": c.workshop or ""} for c in cats],
+        "workshops": [{"id": w.key, "name": w.name} for w in sorted(rows(db, Workshop, cid), key=lambda w: (w.sort, w.id))],
         "products": [product_out(p) for p in prods],
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
         "settings": {"autoStoplist": stock_settings(db, cid).auto_stoplist},
+        "promotions": [promotion_out(p) for p in rows(db, Promotion, cid) if p.active],
+        "restaurant": db.scalar(select(DiningTable.id).where(DiningTable.company_id == cid).limit(1)) is not None,
     }
 
 
@@ -1244,6 +1252,8 @@ class OrderIn(BaseModel):
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
     # Sale already happened while the device was offline: never refuse it for stock.
     offline: bool = False
+    # Device time of an offline sale, so happy-hour promotions match when it was sold.
+    soldAt: int | None = Field(default=None, gt=0)
 
 
 @app.get("/api/orders/history")
@@ -1269,6 +1279,11 @@ def orders_history(from_ms: int, to_ms: int, staff: str = "", shift_id: int | No
 
 @app.post("/api/orders")
 def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    return place_order(body, ctx)
+
+
+def place_order(body: OrderIn, ctx: Ctx, status: str = "new", stock_guard: bool = True, on_created=None) -> dict:
+    """Validate, price and record a paid sale. `on_created(order)` runs inside the same transaction."""
     db, cid = ctx.db, ctx.cid
     if body.clientKey:
         existing = db.scalar(select(Order).where(
@@ -1299,13 +1314,19 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
     for it in items:
         for line in it["consumption"]:
             used[line["ing"]] = used.get(line["ing"], 0) + line["qty"] * it["qty"]
-    if not body.offline and stock_settings(db, cid).auto_stoplist:
+    if stock_guard and not body.offline and stock_settings(db, cid).auto_stoplist:
         short = [ings[k].name for k, q in used.items() if k in ings and ings[k].stock + 0.000001 < q]
         if short:
             raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
-    discount = round(subtotal * body.discountPct / 100 / 100) * 100
+    sold_at = now_ms()
+    if body.offline and body.soldAt and sold_at - 72 * 3600 * 1000 <= body.soldAt <= sold_at + 5 * 60 * 1000:
+        sold_at = body.soldAt
+    promos = rows(db, Promotion, cid)
+    promo_discount = apply_promotions(items, {p.key: p.cat for p in prods.values()}, promos,
+                                      datetime.fromtimestamp(sold_at / 1000, TZ))
+    discount = promo_discount + round100((subtotal - promo_discount) * body.discountPct / 100)
     total = subtotal - discount
     phone = body.customerPhone.strip()
     customer = None
@@ -1346,9 +1367,12 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
         items=items, subtotal=subtotal, discount=discount, total=total,
         cost=sum(i["unitCost"] * i["qty"] for i in items), payment=body.payment,
         cash_given=body.cashGiven if body.payment == "naqd" else None, staff_name=ctx.staff.name,
+        status=status, ready_at=now_ms() if status == "done" else None,
     )
     db.add(order)
     db.flush()
+    if on_created is not None:
+        on_created(order)
     if customer is not None:
         if redeemed:
             db.add(BonusLedger(company_id=cid, customer_id=customer.id, order_id=order.id,
@@ -1461,6 +1485,11 @@ def sync(since: int | None = None, ctx: Ctx = Depends(auth)) -> dict:
         "orders": [order_out(o) for o in db.scalars(q)],
         "stock": {i.key: i.stock for i in rows(db, Ingredient, cid)},
         "shift": shift_summary(db, shift) if shift else None,
+        "tickets": [ticket_out(t) for t in db.scalars(select(KitchenTicket).where(
+            KitchenTicket.company_id == cid, KitchenTicket.created_at >= start_of_day_ms(), KitchenTicket.status != "done"
+        ).order_by(KitchenTicket.id))],
+        "checks": [check_out(c) for c in db.scalars(select(OpenCheck).where(
+            OpenCheck.company_id == cid, OpenCheck.status == "open").order_by(OpenCheck.id))],
     }
 
 
@@ -1606,3 +1635,753 @@ def platform_subscription(slug: str, body: PlatformSubscriptionIn,
             sub.plan, sub.status, sub.expires_at, sub.updated_at = body.plan, "active", expiry, current
     db.commit()
     return platform_company(company, sub)
+
+
+# ---------- promotions (aksiyalar) ----------
+
+TIME_RE = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+DATE_RE = r"^([0-9]{4}-[0-9]{2}-[0-9]{2})?$"
+
+
+def promotion_out(p: Promotion) -> dict:
+    return {
+        "id": p.id, "name": p.name, "pct": p.pct, "target": p.target, "keys": list(p.keys or []),
+        "days": list(p.days or []), "startTime": p.start_time, "endTime": p.end_time,
+        "dateFrom": p.date_from, "dateTo": p.date_to, "active": p.active,
+    }
+
+
+class PromotionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    pct: int = Field(ge=1, le=90)
+    target: Literal["all", "category", "product"] = "all"
+    keys: list[str] = Field(default=[], max_length=200)
+    days: list[int] = Field(default=[], max_length=7)
+    startTime: str = Field(default="00:00", pattern=TIME_RE)
+    endTime: str = Field(default="00:00", pattern=TIME_RE)
+    dateFrom: str = Field(default="", pattern=DATE_RE)
+    dateTo: str = Field(default="", pattern=DATE_RE)
+    active: bool = True
+
+
+def apply_promotion_body(ctx: Ctx, p: Promotion, body: PromotionIn) -> None:
+    if any(d < 0 or d > 6 for d in body.days) or len(set(body.days)) != len(body.days):
+        raise HTTPException(422, "Hafta kunlari noto'g'ri")
+    if body.dateFrom and body.dateTo and body.dateTo < body.dateFrom:
+        raise HTTPException(422, "Sana oralig'i noto'g'ri")
+    keys = list(dict.fromkeys(body.keys))
+    if body.target == "all":
+        keys = []
+    else:
+        if not keys:
+            raise HTTPException(422, "Aksiya uchun kategoriya yoki mahsulot tanlang")
+        model = Category if body.target == "category" else Product
+        known = {r.key for r in rows(ctx.db, model, ctx.cid)}
+        if any(k not in known for k in keys):
+            raise HTTPException(422, "Aksiyada noma'lum kategoriya yoki mahsulot")
+    p.name, p.pct, p.target, p.keys = body.name.strip(), body.pct, body.target, keys
+    p.days = sorted(body.days)
+    p.start_time, p.end_time = body.startTime, body.endTime
+    p.date_from, p.date_to, p.active = body.dateFrom, body.dateTo, body.active
+
+
+def get_owned(ctx: Ctx, model, row_id: int):
+    row = ctx.db.get(model, row_id)
+    if row is None or row.company_id != ctx.cid:
+        raise HTTPException(404, "Topilmadi")
+    return row
+
+
+@app.get("/api/promotions")
+def promotions_list(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [promotion_out(p) for p in rows(ctx.db, Promotion, ctx.cid)]
+
+
+@app.post("/api/promotions")
+def promotions_add(body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    p = Promotion(company_id=ctx.cid)
+    apply_promotion_body(ctx, p, body)
+    ctx.db.add(p)
+    ctx.db.commit()
+    return promotion_out(p)
+
+
+@app.put("/api/promotions/{pid}")
+def promotions_update(pid: int, body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    p = get_owned(ctx, Promotion, pid)
+    apply_promotion_body(ctx, p, body)
+    ctx.db.commit()
+    return promotion_out(p)
+
+
+@app.delete("/api/promotions/{pid}")
+def promotions_delete(pid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, Promotion, pid))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+# ---------- sales analytics: ABC, breakdowns, risky receipts ----------
+
+def parse_range(date_from: str | None, date_to: str | None, days: int) -> tuple[int, int]:
+    if date_from is None and date_to is None:
+        days = max(1, min(days, 366))
+        return start_of_day_ms(days - 1), start_of_day_ms(-1)
+    if not date_from or not date_to:
+        raise HTTPException(400, "Ikkala sanani kiriting")
+    try:
+        lo = datetime.strptime(date_from, "%Y-%m-%d")
+        hi = datetime.strptime(date_to, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Sana formati noto'g'ri")
+    if hi < lo or (hi - lo).days > 366:
+        raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
+    return int(lo.replace(tzinfo=TZ).timestamp() * 1000), int((hi + timedelta(days=1)).replace(tzinfo=TZ).timestamp() * 1000)
+
+
+def orders_between(ctx: Ctx, since: int, until: int) -> list[Order]:
+    return ctx.db.scalars(select(Order).where(
+        Order.company_id == ctx.cid, Order.created_at >= since, Order.created_at < until
+    ).order_by(Order.created_at)).all()
+
+
+def abc_classes(rows_: list[dict], key: str = "revenue") -> None:
+    total = sum(r[key] for r in rows_) or 1
+    acc = 0
+    for r in sorted(rows_, key=lambda r: r[key], reverse=True):
+        r["share"] = round(r[key] * 100 / total, 1)
+        r["abc"] = "A" if acc < total * 0.8 else ("B" if acc < total * 0.95 else "C")
+        acc += r[key]
+
+
+@app.get("/api/reports/sales")
+def sales_report(days: int = 30, date_from: str | None = None, date_to: str | None = None,
+                 ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Net revenue by product, category, staff, payment and hour, plus ABC classes."""
+    since, until = parse_range(date_from, date_to, days)
+    prods = {p.key: p for p in rows(ctx.db, Product, ctx.cid)}
+    cat_names = {c.key: c.name for c in rows(ctx.db, Category, ctx.cid)}
+    by_product: dict[str, dict] = {}
+    by_cat: dict[str, dict] = {}
+    by_staff: dict[str, dict] = {}
+    by_payment: dict[str, int] = {}
+    hours = [{"hour": h, "orders": 0, "revenue": 0} for h in range(24)]
+    revenue = cost = count = cancelled = discount = 0
+    for o in orders_between(ctx, since, until):
+        staff = by_staff.setdefault(o.staff_name, {"name": o.staff_name, "orders": 0, "revenue": 0, "cancelled": 0, "discount": 0})
+        if o.status == "cancelled":
+            staff["cancelled"] += 1
+            cancelled += 1
+            continue
+        count += 1
+        revenue += o.total
+        cost += o.cost
+        discount += o.discount
+        staff["orders"] += 1
+        staff["revenue"] += o.total
+        staff["discount"] += o.discount
+        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        hour = datetime.fromtimestamp(o.created_at / 1000, TZ).hour
+        hours[hour]["orders"] += 1
+        hours[hour]["revenue"] += o.total
+        ratio = o.total / o.subtotal if o.subtotal else 0
+        for it in o.items:
+            pid = it.get("productId", "")
+            net = round(it["unitPrice"] * it["qty"] * ratio)
+            item_cost = it.get("unitCost", 0) * it["qty"]
+            p = prods.get(pid)
+            row = by_product.setdefault(pid, {"id": pid, "name": p.name if p else it.get("name", pid),
+                                              "cat": p.cat if p else "", "qty": 0, "revenue": 0, "cost": 0})
+            row["qty"] += it["qty"]
+            row["revenue"] += net
+            row["cost"] += item_cost
+            cat = row["cat"]
+            crow = by_cat.setdefault(cat, {"id": cat, "name": cat_names.get(cat, "—"), "qty": 0, "revenue": 0, "cost": 0})
+            crow["qty"] += it["qty"]
+            crow["revenue"] += net
+            crow["cost"] += item_cost
+    products = list(by_product.values())
+    for r in products + list(by_cat.values()):
+        r["profit"] = r["revenue"] - r["cost"]
+    abc_classes(products)
+    for st in by_staff.values():
+        st["avg"] = round(st["revenue"] / st["orders"]) if st["orders"] else 0
+    return {
+        "from": since, "to": until,
+        "totals": {"orders": count, "revenue": revenue, "cost": cost, "profit": revenue - cost,
+                   "avg": round(revenue / count) if count else 0, "cancelled": cancelled, "discount": discount},
+        "products": sorted(products, key=lambda r: r["revenue"], reverse=True),
+        "categories": sorted(by_cat.values(), key=lambda r: r["revenue"], reverse=True),
+        "staff": sorted(by_staff.values(), key=lambda r: r["revenue"], reverse=True),
+        "payments": by_payment,
+        "hours": hours,
+    }
+
+
+RISK_DISCOUNT_PCT = 20
+RISK_LATE_CANCEL_MS = 15 * 60 * 1000
+
+
+@app.get("/api/reports/risky")
+def risky_report(days: int = 30, date_from: str | None = None, date_to: str | None = None,
+                 ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Receipts worth a second look: cancellations, large manual discounts, zero totals."""
+    since, until = parse_range(date_from, date_to, days)
+    out = []
+    per_staff: dict[str, dict] = {}
+    for o in orders_between(ctx, since, until):
+        flags = []
+        promo = sum(it.get("promoDiscount", 0) for it in o.items)
+        manual = max(0, o.discount - promo)
+        if o.status == "cancelled":
+            flags.append("cancelled")
+            if o.cancelled_at and o.cancelled_at - o.created_at > RISK_LATE_CANCEL_MS:
+                flags.append("late_cancel")
+            if o.cancelled_by and o.cancelled_by == o.staff_name:
+                flags.append("self_cancel")
+        if o.subtotal and manual * 100 >= o.subtotal * RISK_DISCOUNT_PCT:
+            flags.append("big_discount")
+        if o.total == 0 and o.status != "cancelled":
+            flags.append("zero_total")
+        if o.bonus_used and o.subtotal and o.bonus_used * 100 >= o.subtotal * 50:
+            flags.append("big_bonus")
+        if not flags:
+            continue
+        rec = order_out(o)
+        rec["flags"] = flags
+        rec["manualDiscount"] = manual
+        out.append(rec)
+        st = per_staff.setdefault(o.staff_name, {"name": o.staff_name, "receipts": 0, "amount": 0})
+        st["receipts"] += 1
+        st["amount"] += o.subtotal
+    out.sort(key=lambda r: r["createdAt"], reverse=True)
+    return {"from": since, "to": until, "receipts": out[:1000],
+            "staff": sorted(per_staff.values(), key=lambda r: r["receipts"], reverse=True)}
+
+
+# ---------- staff checklists ----------
+
+def checklist_out(c: ChecklistTemplate) -> dict:
+    return {"id": c.id, "name": c.name, "kind": c.kind, "items": list(c.items or []), "active": c.active}
+
+
+class ChecklistIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    kind: Literal["open", "close", "any"] = "any"
+    items: list[str] = Field(min_length=1, max_length=40)
+    active: bool = True
+
+
+def clean_items(items: list[str]) -> list[str]:
+    cleaned = [i.strip()[:120] for i in items if i.strip()]
+    if not cleaned:
+        raise HTTPException(422, "Kamida bitta band yozing")
+    return cleaned
+
+
+@app.get("/api/checklists")
+def checklists_list(ctx: Ctx = Depends(auth)) -> list[dict]:
+    items = rows(ctx.db, ChecklistTemplate, ctx.cid)
+    if ctx.staff.role not in MANAGERS:
+        items = [c for c in items if c.active]
+    return [checklist_out(c) for c in items]
+
+
+@app.post("/api/checklists")
+def checklists_add(body: ChecklistIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    c = ChecklistTemplate(company_id=ctx.cid, name=body.name.strip(), kind=body.kind,
+                          items=clean_items(body.items), active=body.active)
+    ctx.db.add(c)
+    ctx.db.commit()
+    return checklist_out(c)
+
+
+@app.put("/api/checklists/{cid_}")
+def checklists_update(cid_: int, body: ChecklistIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    c = get_owned(ctx, ChecklistTemplate, cid_)
+    c.name, c.kind, c.items, c.active = body.name.strip(), body.kind, clean_items(body.items), body.active
+    ctx.db.commit()
+    return checklist_out(c)
+
+
+@app.delete("/api/checklists/{cid_}")
+def checklists_delete(cid_: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, ChecklistTemplate, cid_))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class ChecklistRunIn(BaseModel):
+    done: list[bool] = Field(max_length=40)
+
+
+def checklist_run_out(r: ChecklistRun) -> dict:
+    return {"id": r.id, "templateId": r.template_id, "name": r.template_name, "shiftId": r.shift_id,
+            "staff": r.staff_name, "items": r.items, "done": r.done, "total": r.total, "createdAt": r.created_at}
+
+
+@app.post("/api/checklists/{cid_}/runs")
+def checklists_submit(cid_: int, body: ChecklistRunIn, ctx: Ctx = Depends(auth)) -> dict:
+    c = get_owned(ctx, ChecklistTemplate, cid_)
+    if not c.active:
+        raise HTTPException(409, "Checklist o'chirilgan")
+    if len(body.done) != len(c.items):
+        raise HTTPException(422, "Checklist bandlari soni mos emas")
+    shift = open_shift(ctx.db, ctx.cid)
+    lines = [{"text": text, "done": bool(d)} for text, d in zip(c.items, body.done)]
+    r = ChecklistRun(company_id=ctx.cid, template_id=c.id, template_name=c.name,
+                     shift_id=shift.id if shift else None, staff_name=ctx.staff.name,
+                     items=lines, done=sum(body.done), total=len(lines))
+    ctx.db.add(r)
+    ctx.db.commit()
+    return checklist_run_out(r)
+
+
+@app.get("/api/checklist-runs")
+def checklist_runs(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = (select(ChecklistRun).where(ChecklistRun.company_id == ctx.cid,
+                                    ChecklistRun.created_at >= start_of_day_ms(max(1, min(days, 366))))
+         .order_by(ChecklistRun.id.desc()).limit(500))
+    return [checklist_run_out(r) for r in ctx.db.scalars(q)]
+
+
+# ---------- recurring payments (ijara, kommunal) ----------
+
+def current_month() -> str:
+    return datetime.now(TZ).strftime("%Y-%m")
+
+
+def recurring_out(r: RecurringPayment) -> dict:
+    today = datetime.now(TZ)
+    paid = r.last_paid_month >= today.strftime("%Y-%m") if r.last_paid_month else False
+    return {
+        "id": r.id, "name": r.name, "amount": r.amount, "category": r.category, "payment": r.payment,
+        "day": r.day, "active": r.active, "lastPaidMonth": r.last_paid_month,
+        "paidThisMonth": paid, "due": r.active and not paid and today.day >= r.day,
+    }
+
+
+class RecurringIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    amount: int = Field(gt=0, le=10_000_000_000)
+    category: str = Field(min_length=1, max_length=64)
+    payment: Literal["cash", "card", "bank"] = "bank"
+    day: int = Field(ge=1, le=28)
+    active: bool = True
+
+
+@app.get("/api/recurring")
+def recurring_list(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [recurring_out(r) for r in rows(ctx.db, RecurringPayment, ctx.cid)]
+
+
+@app.post("/api/recurring")
+def recurring_add(body: RecurringIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    r = RecurringPayment(company_id=ctx.cid, name=body.name.strip(), amount=body.amount,
+                         category=body.category.strip(), payment=body.payment, day=body.day,
+                         active=body.active, last_paid_month="")
+    ctx.db.add(r)
+    ctx.db.commit()
+    return recurring_out(r)
+
+
+@app.put("/api/recurring/{rid}")
+def recurring_update(rid: int, body: RecurringIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    r = get_owned(ctx, RecurringPayment, rid)
+    r.name, r.amount, r.category = body.name.strip(), body.amount, body.category.strip()
+    r.payment, r.day, r.active = body.payment, body.day, body.active
+    ctx.db.commit()
+    return recurring_out(r)
+
+
+@app.delete("/api/recurring/{rid}")
+def recurring_delete(rid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, RecurringPayment, rid))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class RecurringPayIn(BaseModel):
+    month: str | None = Field(default=None, pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+    amount: int | None = Field(default=None, gt=0, le=10_000_000_000)
+
+
+@app.post("/api/recurring/{rid}/pay")
+def recurring_pay(rid: int, body: RecurringPayIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Record this month's payment once as an Expense."""
+    r = ctx.db.scalar(select(RecurringPayment).where(
+        RecurringPayment.id == rid, RecurringPayment.company_id == ctx.cid).with_for_update())
+    if r is None:
+        raise HTTPException(404, "Topilmadi")
+    month = body.month or current_month()
+    if r.last_paid_month and r.last_paid_month >= month:
+        raise HTTPException(409, "Bu oy uchun allaqachon to'langan")
+    ctx.db.add(Expense(company_id=ctx.cid, amount=body.amount or r.amount, category=r.category,
+                       description=f"{r.name} ({month})"[:256], payment=r.payment, staff_name=ctx.staff.name))
+    r.last_paid_month = month
+    ctx.db.commit()
+    return recurring_out(r)
+
+
+# ---------- restaurant mode: workshops, halls, tables, open checks, kitchen tickets ----------
+
+class NameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/workshops")
+def workshop_add(body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = Workshop(company_id=ctx.cid, key=slugify(body.name), name=body.name.strip(), sort=len(rows(ctx.db, Workshop, ctx.cid)))
+    ctx.db.add(w)
+    ctx.db.commit()
+    return {"id": w.key, "name": w.name}
+
+
+@app.put("/api/workshops/{key}")
+def workshop_rename(key: str, body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = get_row(ctx.db, Workshop, ctx.cid, key)
+    w.name = body.name.strip()
+    ctx.db.commit()
+    return {"id": w.key, "name": w.name}
+
+
+@app.delete("/api/workshops/{key}")
+def workshop_delete(key: str, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    w = get_row(ctx.db, Workshop, ctx.cid, key)
+    for c in rows(ctx.db, Category, ctx.cid):
+        if c.workshop == key:
+            c.workshop = ""
+    ctx.db.delete(w)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class CategoryWorkshopIn(BaseModel):
+    workshop: str = Field(default="", max_length=64)
+
+
+@app.patch("/api/categories/{key}/workshop")
+def category_workshop(key: str, body: CategoryWorkshopIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    cat = get_row(ctx.db, Category, ctx.cid, key)
+    if body.workshop:
+        get_row(ctx.db, Workshop, ctx.cid, body.workshop)
+    cat.workshop = body.workshop
+    ctx.db.commit()
+    return {"id": cat.key, "name": cat.name, "workshop": cat.workshop}
+
+
+def hall_out(h: Hall, tables: list[DiningTable]) -> dict:
+    return {"id": h.id, "name": h.name, "tables": [
+        {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active}
+        for t in sorted((t for t in tables if t.hall_id == h.id), key=lambda t: (t.sort, t.id))]}
+
+
+@app.get("/api/halls")
+def halls_list(ctx: Ctx = Depends(auth)) -> list[dict]:
+    tables = rows(ctx.db, DiningTable, ctx.cid)
+    return [hall_out(h, tables) for h in sorted(rows(ctx.db, Hall, ctx.cid), key=lambda h: (h.sort, h.id))]
+
+
+@app.post("/api/halls")
+def hall_add(body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = Hall(company_id=ctx.cid, name=body.name.strip(), sort=len(rows(ctx.db, Hall, ctx.cid)))
+    ctx.db.add(h)
+    ctx.db.commit()
+    return hall_out(h, [])
+
+
+@app.put("/api/halls/{hid}")
+def hall_rename(hid: int, body: NameIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = get_owned(ctx, Hall, hid)
+    h.name = body.name.strip()
+    ctx.db.commit()
+    return hall_out(h, rows(ctx.db, DiningTable, ctx.cid))
+
+
+@app.delete("/api/halls/{hid}")
+def hall_delete(hid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    h = get_owned(ctx, Hall, hid)
+    if any(t.hall_id == h.id for t in rows(ctx.db, DiningTable, ctx.cid)):
+        raise HTTPException(409, "Avval zaldagi stollarni o'chiring")
+    ctx.db.delete(h)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class TableIn(BaseModel):
+    hallId: int
+    name: str = Field(min_length=1, max_length=32)
+    seats: int = Field(default=4, ge=1, le=100)
+    active: bool = True
+
+
+@app.post("/api/tables")
+def table_add(body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    get_owned(ctx, Hall, body.hallId)
+    t = DiningTable(company_id=ctx.cid, hall_id=body.hallId, name=body.name.strip(), seats=body.seats,
+                    active=body.active, sort=len(rows(ctx.db, DiningTable, ctx.cid)))
+    ctx.db.add(t)
+    ctx.db.commit()
+    return {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active, "hallId": t.hall_id}
+
+
+@app.put("/api/tables/{tid}")
+def table_update(tid: int, body: TableIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    t = get_owned(ctx, DiningTable, tid)
+    get_owned(ctx, Hall, body.hallId)
+    t.hall_id, t.name, t.seats, t.active = body.hallId, body.name.strip(), body.seats, body.active
+    ctx.db.commit()
+    return {"id": t.id, "name": t.name, "seats": t.seats, "active": t.active, "hallId": t.hall_id}
+
+
+@app.delete("/api/tables/{tid}")
+def table_delete(tid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    t = get_owned(ctx, DiningTable, tid)
+    if ctx.db.scalar(select(OpenCheck).where(OpenCheck.company_id == ctx.cid, OpenCheck.table_id == t.id,
+                                             OpenCheck.status == "open")):
+        raise HTTPException(409, "Stolda ochiq hisob bor")
+    ctx.db.delete(t)
+    ctx.db.commit()
+    return {"ok": True}
+
+
+def check_total(c: OpenCheck) -> int:
+    return sum(i["unitPrice"] * i["qty"] for i in (c.items or []))
+
+
+def check_out(c: OpenCheck) -> dict:
+    return {
+        "id": c.id, "tableId": c.table_id, "tableName": c.table_name, "guests": c.guests,
+        "waiter": c.waiter_name, "comment": c.comment, "items": c.items or [], "total": check_total(c),
+        "status": c.status, "orderId": str(c.order_id) if c.order_id else None,
+        "createdAt": c.created_at, "updatedAt": c.updated_at, "closedAt": c.closed_at,
+        "unsent": sum(max(0, i["qty"] - i.get("sent", 0)) for i in (c.items or [])),
+    }
+
+
+def ticket_out(t: KitchenTicket) -> dict:
+    return {"id": t.id, "checkId": t.check_id, "workshop": t.workshop, "tableName": t.table_name,
+            "waiter": t.waiter_name, "items": t.items, "comment": t.comment, "status": t.status,
+            "createdAt": t.created_at, "readyAt": t.ready_at}
+
+
+def get_check(ctx: Ctx, check_id: int, lock: bool = True) -> OpenCheck:
+    q = select(OpenCheck).where(OpenCheck.id == check_id, OpenCheck.company_id == ctx.cid)
+    c = ctx.db.scalar(q.with_for_update() if lock else q)
+    if c is None:
+        raise HTTPException(404, "Hisob topilmadi")
+    return c
+
+
+def require_open(c: OpenCheck) -> None:
+    if c.status != "open":
+        raise HTTPException(409, "Hisob yopilgan")
+
+
+def can_void(ctx: Ctx) -> bool:
+    return ctx.staff.role in MANAGERS or bool(ctx.staff.can_cancel_orders)
+
+
+class CheckOpenIn(BaseModel):
+    tableId: int | None = None
+    guests: int = Field(default=1, ge=1, le=100)
+    comment: str = Field(default="", max_length=200)
+
+
+def table_label(ctx: Ctx, table_id: int | None) -> str:
+    if table_id is None:
+        return ""
+    t = get_owned(ctx, DiningTable, table_id)
+    if not t.active:
+        raise HTTPException(409, "Stol faol emas")
+    hall = ctx.db.get(Hall, t.hall_id)
+    return (f"{hall.name} · {t.name}" if hall else t.name)[:64]
+
+
+@app.get("/api/checks")
+def checks_list(ctx: Ctx = Depends(require(*WAITERS))) -> list[dict]:
+    q = select(OpenCheck).where(OpenCheck.company_id == ctx.cid, OpenCheck.status == "open").order_by(OpenCheck.id)
+    return [check_out(c) for c in ctx.db.scalars(q)]
+
+
+@app.post("/api/checks")
+def check_open(body: CheckOpenIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    shift = open_shift(ctx.db, ctx.cid)
+    if shift is None:
+        raise HTTPException(409, "Avval smenani oching")
+    c = OpenCheck(company_id=ctx.cid, shift_id=shift.id, table_id=body.tableId, table_name=table_label(ctx, body.tableId),
+                  guests=body.guests, waiter_name=ctx.staff.name, comment=body.comment.strip(), items=[])
+    ctx.db.add(c)
+    ctx.db.commit()
+    return check_out(c)
+
+
+@app.patch("/api/checks/{check_id}")
+def check_update(check_id: int, body: CheckOpenIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    """Move the bill to another table, change guests or the comment."""
+    c = get_check(ctx, check_id)
+    require_open(c)
+    c.table_id, c.table_name = body.tableId, table_label(ctx, body.tableId)
+    c.guests, c.comment, c.updated_at = body.guests, body.comment.strip(), now_ms()
+    ctx.db.commit()
+    return check_out(c)
+
+
+class CheckItemsIn(BaseModel):
+    items: list[OrderItemIn] = Field(max_length=100)
+
+
+@app.put("/api/checks/{check_id}/items")
+def check_set_items(check_id: int, body: CheckItemsIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    """Replace the bill's lines. Lines already sent to the kitchen can only be reduced with cancel rights."""
+    db, cid = ctx.db, ctx.cid
+    c = get_check(ctx, check_id)
+    require_open(c)
+    prods = {p.key: p for p in rows(db, Product, cid)}
+    mods = {m.key: m for m in rows(db, Modifier, cid)}
+    ings = {i.key: i for i in rows(db, Ingredient, cid)}
+    sent_before = {i["key"]: i.get("sent", 0) for i in (c.items or [])}
+    items: list[dict] = []
+    for it in body.items:
+        product = prods.get(it.productId)
+        if not product:
+            raise HTTPException(400, "Mahsulot topilmadi")
+        built = build_item(product, it.size, it.modIds, it.qty, mods, ings)
+        same = next((x for x in items if x["key"] == built["key"]), None)
+        if same:
+            same["qty"] += built["qty"]
+            if same["qty"] > 99:
+                raise HTTPException(400, "Miqdor noto'g'ri")
+        else:
+            items.append(built)
+    for key, sent in sent_before.items():
+        line = next((x for x in items if x["key"] == key), None)
+        qty = line["qty"] if line else 0
+        if qty < sent and not can_void(ctx):
+            raise HTTPException(403, "Oshxonaga yuborilgan taomni kamaytirish uchun ruxsat yo'q")
+        if line:
+            line["sent"] = min(sent, qty)
+    for line in items:
+        line.setdefault("sent", 0)
+    if stock_settings(db, cid).auto_stoplist:
+        need: dict[str, float] = {}
+        for it in items:
+            for l in it["consumption"]:
+                need[l["ing"]] = need.get(l["ing"], 0) + l["qty"] * it["qty"]
+        short = [ings[k].name for k, q in need.items() if k in ings and ings[k].stock + 0.000001 < q]
+        if short:
+            raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
+    c.items, c.updated_at = items, now_ms()
+    db.commit()
+    return check_out(c)
+
+
+def send_to_kitchen(ctx: Ctx, c: OpenCheck) -> list[KitchenTicket]:
+    """Create one ticket per workshop for quantities not yet sent; mark them sent."""
+    prods = {p.key: p for p in rows(ctx.db, Product, ctx.cid)}
+    cats = {cat.key: cat for cat in rows(ctx.db, Category, ctx.cid)}
+    groups: dict[str, list[dict]] = {}
+    items = [dict(i) for i in (c.items or [])]
+    for line in items:
+        delta = line["qty"] - line.get("sent", 0)
+        if delta <= 0:
+            continue
+        product = prods.get(line["productId"])
+        cat = cats.get(product.cat) if product else None
+        workshop = cat.workshop if cat else ""
+        groups.setdefault(workshop or "", []).append(
+            {"name": line["name"], "size": line["size"], "mods": line["mods"], "qty": delta})
+        line["sent"] = line["qty"]
+    tickets = []
+    for workshop, lines in groups.items():
+        t = KitchenTicket(company_id=ctx.cid, check_id=c.id, workshop=workshop, table_name=c.table_name,
+                          waiter_name=c.waiter_name, items=lines, comment=c.comment)
+        ctx.db.add(t)
+        tickets.append(t)
+    c.items = items
+    c.updated_at = now_ms()
+    return tickets
+
+
+@app.post("/api/checks/{check_id}/send")
+def check_send(check_id: int, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    c = get_check(ctx, check_id)
+    require_open(c)
+    tickets = send_to_kitchen(ctx, c)
+    if not tickets:
+        raise HTTPException(409, "Yuboriladigan yangi taom yo'q")
+    ctx.db.commit()
+    return {"check": check_out(c), "tickets": [ticket_out(t) for t in tickets]}
+
+
+class CheckPayIn(BaseModel):
+    payment: Literal["naqd", "karta", "payme", "click"]
+    cashGiven: int | None = Field(default=None, ge=0)
+    discountPct: int = Field(default=0, ge=0, le=50)
+    customerPhone: str = Field(default="", max_length=20)
+    bonusRedeem: int = Field(default=0, ge=0)
+    clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
+
+
+@app.post("/api/checks/{check_id}/pay")
+def check_pay(check_id: int, body: CheckPayIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
+    """Close the bill as a paid order. Unsent items are sent to the kitchen first."""
+    c = get_check(ctx, check_id)
+    if c.status == "paid" and c.order_id:
+        existing = ctx.db.get(Order, c.order_id)
+        if existing is not None:
+            return order_out(existing)
+    require_open(c)
+    if not c.items:
+        raise HTTPException(409, "Hisob bo'sh")
+    send_to_kitchen(ctx, c)
+    order_in = OrderIn(
+        items=[OrderItemIn(productId=i["productId"], size=i["key"].split("|")[1], modIds=i["modIds"], qty=i["qty"]) for i in c.items],
+        customer=c.table_name[:64], discountPct=body.discountPct, payment=body.payment, cashGiven=body.cashGiven,
+        customerPhone=body.customerPhone, bonusRedeem=body.bonusRedeem, clientKey=body.clientKey,
+    )
+
+    def mark_paid(order: Order) -> None:
+        c.status, c.order_id, c.closed_at = "paid", order.id, now_ms()
+
+    return place_order(order_in, ctx, status="done", stock_guard=False, on_created=mark_paid)
+
+
+class VoidIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+
+
+@app.post("/api/checks/{check_id}/void")
+def check_void(check_id: int, body: VoidIn, ctx: Ctx = Depends(require(*WAITERS))) -> dict:
+    c = get_check(ctx, check_id)
+    require_open(c)
+    if any(i.get("sent", 0) > 0 for i in (c.items or [])) and not can_void(ctx):
+        raise HTTPException(403, "Oshxonaga yuborilgan hisobni bekor qilish uchun ruxsat yo'q")
+    c.status, c.void_reason, c.closed_at = "void", f"{ctx.staff.name}: {body.reason.strip()}"[:200], now_ms()
+    ctx.db.commit()
+    return check_out(c)
+
+
+class TicketStatusIn(BaseModel):
+    status: Literal["preparing", "ready", "done"]
+
+
+@app.patch("/api/tickets/{ticket_id}")
+def ticket_status(ticket_id: int, body: TicketStatusIn, ctx: Ctx = Depends(auth)) -> dict:
+    if ctx.staff.role not in BARISTAS and not (ctx.staff.role == "kassir" and ctx.staff.can_barista) \
+            and ctx.staff.role != "ofitsiant":
+        raise HTTPException(403, "Barista vazifasi uchun ruxsat yo'q")
+    t = ctx.db.scalar(select(KitchenTicket).where(KitchenTicket.id == ticket_id,
+                                                  KitchenTicket.company_id == ctx.cid).with_for_update())
+    if t is None:
+        raise HTTPException(404, "Topilmadi")
+    allowed = {"new": "preparing", "preparing": "ready", "ready": "done"}
+    if allowed.get(t.status) != body.status:
+        raise HTTPException(409, "Buyurtma holatini faqat keyingi bosqichga o'tkazish mumkin")
+    if ctx.staff.role == "ofitsiant" and body.status != "done":
+        raise HTTPException(403, "Ofitsiant faqat tayyor taomni olib ketganini belgilaydi")
+    t.status = body.status
+    if body.status == "ready":
+        t.ready_at = now_ms()
+    ctx.db.commit()
+    return ticket_out(t)

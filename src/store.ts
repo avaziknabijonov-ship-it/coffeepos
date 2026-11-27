@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { getQueuedSales, queueCashSale, removeQueuedSale } from './offline'
-import { setMenu } from './data'
-import type { Menu, Order, OrderItem, Payment, Role, Status } from './data'
+import { cartTotals, setMenu } from './data'
+import type { KitchenTicket, Menu, OpenCheck, Order, OrderItem, Payment, Role, Status } from './data'
 import { ApiError, api, getToken, setToken } from './api'
 import { getLang, setLangValue } from './i18n'
 import type { Lang } from './i18n'
@@ -23,6 +23,8 @@ export interface State {
   orders: Order[]
   stock: Record<string, number>
   shift: ShiftInfo | null
+  tickets: KitchenTicket[]
+  checks: OpenCheck[]
   online: boolean
   pendingCount: number
   pendingError: string
@@ -35,7 +37,7 @@ export const startOfToday = () => {
   return d.getTime()
 }
 
-let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, online: true, pendingCount: 0, pendingError: '', lang: getLang() }
+let state: State = { phase: 'loading', session: null, menuVersion: 0, orders: [], stock: {}, shift: null, tickets: [], checks: [], online: true, pendingCount: 0, pendingError: '', lang: getLang() }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch }
@@ -72,7 +74,7 @@ async function pushPendingSales() {
   try {
     for (const sale of getQueuedSales(company)) {
       try {
-        await api<Order>('/api/orders', { body: { ...sale.body, offline: true } })
+        await api<Order>('/api/orders', { body: { ...sale.body, offline: true, soldAt: sale.createdAt } })
         removeQueuedSale(company, sale.clientKey)
         set({ pendingError: '' })
       } catch (e) {
@@ -89,12 +91,12 @@ async function pushPendingSales() {
 export async function sync() {
   try {
     await pushPendingSales()
-    const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null }>(`/api/sync?since=${startOfToday()}`)
+    const d = await api<{ orders: Order[]; stock: Record<string, number>; shift: ShiftInfo | null; tickets?: KitchenTicket[]; checks?: OpenCheck[] }>(`/api/sync?since=${startOfToday()}`)
     const company = state.session?.company.slug
     if (company) {
       try { localStorage.setItem(syncCache(company), JSON.stringify(d)) } catch { /* cache is optional */ }
     }
-    set({ orders: d.orders, stock: d.stock, shift: d.shift, online: true })
+    set({ orders: d.orders, stock: d.stock, shift: d.shift, tickets: d.tickets ?? [], checks: d.checks ?? [], online: true })
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) logout()
     else set({ online: false })
@@ -172,7 +174,7 @@ export async function register(body: { companyName: string; slug: string; ownerN
 export function logout() {
   clearInterval(timer)
   setToken(null)
-  set({ phase: 'login', session: null, orders: [], stock: {}, shift: null })
+  set({ phase: 'login', session: null, orders: [], stock: {}, shift: null, tickets: [], checks: [] })
 }
 
 export const nextNumber = () =>
@@ -193,11 +195,10 @@ export async function placeOrder(items: OrderItem[], o: { customer: string; disc
       clientKey, customer: o.customer, items: payload.items, discountPct: o.discountPct,
       payment: 'naqd', cashGiven: o.cashGiven,
     })
-    const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
-    const discount = Math.round(subtotal * o.discountPct / 100 / 100) * 100
+    const totals = cartTotals(items, o.discountPct, new Date(sale.createdAt))
     order = {
       id: 'offline:' + clientKey, number: nextNumber(), customer: o.customer,
-      items, subtotal, discount, total: subtotal - discount,
+      items: totals.items, subtotal: totals.subtotal, discount: totals.discount, total: totals.total,
       cost: items.reduce((sum, item) => sum + item.qty * item.unitCost, 0),
       payment: 'naqd', cashGiven: o.cashGiven, status: 'new',
       createdAt: sale.createdAt, readyAt: null, barista: state.session.staff.name,
@@ -223,6 +224,15 @@ export async function setStatus(id: string, status: Status) {
 export async function stockMove(ing: string, qty: number, reason: 'intake' | 'writeoff' | 'count', note?: string) {
   await api('/api/stock', { body: { ing, qty, reason, note } })
   await Promise.all([sync(), refreshMenu()])
+}
+
+export async function setTicketStatus(id: number, status: KitchenTicket['status']) {
+  set({ tickets: state.tickets.map((x) => (x.id === id ? { ...x, status, readyAt: status === 'ready' ? Date.now() : x.readyAt } : x)) })
+  try {
+    await api(`/api/tickets/${id}`, { method: 'PATCH', body: { status } })
+  } finally {
+    void sync()
+  }
 }
 
 export async function produceSemi(ing: string, qty: number) {

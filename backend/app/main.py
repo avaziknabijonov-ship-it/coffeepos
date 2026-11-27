@@ -16,10 +16,10 @@ from sqlalchemy.orm import Session
 
 from . import seed
 from .db import (
-    Base, BonusConfig, BonusLedger, Category, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
+    Base, BonusConfig, BonusLedger, Category, ChecklistRun, ChecklistTemplate, Promotion, RecurringPayment, Company, Customer, Expense, StaffPayment, Ingredient, Inventory, Modifier, Order, Product, PurchaseInvoice, Subscription, PayrollPlan, SessionLocal, Shift, Staff, StockConfig, StockMove, engine, now_ms,
 )
 from .notify import low_stock_crossings, send_low_stock_alert
-from .logic import build_item
+from .logic import apply_promotions, build_item, round100
 from .security import LoginLimiter, check_pin, hash_pin, make_token, read_token
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Asia/Tashkent"))
@@ -320,6 +320,7 @@ def menu(ctx: Ctx = Depends(auth)) -> dict:
         "modifiers": [{"id": m.key, "group": m.group, "name": m.name, "price": m.price, "effect": m.effect} for m in mods],
         "ingredients": [ingredient_out(i) for i in rows(db, Ingredient, cid)],
         "settings": {"autoStoplist": stock_settings(db, cid).auto_stoplist},
+        "promotions": [promotion_out(p) for p in rows(db, Promotion, cid) if p.active],
     }
 
 
@@ -1244,6 +1245,8 @@ class OrderIn(BaseModel):
     clientKey: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{12,64}$")
     # Sale already happened while the device was offline: never refuse it for stock.
     offline: bool = False
+    # Device time of an offline sale, so happy-hour promotions match when it was sold.
+    soldAt: int | None = Field(default=None, gt=0)
 
 
 @app.get("/api/orders/history")
@@ -1305,7 +1308,13 @@ def create_order(body: OrderIn, ctx: Ctx = Depends(require(*CASHIERS))) -> dict:
             raise HTTPException(409, f"Qoldiq yetarli emas (stop-list): {', '.join(short)}")
 
     subtotal = sum(i["unitPrice"] * i["qty"] for i in items)
-    discount = round(subtotal * body.discountPct / 100 / 100) * 100
+    sold_at = now_ms()
+    if body.offline and body.soldAt and sold_at - 72 * 3600 * 1000 <= body.soldAt <= sold_at + 5 * 60 * 1000:
+        sold_at = body.soldAt
+    promos = rows(db, Promotion, cid)
+    promo_discount = apply_promotions(items, {p.key: p.cat for p in prods.values()}, promos,
+                                      datetime.fromtimestamp(sold_at / 1000, TZ))
+    discount = promo_discount + round100((subtotal - promo_discount) * body.discountPct / 100)
     total = subtotal - discount
     phone = body.customerPhone.strip()
     customer = None
@@ -1606,3 +1615,389 @@ def platform_subscription(slug: str, body: PlatformSubscriptionIn,
             sub.plan, sub.status, sub.expires_at, sub.updated_at = body.plan, "active", expiry, current
     db.commit()
     return platform_company(company, sub)
+
+
+# ---------- promotions (aksiyalar) ----------
+
+TIME_RE = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+DATE_RE = r"^([0-9]{4}-[0-9]{2}-[0-9]{2})?$"
+
+
+def promotion_out(p: Promotion) -> dict:
+    return {
+        "id": p.id, "name": p.name, "pct": p.pct, "target": p.target, "keys": list(p.keys or []),
+        "days": list(p.days or []), "startTime": p.start_time, "endTime": p.end_time,
+        "dateFrom": p.date_from, "dateTo": p.date_to, "active": p.active,
+    }
+
+
+class PromotionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    pct: int = Field(ge=1, le=90)
+    target: Literal["all", "category", "product"] = "all"
+    keys: list[str] = Field(default=[], max_length=200)
+    days: list[int] = Field(default=[], max_length=7)
+    startTime: str = Field(default="00:00", pattern=TIME_RE)
+    endTime: str = Field(default="00:00", pattern=TIME_RE)
+    dateFrom: str = Field(default="", pattern=DATE_RE)
+    dateTo: str = Field(default="", pattern=DATE_RE)
+    active: bool = True
+
+
+def apply_promotion_body(ctx: Ctx, p: Promotion, body: PromotionIn) -> None:
+    if any(d < 0 or d > 6 for d in body.days) or len(set(body.days)) != len(body.days):
+        raise HTTPException(422, "Hafta kunlari noto'g'ri")
+    if body.dateFrom and body.dateTo and body.dateTo < body.dateFrom:
+        raise HTTPException(422, "Sana oralig'i noto'g'ri")
+    keys = list(dict.fromkeys(body.keys))
+    if body.target == "all":
+        keys = []
+    else:
+        if not keys:
+            raise HTTPException(422, "Aksiya uchun kategoriya yoki mahsulot tanlang")
+        model = Category if body.target == "category" else Product
+        known = {r.key for r in rows(ctx.db, model, ctx.cid)}
+        if any(k not in known for k in keys):
+            raise HTTPException(422, "Aksiyada noma'lum kategoriya yoki mahsulot")
+    p.name, p.pct, p.target, p.keys = body.name.strip(), body.pct, body.target, keys
+    p.days = sorted(body.days)
+    p.start_time, p.end_time = body.startTime, body.endTime
+    p.date_from, p.date_to, p.active = body.dateFrom, body.dateTo, body.active
+
+
+def get_owned(ctx: Ctx, model, row_id: int):
+    row = ctx.db.get(model, row_id)
+    if row is None or row.company_id != ctx.cid:
+        raise HTTPException(404, "Topilmadi")
+    return row
+
+
+@app.get("/api/promotions")
+def promotions_list(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [promotion_out(p) for p in rows(ctx.db, Promotion, ctx.cid)]
+
+
+@app.post("/api/promotions")
+def promotions_add(body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    p = Promotion(company_id=ctx.cid)
+    apply_promotion_body(ctx, p, body)
+    ctx.db.add(p)
+    ctx.db.commit()
+    return promotion_out(p)
+
+
+@app.put("/api/promotions/{pid}")
+def promotions_update(pid: int, body: PromotionIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    p = get_owned(ctx, Promotion, pid)
+    apply_promotion_body(ctx, p, body)
+    ctx.db.commit()
+    return promotion_out(p)
+
+
+@app.delete("/api/promotions/{pid}")
+def promotions_delete(pid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, Promotion, pid))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+# ---------- sales analytics: ABC, breakdowns, risky receipts ----------
+
+def parse_range(date_from: str | None, date_to: str | None, days: int) -> tuple[int, int]:
+    if date_from is None and date_to is None:
+        days = max(1, min(days, 366))
+        return start_of_day_ms(days - 1), start_of_day_ms(-1)
+    if not date_from or not date_to:
+        raise HTTPException(400, "Ikkala sanani kiriting")
+    try:
+        lo = datetime.strptime(date_from, "%Y-%m-%d")
+        hi = datetime.strptime(date_to, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Sana formati noto'g'ri")
+    if hi < lo or (hi - lo).days > 366:
+        raise HTTPException(400, "Sana oralig'i 1-366 kun bo'lishi kerak")
+    return int(lo.replace(tzinfo=TZ).timestamp() * 1000), int((hi + timedelta(days=1)).replace(tzinfo=TZ).timestamp() * 1000)
+
+
+def orders_between(ctx: Ctx, since: int, until: int) -> list[Order]:
+    return ctx.db.scalars(select(Order).where(
+        Order.company_id == ctx.cid, Order.created_at >= since, Order.created_at < until
+    ).order_by(Order.created_at)).all()
+
+
+def abc_classes(rows_: list[dict], key: str = "revenue") -> None:
+    total = sum(r[key] for r in rows_) or 1
+    acc = 0
+    for r in sorted(rows_, key=lambda r: r[key], reverse=True):
+        r["share"] = round(r[key] * 100 / total, 1)
+        r["abc"] = "A" if acc < total * 0.8 else ("B" if acc < total * 0.95 else "C")
+        acc += r[key]
+
+
+@app.get("/api/reports/sales")
+def sales_report(days: int = 30, date_from: str | None = None, date_to: str | None = None,
+                 ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Net revenue by product, category, staff, payment and hour, plus ABC classes."""
+    since, until = parse_range(date_from, date_to, days)
+    prods = {p.key: p for p in rows(ctx.db, Product, ctx.cid)}
+    cat_names = {c.key: c.name for c in rows(ctx.db, Category, ctx.cid)}
+    by_product: dict[str, dict] = {}
+    by_cat: dict[str, dict] = {}
+    by_staff: dict[str, dict] = {}
+    by_payment: dict[str, int] = {}
+    hours = [{"hour": h, "orders": 0, "revenue": 0} for h in range(24)]
+    revenue = cost = count = cancelled = discount = 0
+    for o in orders_between(ctx, since, until):
+        staff = by_staff.setdefault(o.staff_name, {"name": o.staff_name, "orders": 0, "revenue": 0, "cancelled": 0, "discount": 0})
+        if o.status == "cancelled":
+            staff["cancelled"] += 1
+            cancelled += 1
+            continue
+        count += 1
+        revenue += o.total
+        cost += o.cost
+        discount += o.discount
+        staff["orders"] += 1
+        staff["revenue"] += o.total
+        staff["discount"] += o.discount
+        by_payment[o.payment] = by_payment.get(o.payment, 0) + o.total
+        hour = datetime.fromtimestamp(o.created_at / 1000, TZ).hour
+        hours[hour]["orders"] += 1
+        hours[hour]["revenue"] += o.total
+        ratio = o.total / o.subtotal if o.subtotal else 0
+        for it in o.items:
+            pid = it.get("productId", "")
+            net = round(it["unitPrice"] * it["qty"] * ratio)
+            item_cost = it.get("unitCost", 0) * it["qty"]
+            p = prods.get(pid)
+            row = by_product.setdefault(pid, {"id": pid, "name": p.name if p else it.get("name", pid),
+                                              "cat": p.cat if p else "", "qty": 0, "revenue": 0, "cost": 0})
+            row["qty"] += it["qty"]
+            row["revenue"] += net
+            row["cost"] += item_cost
+            cat = row["cat"]
+            crow = by_cat.setdefault(cat, {"id": cat, "name": cat_names.get(cat, "—"), "qty": 0, "revenue": 0, "cost": 0})
+            crow["qty"] += it["qty"]
+            crow["revenue"] += net
+            crow["cost"] += item_cost
+    products = list(by_product.values())
+    for r in products + list(by_cat.values()):
+        r["profit"] = r["revenue"] - r["cost"]
+    abc_classes(products)
+    for st in by_staff.values():
+        st["avg"] = round(st["revenue"] / st["orders"]) if st["orders"] else 0
+    return {
+        "from": since, "to": until,
+        "totals": {"orders": count, "revenue": revenue, "cost": cost, "profit": revenue - cost,
+                   "avg": round(revenue / count) if count else 0, "cancelled": cancelled, "discount": discount},
+        "products": sorted(products, key=lambda r: r["revenue"], reverse=True),
+        "categories": sorted(by_cat.values(), key=lambda r: r["revenue"], reverse=True),
+        "staff": sorted(by_staff.values(), key=lambda r: r["revenue"], reverse=True),
+        "payments": by_payment,
+        "hours": hours,
+    }
+
+
+RISK_DISCOUNT_PCT = 20
+RISK_LATE_CANCEL_MS = 15 * 60 * 1000
+
+
+@app.get("/api/reports/risky")
+def risky_report(days: int = 30, date_from: str | None = None, date_to: str | None = None,
+                 ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Receipts worth a second look: cancellations, large manual discounts, zero totals."""
+    since, until = parse_range(date_from, date_to, days)
+    out = []
+    per_staff: dict[str, dict] = {}
+    for o in orders_between(ctx, since, until):
+        flags = []
+        promo = sum(it.get("promoDiscount", 0) for it in o.items)
+        manual = max(0, o.discount - promo)
+        if o.status == "cancelled":
+            flags.append("cancelled")
+            if o.cancelled_at and o.cancelled_at - o.created_at > RISK_LATE_CANCEL_MS:
+                flags.append("late_cancel")
+            if o.cancelled_by and o.cancelled_by == o.staff_name:
+                flags.append("self_cancel")
+        if o.subtotal and manual * 100 >= o.subtotal * RISK_DISCOUNT_PCT:
+            flags.append("big_discount")
+        if o.total == 0 and o.status != "cancelled":
+            flags.append("zero_total")
+        if o.bonus_used and o.subtotal and o.bonus_used * 100 >= o.subtotal * 50:
+            flags.append("big_bonus")
+        if not flags:
+            continue
+        rec = order_out(o)
+        rec["flags"] = flags
+        rec["manualDiscount"] = manual
+        out.append(rec)
+        st = per_staff.setdefault(o.staff_name, {"name": o.staff_name, "receipts": 0, "amount": 0})
+        st["receipts"] += 1
+        st["amount"] += o.subtotal
+    out.sort(key=lambda r: r["createdAt"], reverse=True)
+    return {"from": since, "to": until, "receipts": out[:1000],
+            "staff": sorted(per_staff.values(), key=lambda r: r["receipts"], reverse=True)}
+
+
+# ---------- staff checklists ----------
+
+def checklist_out(c: ChecklistTemplate) -> dict:
+    return {"id": c.id, "name": c.name, "kind": c.kind, "items": list(c.items or []), "active": c.active}
+
+
+class ChecklistIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    kind: Literal["open", "close", "any"] = "any"
+    items: list[str] = Field(min_length=1, max_length=40)
+    active: bool = True
+
+
+def clean_items(items: list[str]) -> list[str]:
+    cleaned = [i.strip()[:120] for i in items if i.strip()]
+    if not cleaned:
+        raise HTTPException(422, "Kamida bitta band yozing")
+    return cleaned
+
+
+@app.get("/api/checklists")
+def checklists_list(ctx: Ctx = Depends(auth)) -> list[dict]:
+    items = rows(ctx.db, ChecklistTemplate, ctx.cid)
+    if ctx.staff.role not in MANAGERS:
+        items = [c for c in items if c.active]
+    return [checklist_out(c) for c in items]
+
+
+@app.post("/api/checklists")
+def checklists_add(body: ChecklistIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    c = ChecklistTemplate(company_id=ctx.cid, name=body.name.strip(), kind=body.kind,
+                          items=clean_items(body.items), active=body.active)
+    ctx.db.add(c)
+    ctx.db.commit()
+    return checklist_out(c)
+
+
+@app.put("/api/checklists/{cid_}")
+def checklists_update(cid_: int, body: ChecklistIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    c = get_owned(ctx, ChecklistTemplate, cid_)
+    c.name, c.kind, c.items, c.active = body.name.strip(), body.kind, clean_items(body.items), body.active
+    ctx.db.commit()
+    return checklist_out(c)
+
+
+@app.delete("/api/checklists/{cid_}")
+def checklists_delete(cid_: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, ChecklistTemplate, cid_))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class ChecklistRunIn(BaseModel):
+    done: list[bool] = Field(max_length=40)
+
+
+def checklist_run_out(r: ChecklistRun) -> dict:
+    return {"id": r.id, "templateId": r.template_id, "name": r.template_name, "shiftId": r.shift_id,
+            "staff": r.staff_name, "items": r.items, "done": r.done, "total": r.total, "createdAt": r.created_at}
+
+
+@app.post("/api/checklists/{cid_}/runs")
+def checklists_submit(cid_: int, body: ChecklistRunIn, ctx: Ctx = Depends(auth)) -> dict:
+    c = get_owned(ctx, ChecklistTemplate, cid_)
+    if not c.active:
+        raise HTTPException(409, "Checklist o'chirilgan")
+    if len(body.done) != len(c.items):
+        raise HTTPException(422, "Checklist bandlari soni mos emas")
+    shift = open_shift(ctx.db, ctx.cid)
+    lines = [{"text": text, "done": bool(d)} for text, d in zip(c.items, body.done)]
+    r = ChecklistRun(company_id=ctx.cid, template_id=c.id, template_name=c.name,
+                     shift_id=shift.id if shift else None, staff_name=ctx.staff.name,
+                     items=lines, done=sum(body.done), total=len(lines))
+    ctx.db.add(r)
+    ctx.db.commit()
+    return checklist_run_out(r)
+
+
+@app.get("/api/checklist-runs")
+def checklist_runs(days: int = 30, ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    q = (select(ChecklistRun).where(ChecklistRun.company_id == ctx.cid,
+                                    ChecklistRun.created_at >= start_of_day_ms(max(1, min(days, 366))))
+         .order_by(ChecklistRun.id.desc()).limit(500))
+    return [checklist_run_out(r) for r in ctx.db.scalars(q)]
+
+
+# ---------- recurring payments (ijara, kommunal) ----------
+
+def current_month() -> str:
+    return datetime.now(TZ).strftime("%Y-%m")
+
+
+def recurring_out(r: RecurringPayment) -> dict:
+    today = datetime.now(TZ)
+    paid = r.last_paid_month >= today.strftime("%Y-%m") if r.last_paid_month else False
+    return {
+        "id": r.id, "name": r.name, "amount": r.amount, "category": r.category, "payment": r.payment,
+        "day": r.day, "active": r.active, "lastPaidMonth": r.last_paid_month,
+        "paidThisMonth": paid, "due": r.active and not paid and today.day >= r.day,
+    }
+
+
+class RecurringIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    amount: int = Field(gt=0, le=10_000_000_000)
+    category: str = Field(min_length=1, max_length=64)
+    payment: Literal["cash", "card", "bank"] = "bank"
+    day: int = Field(ge=1, le=28)
+    active: bool = True
+
+
+@app.get("/api/recurring")
+def recurring_list(ctx: Ctx = Depends(require(*MANAGERS))) -> list[dict]:
+    return [recurring_out(r) for r in rows(ctx.db, RecurringPayment, ctx.cid)]
+
+
+@app.post("/api/recurring")
+def recurring_add(body: RecurringIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    r = RecurringPayment(company_id=ctx.cid, name=body.name.strip(), amount=body.amount,
+                         category=body.category.strip(), payment=body.payment, day=body.day,
+                         active=body.active, last_paid_month="")
+    ctx.db.add(r)
+    ctx.db.commit()
+    return recurring_out(r)
+
+
+@app.put("/api/recurring/{rid}")
+def recurring_update(rid: int, body: RecurringIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    r = get_owned(ctx, RecurringPayment, rid)
+    r.name, r.amount, r.category = body.name.strip(), body.amount, body.category.strip()
+    r.payment, r.day, r.active = body.payment, body.day, body.active
+    ctx.db.commit()
+    return recurring_out(r)
+
+
+@app.delete("/api/recurring/{rid}")
+def recurring_delete(rid: int, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    ctx.db.delete(get_owned(ctx, RecurringPayment, rid))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+class RecurringPayIn(BaseModel):
+    month: str | None = Field(default=None, pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+    amount: int | None = Field(default=None, gt=0, le=10_000_000_000)
+
+
+@app.post("/api/recurring/{rid}/pay")
+def recurring_pay(rid: int, body: RecurringPayIn, ctx: Ctx = Depends(require(*MANAGERS))) -> dict:
+    """Record this month's payment once as an Expense."""
+    r = ctx.db.scalar(select(RecurringPayment).where(
+        RecurringPayment.id == rid, RecurringPayment.company_id == ctx.cid).with_for_update())
+    if r is None:
+        raise HTTPException(404, "Topilmadi")
+    month = body.month or current_month()
+    if r.last_paid_month and r.last_paid_month >= month:
+        raise HTTPException(409, "Bu oy uchun allaqachon to'langan")
+    ctx.db.add(Expense(company_id=ctx.cid, amount=body.amount or r.amount, category=r.category,
+                       description=f"{r.name} ({month})"[:256], payment=r.payment, staff_name=ctx.staff.name))
+    r.last_paid_month = month
+    ctx.db.commit()
+    return recurring_out(r)
